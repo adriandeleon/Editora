@@ -2,7 +2,7 @@
 title: TODO highlighting
 description: Highlight TODO, FIXME, and your own regex patterns in the editor and collect them in a tool window.
 category: Workspace
-order: 4
+order: 5
 ---
 
 Editora highlights **TODO / FIXME-style patterns** everywhere they appear,

@@ -1,8 +1,8 @@
 ---
 title: Configuration
 description: The config folder, settings.json, session state, and how to export or reset it.
-category: Customization
-order: 1
+category: Getting started
+order: 4
 ---
 
 Editora keeps preferences and session state in a config folder. Most settings
@@ -185,7 +185,7 @@ change the same setting or entry, the one saved last wins.
 
 | File | Holds |
 | --- | --- |
-| `settings.json` | Preferences: font, theme, keymap, tab size, view options, auto-save, keybinding overrides. AI API keys only where no system keychain is available (see [where API keys are kept](/docs/ai#where-api-keys-are-kept)) |
+| `settings.json` | Preferences: font, theme, keymap, tab size, view options, auto-save, keybinding overrides. Never AI API keys |
 | `workspace-state.json` | Session of the no-project window: open files, folds, tool-window layout, window geometry, and the [Python interpreter](/docs/python#the-python-interpreter) picked for loose files |
 | `windows/<id>.json` | Session of each extra no-project window |
 | `recent-files.json` | Recent files list |
@@ -206,6 +206,7 @@ change the same setting or entry, the one saved last wins.
 | `themes/*.css`, `editor-themes/*.css` | Your [own themes](/docs/themes-fonts) |
 | `history/` | [Local History](/docs/workspace#local-file-history) |
 | `http-history/` | The [HTTP client](/docs/http-client)'s last responses and chosen environment for each `.http` file |
+| `keys/secrets.enc` + `keys/secrets.key` | AI API keys, encrypted with AES-256-GCM, only where no system keychain answers (see [where API keys are kept](/docs/ai#where-api-keys-are-kept)). Settings export leaves the folder out |
 | `cache/` | Data Editora downloads or builds and can rebuild: XML schemas, the Maven archetype catalog, compiled Kotlin scripts, the HTTP client's script runner. Settings export leaves it out |
 
 Preferences, sessions, and list files are **JSON**. If `settings.json` is absent,

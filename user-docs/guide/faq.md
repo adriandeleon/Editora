@@ -29,8 +29,8 @@ There are two exceptions:
   one part of Editora that transmits your code, so it stays opt-in.
 
 [Settings sync](/docs/settings-sync), also off by default, sends your snippets,
-abbreviations, templates, and dictionary to a Git repository that you name and
-own, and nowhere else.
+abbreviations, templates, dictionary, and the shortcuts you changed to a Git
+repository that you name and own, and nowhere else.
 
 Plugins you install run with full access and can do their own thing (see below).
 
@@ -42,9 +42,16 @@ Windows-on-ARM runs the x64 installer under emulation.
 ## Do I need Java installed?
 
 Not for the regular platform installers; they bundle their own Java runtime.
-The portable fat jar does need JDK 25 (`java -jar`). Running a Java file from
-the gutter ▶ needs JDK 25 or newer, either selected in Settings as the Default
-JDK or available as `java` on your `PATH`.
+The portable fat jar does need JDK 25 (`java -jar`).
+
+Running your own Java code needs a JDK, but not necessarily JDK 25. A
+single-file program whose `main` is `public` runs on JDK 11 or newer; a compact
+source file (a top-level `void main`) or a `main` that is not `public` needs
+JDK 25. A project can name its own JDK (in `.jkit.toml`, `.sdkmanrc` and the
+like); otherwise Editora uses the Default JDK in **Settings → Build Tools**,
+else the `java` on your `PATH`. See
+[Running programs](/docs/run-debug#running-files) and
+[The project's JDK](/docs/build-tools#the-projects-jdk-maven-gradle-sbt-and-graalvm).
 
 ## The installer says it's from an unidentified developer.
 
@@ -84,18 +91,26 @@ recorded in [Local History](/docs/workspace#local-file-history).
 ## Can I use the same snippets and templates on several computers?
 
 Yes, with [Settings sync](/docs/settings-sync) (Beta, off by default). It keeps
-snippets, abbreviations, templates, and your personal dictionary the same on
-every computer through a private Git repository you own. Preferences, keymaps,
-macros, and themes are not synced; to move those, copy the
+snippets, abbreviations, templates, your personal dictionary, and the
+shortcuts you changed (in every keymap) the same on every computer through a
+private Git repository you own. Which keymap you use is not synced, and neither
+are your other preferences, macros, and themes; to move those, copy the
 [config folder](/docs/configuration) or use **Export Configuration…**.
 
 ## How do I add a language, snippet, or dictionary word?
+
+Languages: the grammars ship with Editora, and there is no way to add one of
+your own. A file whose name Editora doesn't know opens as plain text; click the
+language in the status bar, or run **Buffer: Set Language…**
+(`buffer.setLanguage`), to read it as one of the
+[supported languages](/docs/languages#supported-languages). To ask for a
+language, [open an issue](https://github.com/adriandeleon/Editora/issues).
 
 Snippets: drop a `snippets/<language>.json` in your config folder (they override
 the bundled ones). Spell-check: "Add to Dictionary" saves to `dictionary.txt`,
 and you pick a language per file with "Spell Check: Set Language…". See
 [Configuration](/docs/configuration) and
-[Languages & highlighting](/docs/languages).
+[Highlighting, completion & spelling](/docs/languages).
 
 ## Do I need to install anything else?
 
@@ -154,8 +169,9 @@ folder. See [Configuration](/docs/configuration).
 
 ## Is it slow to start? It's a Java app.
 
-That's the usual assumption, so here are measurements. On one 14-inch MacBook
-Pro with an Apple M5, opening a single file, Editora 0.22.0 had its window up in
+That's the usual assumption, so here are measurements, taken on Editora 0.22.0
+in October 2026. On one 14-inch MacBook Pro with an Apple M5, opening a single
+file, Editora had its window up in
 about 0.52 seconds, against 0.59 for VS Code and 2.2 for IntelliJ IDEA. Opening
 a real project folder, it took about 0.58 seconds against 0.66 for VS Code and
 3.2 for IntelliJ. A lead of under a tenth of a second over VS Code is real but

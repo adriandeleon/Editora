@@ -1,8 +1,8 @@
 ---
 title: "Kotlin"
-description: "JetBrains' Kotlin language server, running Kotlin files and scripts, and debugging Kotlin."
+description: "JetBrains' Kotlin language server, running Kotlin files and scripts, Kotlin tests, and debugging Kotlin."
 category: Languages
-order: 7
+order: 12
 ---
 
 Kotlin gets code intelligence from JetBrains' Kotlin LSP, runs `.kt` files and `.kts` scripts from the gutter, and debugs on the Java debugger.
@@ -53,6 +53,28 @@ command is also called `kotlin` and is not the compiler.
 A Gradle build script (`build.gradle.kts`, `settings.gradle.kts`) gets no ▶. A
 Kotlin program in a [remote folder](/docs/remote) is not compiled from here;
 a Kotlin script there runs on its host.
+
+## Tests
+
+In a Maven or Gradle project, a Kotlin test file gets a ▶ in the gutter on each
+test and on its class, and **Run Test at Caret** (`test.runAtCaret`) runs the
+test the caret is in, or the whole class when the caret is between tests:
+
+- **JUnit** tests: a function marked `@Test` (or `@ParameterizedTest`,
+  `@RepeatedTest`, `@TestFactory`, `@TestTemplate`), also with a backtick name
+  such as ``fun `adds a book`()``.
+- **Kotest** specs: a class that extends `StringSpec`, `FunSpec`,
+  `DescribeSpec`, `ShouldSpec`, `BehaviorSpec`, `WordSpec`, `FreeSpec`,
+  `FeatureSpec`, `ExpectSpec` or `AnnotationSpec`. A Kotest spec runs as a
+  whole: its tests are strings, not functions, so a single one isn't run on
+  its own (an `AnnotationSpec`'s `@Test` functions are).
+
+Run Test at Caret and Debug Test at Caret need a Maven or Gradle project, as
+the gutter's ▶ icons do. The test runs through the build's test task (Maven's
+`-Dtest=`, Gradle's `--tests`), and its results fill
+[Test Results](/docs/build-tools#test-runner). **Debug Test at Caret**
+(`test.debugAtCaret`) starts the test JVM suspended and attaches the debugger
+to it, as for a [Java test](/docs/build-tools#test-runner).
 
 ## Debugging
 

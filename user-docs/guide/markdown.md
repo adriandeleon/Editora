@@ -1,6 +1,6 @@
 ---
 title: Markdown, Mermaid & preview
-description: The live Markdown preview, editing and formatting commands, wiki links and backlinks, linting, LaTeX math, Mermaid, and export to PDF, HTML, Word or OpenDocument.
+description: The live Markdown preview, formatting commands, wiki links, linting, LaTeX math, Mermaid, and export to PDF, HTML, Word or OpenDocument.
 category: Editing
 order: 3
 ---
@@ -74,9 +74,11 @@ on disk is reloaded. An empty document says *Nothing to preview yet*. The
 Structure tool window shows the document's `#`…`######` heading outline for quick
 navigation.
 
-A very large Markdown file (200,000 lines or 16 MB or more) is too much for the preview to follow every
+A Markdown file longer than 2 million characters that has also opened in
+[large-file mode](/docs/troubleshooting#performance) is too much for the preview to follow every
 edit: a strip says so, and its **Refresh** button (`preview.refresh`) renders
-it again.
+it again. Up to 2 million characters the preview stays live, even in large-file
+mode (a pasted `data:` image can make one line long enough for that).
 
 The preview caps table cells and block and inline nesting. Text nested past the
 limit shows as plain text. A table past the **table cap** (a 2.3 MB table

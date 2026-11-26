@@ -2,7 +2,7 @@
 title: "Scala"
 description: "Metals, running Scala programs and scripts, and debugging Scala."
 category: Languages
-order: 9
+order: 19
 ---
 
 Scala gets code intelligence from Metals, runs programs and `.sc` scripts from the gutter, and debugs through Metals.
@@ -21,7 +21,7 @@ Metals works on the build it finds at the workspace root: an sbt build
 CLI project (`project.scala`), a build already exported over BSP (`.bsp/`), or a
 Gradle or Maven build. The first time it sees one it asks whether to **import
 the build**; the question appears as a dialog, and the editor stays usable while
-it is open. An import runs the build tool and compiles the project, which takes
+it is open. Any server's question with buttons gets the same dialog. An import runs the build tool and compiles the project, which takes
 a minute or more the first time. Metals shows its progress in the status bar.
 In a folder you have not trusted, Metals waits until you trust it (see
 [Servers that load a project's build](/docs/lsp#servers-that-load-a-projects-build)).
@@ -32,8 +32,6 @@ Metals asks for a value or a choice of its own, a text field or a picker opens.
 
 A `build.sbt`, `build.mill`, `build.sc` or `project.scala` at a project's root
 makes [Doctor](/docs/troubleshooting#doctor) expect Metals.
-
-Any server's question with buttons gets the same dialog.
 
 ## Running Scala files
 

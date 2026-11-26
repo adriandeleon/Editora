@@ -2,7 +2,7 @@
 title: Themes & fonts
 description: Editor color themes, bundled monospace fonts, and text zoom.
 category: Customization
-order: 3
+order: 1
 ---
 
 Appearance settings live in **Settings → Appearance**, which includes a live

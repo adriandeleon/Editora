@@ -1,8 +1,8 @@
 ---
 title: Smart file previews
-description: Open a data or config file and get a rendered or plain-English preview, from JSON/YAML/TOML trees and OpenAPI docs to decoded systemd, ssh, Dockerfile, fstab, crontab, and GitHub Actions files.
+description: Rendered and plain-English previews of data and config files, from JSON, YAML and TOML trees and OpenAPI docs to systemd, ssh and crontab files.
 category: Editing
-order: 9
+order: 8
 ---
 
 Many file types get the same 3-mode preview (Editor / Split / Preview) as
@@ -133,7 +133,7 @@ half-typed file still shows the rest.
   top bar turns pages and zooms: −, +, **Fit** and **1:1**. The mouse
   wheel zooms around the pointer, Ctrl/Cmd+wheel zooms faster, and a touchpad
   pinch zooms too; Shift+wheel pans across, Alt+wheel pans down, a sideways
-  swipe pans, and dragging pans, as on the [Project Map](/docs/workspace#project-map).
+  swipe pans, and dragging pans, as on the [Project Map](/docs/project-map#panning-and-zooming).
 - Images (`.png`, `.jpg`, `.gif` and `.bmp`) open in a read-only
   **image viewer** with the same −, +, **Fit** and **1:1** buttons; Ctrl+wheel zooms.
 - `.svg` files stay editable XML but gain a live **vector** preview: it is drawn

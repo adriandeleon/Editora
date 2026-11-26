@@ -2,7 +2,7 @@
 title: Print & PDF export
 description: Print or export any file, a selection, a rendered preview, a CSV table, an image, or the Project Map, with a print preview and page settings.
 category: Workspace
-order: 7
+order: 8
 ---
 
 Editora prints and exports to PDF in two forms: the **text** of a file, as you
@@ -14,16 +14,21 @@ are always light, whatever theme the editor uses.
 
 ## Commands
 
-| Action | Command | Default key |
-| --- | --- | --- |
-| Print the current file's text | `editor.print` | (palette) |
-| Export the current file's text to PDF | `editor.exportPdf` | (palette) |
-| Print the selected lines | `editor.printSelection` | (palette) |
-| Export the selected lines to PDF | `editor.exportSelectionPdf` | (palette) |
-| Print the rendered preview | `preview.print` | (palette) |
-| Export the rendered preview to PDF | `preview.exportPdf` | (palette) |
-| Cancel a running PDF export | `file.cancelPdfExport` | (palette) |
-| Open the last exported file | `file.openLastExport` | (palette) |
+| Action | Command | Emacs key | Other keymaps |
+| --- | --- | --- | --- |
+| Print the current file's text | `editor.print` | (palette) | CUA: Ctrl+P |
+| Export the current file's text to PDF | `editor.exportPdf` | (palette) | — |
+| Print the selected lines | `editor.printSelection` | (palette) | — |
+| Export the selected lines to PDF | `editor.exportSelectionPdf` | (palette) | — |
+| Print the rendered preview | `preview.print` | (palette) | — |
+| Export the rendered preview to PDF | `preview.exportPdf` | (palette) | — |
+| Cancel a running PDF export | `file.cancelPdfExport` | (palette) | — |
+| Open the last exported file | `file.openLastExport` | (palette) | — |
+
+The **Emacs key** column is the default Emacs keymap; **Other keymaps** gives
+the chords the CUA, Sublime Text, VS Code and IntelliJ IDEA keymaps bind (— where
+none does). On macOS those mostly use ⌘ for Ctrl; the
+[keybindings reference](/keybindings) lists every keymap.
 
 The CUA keymap binds **Print…** to `Ctrl+P`.
 
@@ -58,7 +63,7 @@ the export too.
 - **Mermaid, Graphviz, PlantUML and Typst** PDFs are produced by those tools,
   which choose the page size themselves.
 - **The Project Map** prints and exports the whole map. See
-  [Project Map](/docs/workspace#project-map).
+  [Printing and exporting the map](/docs/project-map#printing-and-exporting-the-map).
 
 A tab with no text, such as the PDF viewer or the hex viewer, has nothing to
 print, and an empty document reports "Nothing to print".

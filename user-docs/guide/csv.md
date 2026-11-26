@@ -2,7 +2,7 @@
 title: CSV & TSV
 description: Rainbow columns, a field readout, and an editable CSV Grid preview with sort, filter, and export, plus align/shrink and Markdown-table interop.
 category: Workspace
-order: 6
+order: 7
 ---
 
 `.csv` and `.tsv` files open with spreadsheet-style tooling on top of proper
@@ -49,7 +49,7 @@ Toggle CSV Grid Preview*).
 
 ## Print and export
 
-| Action | Command | Default key |
+| Action | Command | Emacs key |
 | --- | --- | --- |
 | Print the table | `csv.print` | (palette) |
 | Export the table to PDF | `csv.exportPdf` | (palette) |

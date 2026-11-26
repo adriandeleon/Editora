@@ -1,5 +1,5 @@
 ---
-title: Languages & highlighting
+title: Highlighting, completion & spelling
 description: TextMate grammars, the supported languages, autocomplete, and spell checking.
 category: Code intelligence
 order: 1
@@ -27,7 +27,7 @@ characters is never highlighted. Files that are mostly long lines open in
 
 ### Supported languages
 
-Editora ships 66 grammars:
+Editora ships a grammar for each of these:
 
 | Group | Languages and file types |
 | --- | --- |
@@ -40,8 +40,8 @@ Editora ships 66 grammars:
 | Diagrams and requests | Mermaid, Markwhen, Graphviz DOT, PlantUML, `.http` request files |
 | System files | systemd units, desktop entries, crontab, Caddyfile, `/etc/hosts`, `fstab`, SSH config, Git config, `.gitattributes`, `.gitignore` and the other ignore files, Debian control files and changelogs, APT sources, network `interfaces`, log files, diffs and patches |
 
-Two more work inside these: one for Javadoc comments, and one for the HTML in
-a Markdown file. JavaScript uses the TSX grammar, so JSX in a `.js` file highlights.
+Two of its grammars only work inside others: one for Javadoc comments, and one
+for the HTML in a Markdown file. JavaScript uses the TSX grammar, so JSX in a `.js` file highlights.
 
 XML covers its dialects too: DTDs (`.dtd`, `.ent`, `.mod`), RELAX NG,
 XSL-FO, Schematron, MSBuild and NuGet project files, `.resx`, XAML, XLIFF,
@@ -68,6 +68,19 @@ ERB and EJS files open as **HTML Template**, and `.hbs` / `.handlebars` files
 as **Handlebars**, with Editora's HTML tag editing, folding and Structure. A
 template named after the file it renders (`nginx.conf.j2`, `config.yml.erb`)
 opens in that file's language. See [HTML](/docs/html#opening-html-files).
+
+Many of these languages have a page of their own, with their language server,
+running, tests and debugging: [Java](/docs/java), [Kotlin](/docs/kotlin),
+[Groovy](/docs/groovy), [Scala](/docs/scala), [Clojure](/docs/clojure),
+[Python](/docs/python), [JavaScript & TypeScript](/docs/javascript-typescript),
+[Go](/docs/go), [Rust](/docs/rust), [C & C++](/docs/c-cpp), [C#](/docs/csharp),
+[Ruby](/docs/ruby), [PHP](/docs/php), [Elixir](/docs/elixir),
+[Dart](/docs/dart), [Lua](/docs/lua), [Shell & Bash](/docs/shell),
+[PowerShell](/docs/powershell), [HTML, CSS & JSON](/docs/html-css-json),
+[XML & pom.xml](/docs/xml), [HTML](/docs/html), [Markdown](/docs/markdown) and
+[Typst](/docs/typst). YAML, TOML, Dockerfile, SQL, Terraform and Astro have a
+language server too, described under
+[Servers without a page of their own](/docs/lsp#servers-without-a-page-of-their-own).
 
 Astro files use the official Astro TextMate grammar, including mixed
 frontmatter, HTML, and CSS regions. The same language integration supplies
@@ -118,6 +131,9 @@ Run ▶ for scripts. It lasts while the file stays open.
 
 ### Java scripts
 
+The [Java](/docs/java) page covers the Java language server, projects and
+debugging.
+
 A Java file without a `.java` name, such as an extension-less
 `java --source 25` shebang script or a file set to Java in the status bar, is
 served by the [Java language server](/docs/lsp) when it is set up, like a `.java`
@@ -130,6 +146,9 @@ project. This works for scripts on this machine, not for one in a
 and debugging one.
 
 ### Scala and Clojure
+
+The [Scala](/docs/scala) and [Clojure](/docs/clojure) pages cover their
+language servers, running and debugging.
 
 **Scala** files are `.scala`, Scala CLI and Ammonite scripts (`.sc`), sbt builds
 (`.sbt`) and Mill builds (`.mill`). Scala 3's optional braces are understood:
@@ -164,6 +183,9 @@ Scripts.
 
 ### Shell scripts
 
+The [Shell & Bash](/docs/shell) page covers the Bash server, ShellCheck,
+running and debugging scripts.
+
 These open as shell scripts (bash, zsh, ksh and POSIX sh share one grammar):
 
 - **Extensions:** `.sh`, `.bash`, `.zsh`, `.ksh`, `.mksh`, `.command`, `.bats`,
@@ -197,6 +219,9 @@ the server. See [Language servers](/docs/lsp) for the Bash server, and
 [Run & debug](/docs/run-debug) for running scripts.
 
 ### Python
+
+The [Python](/docs/python) page covers Pyright, the interpreter, running and
+debugging.
 
 `.py`, `.pyw` and `.pyi` files open as Python, and so does any file with a
 Python shebang or modeline (see above). The grammar covers current Python:
@@ -246,6 +271,9 @@ The other files of a Python project open with a format too:
   its JSON text; there is no notebook view.
 
 ### JavaScript and TypeScript
+
+The [JavaScript & TypeScript](/docs/javascript-typescript) page covers the
+TypeScript server, running, tests and debugging.
 
 `.js`, `.mjs` and `.cjs` files open as JavaScript, `.jsx` as JSX, `.ts`,
 `.mts` and `.cts` as TypeScript, and `.tsx` as TSX. JavaScript, JSX and TSX

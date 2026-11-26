@@ -2,7 +2,7 @@
 title: "Clojure"
 description: "clojure-lsp, running Clojure files with the Clojure CLI, Leiningen or Babashka, and debugging Clojure."
 category: Languages
-order: 10
+order: 3
 ---
 
 Clojure gets code intelligence from `clojure-lsp`, runs files with the Clojure CLI, Leiningen or Babashka, and debugs on the Java debugger.

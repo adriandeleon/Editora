@@ -46,7 +46,7 @@ Editing and code:
   docs, and decoded config files.
 - **[Print & PDF export](/docs/print-pdf)**: print or export a file, a
   selection, a preview or a table, with a print preview and page settings.
-- **[Languages & highlighting](/docs/languages)**: grammars, supported
+- **[Highlighting, completion & spelling](/docs/languages)**: grammars, supported
   languages, and autocomplete.
 - **[Language servers (LSP)](/docs/lsp)**: definitions, references, diagnostics,
   and completion.
@@ -57,8 +57,17 @@ Editing and code:
 
 Running, tools, and version control:
 
-- **[Running & debugging](/docs/run-debug)**: run files and debug Java, Python,
-  and JavaScript.
+- **[Running programs](/docs/run-debug)**: run files, a project's main class,
+  and saved run configurations, locally, on a remote host or in a container.
+- **[Debugging](/docs/debugging)**: breakpoints, stepping, values, watches and
+  threads in every language with a debug adapter, from Java, Python and
+  JavaScript to Go, Rust, C and C++, C#, Ruby, PHP, Dart, Lua, Elixir, Bash
+  and PowerShell.
+- **Languages**: what is particular to one language (its language server, how
+  it runs, how it debugs, its test frameworks) is on its own page, such as
+  [Java](/docs/java), [Python](/docs/python), [JavaScript &
+  TypeScript](/docs/javascript-typescript), [Go](/docs/go) and
+  [Rust](/docs/rust); the rest are under **Languages** in the sidebar.
 - **[Build tools](/docs/build-tools)**: Maven, npm, Cargo, Go, and Gradle.
 - **[Deployments](/docs/deployments)**: keep a project here and run or debug it
   on an SSH host.
@@ -72,6 +81,8 @@ Workspace and customization:
 
 - **[Projects, windows & files](/docs/workspace)**: workspaces, tabs, editor
   groups, focus modes, and Local History.
+- **[Project Map](/docs/project-map)**: the project as columns of folders,
+  files and symbols, with code cards you can open side by side.
 - **[Bookmarks & notes](/docs/bookmarks-notes)**: mark lines and annotate code.
 - **[TODO highlighting](/docs/todo)**: highlight and list TODO/FIXME patterns.
 - **[Server log viewer](/docs/log-viewer)**: severity highlighting, follow, and filtering for `.log` files.
@@ -91,8 +102,9 @@ Workspace and customization:
 
 Help:
 
-- **[FAQ](/docs/faq)**, **[Command line](/docs/cli)**, and
-  **[Troubleshooting](/docs/troubleshooting)**.
+- **[FAQ](/docs/faq)**, **[Command line](/docs/cli)**,
+  **[Troubleshooting](/docs/troubleshooting)**, and **[Doctor](/docs/doctor)**,
+  the health report of the tools Editora uses.
 
 ## This guide inside Editora
 

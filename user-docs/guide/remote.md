@@ -1,8 +1,8 @@
 ---
 title: Remote files (SFTP)
-description: Browse, edit, search, and save files on a remote host over SSH/SFTP, and run Git, builds, language servers, and debuggers on that host, in a container, or in a WSL distribution.
+description: Edit files on an SSH host, and run Git, builds, language servers and debuggers there, in a container or in WSL.
 category: Workspace
-order: 3
+order: 4
 beta: true
 ---
 
@@ -345,7 +345,9 @@ These work only on files on this machine, whatever a host allows:
   and the HTML Preview commands say it is on a remote host
 - [external tools](/docs/external-tools)
 - *Reveal in File Manager* and *Save as Administrator*
-- following a growing [log file](/docs/log-viewer)
+- following a growing [log file](/docs/log-viewer) opened from the host; to
+  follow one on a host, use **Log: Open Log Stream…** with
+  [File over SSH](/docs/log-viewer#live-logs-from-other-places)
 - `.editorconfig` files, a project's committed `.editora/settings.json`, and a
   Markdown lint configuration file
 - Go to Symbol in Project, which would have to read every source file over the

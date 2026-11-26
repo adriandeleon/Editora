@@ -2,7 +2,7 @@
 title: Command line
 description: Command-line flags for opening files, projects, config folders, and the focus modes, and running .http files from the command line.
 category: Help
-order: 2
+order: 4
 ---
 
 Editora takes a few command-line arguments. With the native installers the
@@ -21,6 +21,7 @@ exists depends on how you installed:
 | **Linux `.rpm`** | `/opt/editora/bin/Editora`; no `editora` command is added, so add your own symlink if you want one |
 | **Linux `.AppImage`** | The `.AppImage` file itself; nothing is added to your `PATH` |
 | **macOS `.dmg`** | The installed application's own launcher; no `editora` command is added to your `PATH` |
+| **macOS Homebrew cask** | The same as the `.dmg`: the app goes to Applications, and no `editora` command is added to your `PATH` |
 | **Windows `.msi`** | `editora` on your `PATH`: the installer adds Editora's folder to it (and removes it on uninstall). For what prints in the terminal, use `editora-cli` (see below) |
 | **Fat jar** | `java -jar Editora-<version>-<platform>.jar` (needs JDK 25) |
 
@@ -38,9 +39,9 @@ print: `editora-cli --version`, `editora-cli --help` and
 | --- | --- |
 | `--version`, `-V`, `-v` | Print the version and exit (no GUI) |
 | `--help`, `-h` | Print usage and exit (no GUI) |
-| `--config-dir <path>` | Use this config folder |
+| `--config-dir <path>`, `--config-dir=<path>` | Use this config folder (or set `EDITORA_CONFIG_DIR`) |
 | `--dev` | Use an isolated `~/.editora-dev/` config |
-| `--project <dir>` | Open this folder as a project (if projects are enabled) |
+| `--project <dir>`, `--project=<dir>` | Open this folder as a project (if projects are enabled) |
 | `--new-file[=name]` | Open a new untitled buffer (optionally named) |
 | `--zen` | Start in Zen mode (session-only) |
 | `--expert` | Start in Expert mode, a lighter focus mode (session-only) |
