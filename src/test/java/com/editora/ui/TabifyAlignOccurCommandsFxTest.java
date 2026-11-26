@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  */
 @Tag("fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-class EditopsCommandsFxTest {
+class TabifyAlignOccurCommandsFxTest {
 
     private FxWindowFixture fx;
     private CommandRegistry registry;

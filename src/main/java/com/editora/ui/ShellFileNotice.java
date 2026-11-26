@@ -13,6 +13,10 @@ import static com.editora.i18n.Messages.tr;
  * ({@code set: pipefail\r: invalid option name}) or a UTF-8 byte-order mark (the {@code #!} line is no longer
  * the first bytes, and the mark becomes part of the first command). Its action converts the buffer to LF
  * without a BOM; saving writes it. Shown on every load, so a reload that fixed the file hides it again.
+ *
+ * <p>A Java file gets one for a byte-order mark alone: {@code javac} stops at it ({@code illegal character:
+ * '\ufeff'}), so the file neither compiles nor runs, and Windows tools (PowerShell 5's {@code Set-Content -Encoding
+ * UTF8}, older Notepad) write one. Its action drops the mark and leaves the line endings, which javac reads.
  */
 final class ShellFileNotice {
 
@@ -25,6 +29,15 @@ final class ShellFileNotice {
     static void offer(
             EditorBuffer buffer, String fileName, String lineEnding, String charset, Consumer<String> status) {
         String head = buffer.getArea().getText(0, Math.min(buffer.getArea().getLength(), 256));
+        if ("java".equals(buffer.getLanguage()) && EditorConfigCharset.UTF_8_BOM.equals(charset)) {
+            buffer.showFileNotice(
+                    tr("java.notice.bom", fileName), tr("shell.notice.removeBom"), tr("shell.notice.dismiss"), () -> {
+                        buffer.setUserCharset(EditorConfigCharset.UTF_8);
+                        buffer.hideFileNotice();
+                        status.accept(tr("status.javaNotice.bomRemoved", fileName));
+                    });
+            return;
+        }
         boolean shell = "shell".equals(buffer.getLanguage()) || ShellScripts.isShellScript(fileName, head);
         ShellScripts.Problem problem = ShellScripts.problem(shell ? "shell" : "", lineEnding, charset);
         if (problem == ShellScripts.Problem.NONE) {
@@ -33,7 +46,8 @@ final class ShellFileNotice {
             if (shown != null
                     && (shown.equals(tr("shell.notice.crlf", fileName))
                             || shown.equals(tr("shell.notice.bom", fileName))
-                            || shown.equals(tr("shell.notice.crlfBom", fileName)))) {
+                            || shown.equals(tr("shell.notice.crlfBom", fileName))
+                            || shown.equals(tr("java.notice.bom", fileName)))) {
                 buffer.hideFileNotice();
             }
             return;

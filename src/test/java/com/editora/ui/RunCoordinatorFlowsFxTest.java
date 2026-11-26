@@ -1377,6 +1377,44 @@ class RunCoordinatorFlowsFxTest {
         assertFalse(FxTestSupport.callOnFx(run::consoleInUse));
     }
 
+    /**
+     * No JDK chosen and no {@code java} on PATH — every Windows machine whose JDKs come from jkit: the run falls back
+     * to jkit's default JDK; without one, the status says that nothing was found rather than "could not read the
+     * Java version from java. Check the selected JDK.", which named no JDK the user had chosen.
+     */
+    @Test
+    void withNothingChosenAndNoJavaOnPathTheRunUsesJkitsDefaultOrSaysSo() throws Exception {
+        var path = RunCoordinator.processPathForFallback;
+        var jkit = RunCoordinator.jkitDefaultJdk;
+        try {
+            RunCoordinator.processPathForFallback =
+                    () -> project.resolve("no-java-here").toString();
+            RunCoordinator.jkitDefaultJdk = () -> jdk; // its java reports 25
+            host.settings.setMavenJdkHome("");
+            open("Hello.java", "void main() {\n}\n", true);
+
+            FxTestSupport.runOnFx(run::runActiveFile);
+            awaitStatus(tr("status.run.ok"));
+            String shown = console();
+            assertTrue(shown.contains("JAVA_HOME=" + jdk + " "), "jkit's default ran the program: " + shown);
+
+            // No jkit default either: PATH's java is tried, as before, and here it answers nothing (the probe's
+            // answer for "java" stands in for a PATH without one: this machine's own PATH has a java).
+            clearLog();
+            RunCoordinator.jkitDefaultJdk = () -> null;
+            com.editora.run.RunService service = FxTestSupport.field(run, "service");
+            java.util.Map<String, Integer> majors = FxTestSupport.field(service, "javaMajors");
+            majors.put("java", -1);
+            int before = console().length();
+            FxTestSupport.runOnFx(run::runActiveFile);
+            awaitStatus(tr("status.run.noJava"));
+            assertEquals(before, console().length(), "nothing more was launched");
+        } finally {
+            RunCoordinator.processPathForFallback = path;
+            RunCoordinator.jkitDefaultJdk = jkit;
+        }
+    }
+
     // --- a classic single-file Java program: java Hello.java ---------------------------------------------
 
     @Test

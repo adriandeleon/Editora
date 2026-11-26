@@ -88,6 +88,48 @@ public final class JdkToolchain {
         return selected.isEmpty() ? inheritedJavaExecutable(System.getenv()) : selected;
     }
 
+    /**
+     * Whether a {@code java} launcher is in one of {@code pathVariable}'s folders ({@code java.exe} on Windows).
+     * Reads the disk: off the FX thread.
+     */
+    public static boolean javaOnPath(@Nullable String pathVariable) {
+        if (pathVariable == null || pathVariable.isBlank()) {
+            return false;
+        }
+        String name = isWindows() ? "java.exe" : "java";
+        for (String dir : pathVariable.split(File.pathSeparator)) {
+            String folder = dir.strip();
+            if (folder.length() > 1 && folder.startsWith("\"") && folder.endsWith("\"")) {
+                folder = folder.substring(1, folder.length() - 1); // Windows PATH entries may be quoted
+            }
+            if (folder.isEmpty()) {
+                continue;
+            }
+            try {
+                if (Files.isRegularFile(Path.of(folder, name))) {
+                    return true;
+                }
+            } catch (RuntimeException notAPath) {
+                // a malformed entry names no launcher
+            }
+        }
+        return false;
+    }
+
+    /**
+     * The JDK a run with none chosen falls back to: {@code fallbackHome} (jkit's default) when PATH has no
+     * {@code java} and that JDK has its launcher; blank otherwise, so PATH's {@code java} is used as before. A
+     * Windows machine has no system Java, and jkit puts its default on no PATH a desktop app sees, so a run there
+     * found nothing even with JDKs installed.
+     */
+    public static String fallbackHome(boolean javaOnPath, @Nullable Path fallbackHome) {
+        if (javaOnPath || fallbackHome == null) {
+            return "";
+        }
+        Path launcher = fallbackHome.resolve("bin").resolve(isWindows() ? "java.exe" : "java");
+        return Files.isRegularFile(launcher) ? fallbackHome.toString() : "";
+    }
+
     /** The compiler alongside a selected Java launcher, or {@code javac} when PATH supplies Java. */
     public static String compilerForJavaExecutable(@Nullable String javaExecutable) {
         if (javaExecutable == null || javaExecutable.isBlank()) {
