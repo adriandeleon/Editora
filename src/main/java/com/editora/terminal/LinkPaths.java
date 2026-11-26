@@ -83,8 +83,7 @@ public final class LinkPaths {
             // which is how ls --hyperlink and every OSC 7 spell a local file.
             if (host != null && !ShellIntegration.isThisMachine(host)) return null;
             if (uri.getPath() == null) return null;
-            return Paths.get(uriPath(uri.getPath(), java.io.File.separatorChar == '\\'))
-                    .normalize();
+            return Paths.get(uriPath(uri.getPath(), com.editora.Os.isWindows())).normalize();
         } catch (Exception e) {
             return null;
         }
