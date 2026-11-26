@@ -101,6 +101,8 @@ final class WindowCommandRegistrar {
 
         ToolWindow notesToolWindow();
 
+        ToolWindow reviewsToolWindow();
+
         ToolWindow fileInfoToolWindow();
 
         ToolWindow undoHistoryToolWindow();
@@ -239,6 +241,8 @@ final class WindowCommandRegistrar {
         LspCoordinator lspCoordinator();
 
         NotesCoordinator notesCoordinator();
+
+        ReviewCoordinator reviewCoordinator();
 
         HttpClientCoordinator httpClient();
 
@@ -2083,6 +2087,27 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(
                         Command.of("tool.undoHistory", () -> host.toolWindows().toggle(host.undoHistoryToolWindow())));
+        host.registry()
+                .register(Command.of("tool.reviews", () -> host.toolWindows().toggle(host.reviewsToolWindow())));
+        host.registry()
+                .register(Command.of(
+                        "review.addComment", () -> host.reviewCoordinator().addComment()));
+        host.registry()
+                .register(Command.of(
+                        "review.suggestChange", () -> host.reviewCoordinator().suggestChange()));
+        host.registry()
+                .register(Command.of(
+                        "review.showThread", () -> host.reviewCoordinator().showThreadAtCaret()));
+        host.registry()
+                .register(
+                        Command.of("review.next", () -> host.reviewCoordinator().jump(true)));
+        host.registry()
+                .register(Command.of(
+                        "review.previous", () -> host.reviewCoordinator().jump(false)));
+        host.registry()
+                .register(Command.of(
+                        "review.toggleShowClosed",
+                        () -> host.reviewCoordinator().panel().toggleShowClosed()));
         host.registry()
                 .register(Command.of(
                         "tool.notes",

@@ -220,6 +220,7 @@ final class FileWorkflowHost implements FileWorkflowCoordinator.Host {
 
     @Override
     public void sourceSaved(EditorBuffer buffer) {
+        mc.reviewCoordinator.saved(buffer); // its review threads follow the saved text, and where they moved is kept
         if (mc.debugCoordinator != null) {
             mc.debugCoordinator.javaCode.sourceSaved(buffer); // hot code replace into a running Java session
         }

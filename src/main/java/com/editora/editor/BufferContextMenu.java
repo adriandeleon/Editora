@@ -248,6 +248,18 @@ final class BufferContextMenu {
                 addNote.setOnAction(ev -> b.addNoteHandler.accept(b));
                 items.add(addNote);
             }
+            var review = b.reviewCommentHandler;
+            if (b.path != null && review != null && !simpleMenu) {
+                items.add(new SeparatorMenuItem());
+                MenuItem comment = MenuChords.tag(new MenuItem(tr("command.review.addComment")), "review.addComment");
+                comment.setGraphic(MenuIcons.review());
+                comment.setOnAction(ev -> review.accept(b, false));
+                MenuItem suggest =
+                        MenuChords.tag(new MenuItem(tr("command.review.suggestChange")), "review.suggestChange");
+                suggest.setOnAction(ev -> review.accept(b, true));
+                items.add(comment);
+                items.add(suggest);
+            }
             contextMenu.getItems().setAll(tidySeparators(items));
             contextMenu.show(a, at.screenX(), at.screenY());
             e.consume();

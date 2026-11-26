@@ -600,6 +600,11 @@ final class Icons {
         return line("M3 2.5h10v8l-3 3H3zM10 13.5v-3h3");
     }
 
+    /** A speech balloon — a review comment; the Review Comments tool window. */
+    static Node review() {
+        return line("M2.5 3h11v7.5H7l-3 2.5v-2.5H2.5zM5 6h6M5 8h4");
+    }
+
     /** A pair of curly braces — a block; the Structure panel's narrow-to-fold-region toggle. */
     static Node foldRegion() {
         return line("M5.5 2.5c-1.6 0-2 .9-2 2.4v1.6c0 1-.5 1.5-1.5 1.5 1 0 1.5.5 1.5 1.5v1.6c0 1.5.4 2.4 2 2.4"

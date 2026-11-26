@@ -4632,6 +4632,19 @@
     -fx-underline: true;
 }
 
+/* A review thread's marker after its last line ("💬 2 · Why b?"): a code lens in the accent, so a comment waiting
+   to be answered stands out from "3 references". Clickable like a lens: it opens the thread's card. */
+.inlay.review-lens {
+    -fx-font-style: normal;
+    -fx-font-size: 0.85em;
+    -fx-padding: 0 0 0 1.5em;
+    -fx-text-fill: -color-accent-fg;
+}
+
+.inlay.review-lens:lens-hover {
+    -fx-underline: true;
+}
+
 /* A .http request's last result after its line (U11): "200 OK · 83 ms · ✗ 1 of 3 tests". One inlay per coloured
    part, all at the end of the line: the status first (set apart from the request, in its outcome's colour, upright),
    then the muted rest (italic, like an inlay hint) and the failed tests in red. Clickable: EditorBuffer's
