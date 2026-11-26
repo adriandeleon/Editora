@@ -225,7 +225,9 @@ jobs:
   # a test's temp folder, and three product bugs only a Windows FX test could see (a case-only rename by a
   # language server, a folder's own MODIFY event rebuilding the indexes, an OSC 8 `file:///C:/` link). Those
   # classes, the ones that touch paths, Git, processes, sessions and the terminal, carry the tag; the whole FX
-  # suite takes about two hours on Windows, too long for a lane. Tag a new class `windows-fx` when it tests
+  # suite takes about two hours on Windows, too long for a lane. The command and named-controls sweeps are left
+  # out: 11 of the slice's 20 minutes here, and what they failed on Windows was the developer's own jkit, not
+  # Windows (they run every day on Linux and macOS). Tag a new class `windows-fx` when it tests
   # something Windows does differently. `test`, not `verify`, and no coverage agent, as in the pure lane.
   windows-fx-tests:
     name: FX tests (windows-latest, windows-fx subset)
@@ -249,15 +251,20 @@ jobs:
             **/pom.xml
             .mvn/maven.config
 
-      # As in the pure lane: dump at 23 minutes, stop the step at 26, keep the dump as an artifact.
+      # As in the pure lane, with one more stop below the step's: the dump at 20 minutes, and Surefire ends its
+      # test JVM at 21 (`-Dsurefire.timeout`). On the first run here a hung test JVM outlived the step's
+      # 26-minute limit (the step could not be stopped while it held the output), the job ran into its own and
+      # was cancelled, and GitHub kept no log. Surefire's own timeout fails the build normally instead, with
+      # the class it was in, and the steps below still run. One test JVM: two saved only 3 of the 20 minutes
+      # and made two classes flaky under the load.
       - name: Test (windows-fx subset)
         timeout-minutes: 26
         shell: bash
         run: |
-          scripts/dump-stuck-jvms.sh 1380 target-jvm-dumps.txt </dev/null >/dev/null 2>&1 &
+          scripts/dump-stuck-jvms.sh 1200 target-jvm-dumps.txt </dev/null >/dev/null 2>&1 &
           dumper=$!
           trap 'kill "$dumper" 2>/dev/null || true' EXIT
-          ./mvnw -B --no-transfer-progress -Dgroups=windows-fx -Djacoco.skip=true -Dsurefire.rerunFailingTestsCount=2 test
+          ./mvnw -B --no-transfer-progress -Dgroups=windows-fx -Djacoco.skip=true -Dsurefire.rerunFailingTestsCount=2 -Dsurefire.timeout=1260 test
 
       - name: Thread dumps of a hung test run
         if: always()
