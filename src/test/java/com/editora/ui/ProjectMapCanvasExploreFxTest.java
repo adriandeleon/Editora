@@ -42,6 +42,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * (16), the quieter column lock (17) and Reveal in Map from the Project tree (18).
  */
 @Tag("fx")
+@Tag("windows-fx")
 class ProjectMapCanvasExploreFxTest {
 
     @TempDir

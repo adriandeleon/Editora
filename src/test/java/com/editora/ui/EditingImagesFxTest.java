@@ -42,6 +42,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * with no file yet gets a message instead.
  */
 @Tag("fx")
+@Tag("windows-fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class EditingImagesFxTest {

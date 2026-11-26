@@ -53,6 +53,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Run and Debug coordinators said about it.
  */
 @Tag("fx")
+@Tag("windows-fx")
 class RunConfigurationCommandsFxTest {
 
     /** How the shared file of {@code dir/proj} is named in messages: from the home folder, with this system's separator. */

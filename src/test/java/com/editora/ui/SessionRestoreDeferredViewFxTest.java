@@ -29,6 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * lays out a screenful of paragraph cells on every document update, one that is not cannot.
  */
 @Tag("fx")
+@Tag("windows-fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class SessionRestoreDeferredViewFxTest {
 

@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Markdown: Show Backlinks, in a real window with a real project. */
 @Tag("fx")
+@Tag("windows-fx")
 class MarkdownBacklinksFxTest {
 
     @TempDir

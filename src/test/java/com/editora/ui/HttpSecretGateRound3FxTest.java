@@ -50,6 +50,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * {@code PATH} stands in for a secret: every platform has it.
  */
 @Tag("fx")
+@Tag("windows-fx")
 @org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class HttpSecretGateRound3FxTest {
 

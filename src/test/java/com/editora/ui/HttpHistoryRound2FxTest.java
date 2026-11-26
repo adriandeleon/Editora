@@ -41,6 +41,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * where the running ■ goes when the requests move.
  */
 @Tag("fx")
+@Tag("windows-fx")
 class HttpHistoryRound2FxTest {
 
     private static final long WAIT_SECONDS = 30;

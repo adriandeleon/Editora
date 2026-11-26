@@ -29,6 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * longer exists, which nothing else would catch.
  */
 @Tag("fx")
+@Tag("windows-fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class RunConfigToolbarFxTest {
 

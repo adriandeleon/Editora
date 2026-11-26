@@ -38,6 +38,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * folder's parts use each other, opened from ⋯, a row's menu or a file card's menu, read from the files' imports.
  */
 @Tag("fx")
+@Tag("windows-fx")
 @org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class MapDependencyCardFxTest {
 

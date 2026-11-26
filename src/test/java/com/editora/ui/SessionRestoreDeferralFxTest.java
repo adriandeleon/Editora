@@ -35,6 +35,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * saves. Hence both directions are asserted: not-yet-filled on the first frame, all-filled once settled.
  */
 @Tag("fx")
+@Tag("windows-fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class SessionRestoreDeferralFxTest {
 

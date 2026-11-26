@@ -25,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * delivered, and a listener that throws does not end delivery.
  */
 @Tag("fx")
+@Tag("windows-fx")
 class OutputPumpContractFxTest {
 
     @BeforeAll

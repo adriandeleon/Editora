@@ -41,6 +41,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * {@link GitBranchCoordinator}: what git ends up with, what the user is told, and what is asked first.
  */
 @Tag("fx")
+@Tag("windows-fx")
 class GitBranchManagementFxTest {
 
     @BeforeAll

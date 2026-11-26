@@ -26,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * path beside it stayed long, and nothing about the model was wrong.
  */
 @Tag("fx")
+@Tag("windows-fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class DoctorPaneLayoutFxTest {
 

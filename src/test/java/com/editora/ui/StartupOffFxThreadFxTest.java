@@ -45,6 +45,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * window does after it is built and the restore drained (a user's command, a later settings apply).
  */
 @Tag("fx")
+@Tag("windows-fx")
 class StartupOffFxThreadFxTest {
 
     private static final String UNTITLED = "untitled:aaaa1111";

@@ -30,6 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * is recorded before a file changes, under which reason, and where a restore lands.
  */
 @Tag("fx")
+@Tag("windows-fx")
 @org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class LocalHistoryRecordRestore2FxTest {
 

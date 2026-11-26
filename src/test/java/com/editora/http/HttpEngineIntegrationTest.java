@@ -41,6 +41,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * streamed uploads, connection reuse, {@code @no-log}, and plain-language connection errors.
  */
 @Tag("fx")
+@Tag("windows-fx")
 class HttpEngineIntegrationTest {
 
     private HttpServer server;

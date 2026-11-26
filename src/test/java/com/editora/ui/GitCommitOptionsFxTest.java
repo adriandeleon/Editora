@@ -42,6 +42,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * with uncommitted changes (autostash), the automatic background fetch and the clone form's options.
  */
 @Tag("fx")
+@Tag("windows-fx")
 class GitCommitOptionsFxTest {
 
     @BeforeAll
