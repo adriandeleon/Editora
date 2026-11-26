@@ -97,7 +97,7 @@ Files do.
 [Project tree's filter](/docs/workspace#projects), kept current as you work,
 and they rank the same way: the name as you typed it first, then the project's
 own source, then vendored code, then tests. So all three find the same file
-first. Deep and very large projects are searched completely, and a path such as
+first. Projects are searched up to 200,000 files and 64 levels deep, and a path such as
 `core/v1/types.go` narrows a common name.
 
 **Show in Map** selects the highlighted file, or a symbol's file, on the
@@ -352,7 +352,7 @@ it:
 | Unfold at the caret | `view.unfold` | `C-c C-u` | Sublime Text: Ctrl+Shift+] |
 | Toggle the fold at the caret | `view.toggleFold` | `C-c C-t` | — |
 | Fold all | `view.foldAll` | `C-c f` | IntelliJ: Ctrl+Shift+- |
-| Unfold all | `view.unfoldAll` | `C-c u` | Sublime Text: Ctrl+K, Ctrl+0; IntelliJ: Ctrl+Shift+= |
+| Unfold all | `view.unfoldAll` | `C-c u` | Sublime Text: Ctrl+K Ctrl+0; IntelliJ: Ctrl+Shift+= |
 | Fold by nesting level (1 to 7) | `view.foldLevel1` … `7` | (palette) | — |
 | Fold / unfold recursively | `view.foldRecursively` / `view.unfoldRecursively` | (palette) | — |
 | Go to parent / next / previous fold | `view.gotoParentFold` … | (palette) | — |

@@ -26,36 +26,45 @@ Editora is built with the help of AI coding tools.
 
 ## By area
 
-Editing and code:
+These follow the groups in the sidebar.
+
+Getting started:
+
+- **[Getting Started](/docs/getting-started)**, **[Keymaps &
+  keybindings](/docs/keymaps)** and **[Configuration](/docs/configuration)**,
+  listed under *Start here* above.
+
+Editing:
 
 - **[Editing](/docs/editing)**: multiple cursors, auto-indent, brackets,
   comments, and the small text operations.
-- **[Keyboard macros](/docs/macros)**: record and replay edits.
-- **[Undo History](/docs/undo-history)**: jump back to any recent checkpoint,
-  and recover unsaved edits after a crash.
-- **[EditorConfig](/docs/editorconfig)**: honor a project's `.editorconfig`.
 - **[Snippets & templates](/docs/snippets-templates)**: expand boilerplate and
   scaffold new files.
 - **[Markdown, Mermaid & preview](/docs/markdown)**: the live preview, the
   format bar, Mermaid, and export to PDF.
-- **[HTML](/docs/html)**: tag editing, links, markup checks, the HTML language
-  server, and a live preview in your browser.
-- **[Typst](/docs/typst)**: a live preview and export for `.typ` files.
+- **[EditorConfig](/docs/editorconfig)**: honor a project's `.editorconfig`.
+- **[Keyboard macros](/docs/macros)**: record and replay edits.
+- **[Undo History](/docs/undo-history)**: jump back to any recent checkpoint,
+  and recover unsaved edits after a crash.
 - **[Diagrams as code](/docs/diagrams)**: DOT and PlantUML preview and export.
 - **[Smart file previews](/docs/previews)**: JSON/YAML/TOML/XML trees, OpenAPI
   docs, and decoded config files.
-- **[Print & PDF export](/docs/print-pdf)**: print or export a file, a
-  selection, a preview or a table, with a print preview and page settings.
+
+Code intelligence:
+
 - **[Highlighting, completion & spelling](/docs/languages)**: grammars, supported
   languages, and autocomplete.
 - **[Language servers (LSP)](/docs/lsp)**: definitions, references, diagnostics,
   and completion.
+
+Navigation:
+
 - **[Navigation & search](/docs/navigation)**: jump pickers, find, and
   project-wide search.
 - **[Code navigation](/docs/code-navigation)**: go to symbol, peek definition,
   sticky scroll, and related files.
 
-Running, tools, and version control:
+Run & debug:
 
 - **[Running programs](/docs/run-debug)**: run files, a project's main class,
   and saved run configurations, locally, on a remote host or in a container.
@@ -63,48 +72,75 @@ Running, tools, and version control:
   threads in every language with a debug adapter, from Java, Python and
   JavaScript to Go, Rust, C and C++, C#, Ruby, PHP, Dart, Lua, Elixir, Bash
   and PowerShell.
-- **Languages**: what is particular to one language (its language server, how
-  it runs, how it debugs, its test frameworks) is on its own page, such as
-  [Java](/docs/java), [Python](/docs/python), [JavaScript &
-  TypeScript](/docs/javascript-typescript), [Go](/docs/go) and
-  [Rust](/docs/rust); the rest are under **Languages** in the sidebar.
 - **[Build tools](/docs/build-tools)**: Maven, npm, Cargo, Go, and Gradle.
+- **[HTTP client](/docs/http-client)**: send requests from `.http` files.
 - **[Deployments](/docs/deployments)**: keep a project here and run or debug it
   on an SSH host.
-- **[HTTP client](/docs/http-client)**: send requests from `.http` files.
+
+Languages:
+
+- What is particular to one language (its language server, how it runs, how it
+  debugs, its test frameworks) is on its own page, such as [Java](/docs/java),
+  [Python](/docs/python), [JavaScript &
+  TypeScript](/docs/javascript-typescript), [Go](/docs/go) and
+  [Rust](/docs/rust).
+- **[HTML](/docs/html)**: tag editing, links, markup checks, the HTML language
+  server, and a live preview in your browser.
+- **[CSS & JSON](/docs/html-css-json)**: the CSS and JSON language servers.
+- **[Typst](/docs/typst)**: a live preview and export for `.typ` files.
+
+Version control:
+
 - **[Git](/docs/git)**: the built-in Git integration.
+- **[Diff & merge](/docs/diff-merge)**: the diff viewer and merge resolver.
 - **[GitHub](/docs/github)**: pull requests, reviews, and CI logs through the
   `gh` CLI.
-- **[Diff & merge](/docs/diff-merge)**: the diff viewer and merge resolver.
 
-Workspace and customization:
+Workspace:
 
 - **[Projects, windows & files](/docs/workspace)**: workspaces, tabs, editor
   groups, focus modes, and Local History.
 - **[Project Map](/docs/project-map)**: the project as columns of folders,
   files and symbols, with code cards you can open side by side.
 - **[Bookmarks & notes](/docs/bookmarks-notes)**: mark lines and annotate code.
-- **[TODO highlighting](/docs/todo)**: highlight and list TODO/FIXME patterns.
-- **[Server log viewer](/docs/log-viewer)**: severity highlighting, follow, and filtering for `.log` files.
-- **[CSV & TSV](/docs/csv)**: rainbow columns and an editable grid for data files.
-- **[Terminal](/docs/terminal)**: shells in a tool window, in the editor's theme.
-- **[Encrypted files](/docs/encrypted-files)**: open and save GnuPG-encrypted
-  files as their text, and sign and verify.
 - **[Remote files (SFTP)](/docs/remote)**: edit over SSH, and run Git, builds,
   language servers and debuggers on the host.
+- **[TODO highlighting](/docs/todo)**: highlight and list TODO/FIXME patterns.
+
+Tools:
+
+- **[Terminal](/docs/terminal)**: shells in a tool window, in the editor's theme.
+- **[Server log viewer](/docs/log-viewer)**: severity highlighting, follow, and filtering for `.log` files.
+- **[CSV & TSV](/docs/csv)**: rainbow columns and an editable grid for data files.
+- **[Print & PDF export](/docs/print-pdf)**: print or export a file, a
+  selection, a preview or a table, with a print preview and page settings.
+- **[Encrypted files](/docs/encrypted-files)**: open and save GnuPG-encrypted
+  files as their text, and sign and verify.
+
+Customization:
+
 - **[Themes & fonts](/docs/themes-fonts)**: appearance and zoom.
-- **[External tools](/docs/external-tools)**: run your own CLI commands.
 - **[Settings sync](/docs/settings-sync)**: the same snippets, abbreviations,
   templates, dictionary, and shortcuts on every computer.
+- **[External tools](/docs/external-tools)**: run your own CLI commands.
+
+Integrations:
+
 - **[AI assistance](/docs/ai)**: AI actions and an embedded coding agent.
-- **[Plugins](/docs/plugins)**: install and write extensions.
 - **[MCP server](/docs/mcp)**: let an LLM agent observe and drive the editor.
+- **[Plugins](/docs/plugins)**: install and write extensions.
 
 Help:
 
-- **[FAQ](/docs/faq)**, **[Command line](/docs/cli)**,
-  **[Troubleshooting](/docs/troubleshooting)**, and **[Doctor](/docs/doctor)**,
-  the health report of the tools Editora uses.
+- **[FAQ](/docs/faq)**, **[Troubleshooting](/docs/troubleshooting)**,
+  **[Doctor](/docs/doctor)** (the health report of the tools Editora uses) and
+  **[Command line](/docs/cli)**.
+
+About:
+
+- **[Pauta conformance](/docs/pauta)**: the edition of Pauta, the guidelines
+  Editora's family of apps follows, how fully Editora conforms, and every rule
+  it does not meet as written.
 
 ## This guide inside Editora
 

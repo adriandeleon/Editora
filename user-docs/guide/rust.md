@@ -15,7 +15,7 @@ installs it for you; see [language servers](/docs/lsp#servers-are-auto-detected-
 
 ## Running
 
-**Run File** (`file.run`, `C-c r` in the Emacs keymap) runs a Rust file that
+**Run File** (`file.run`: `C-c r` in the Emacs keymap, Ctrl+Shift+B (⌘⇧B on macOS) in VS Code) runs a Rust file that
 has a `fn main`, from its Cargo package, the nearest `Cargo.toml` above it. A
 file outside a package doesn't run; the status line says so. Editora saves the
 package's edited Rust files, runs `cargo build` (`cargo build --example name`
@@ -48,7 +48,7 @@ with Rust's formatters, as VS Code debugs it with rust-analyzer. A Rust file is
 debugged from its Cargo package, the nearest `Cargo.toml` above it; outside a
 package, Debug says so. **Debug: Start / Continue** (`debug.start`:
 `C-c C-d d` in the Emacs keymap, F5 in the VS Code, CUA and Sublime Text
-keymaps), or **Debug File** in the editor's right-click menu, debugs, depending
+keymaps, Shift+F9 (⌃D on macOS) in the IntelliJ IDEA keymap), or **Debug File** in the editor's right-click menu, debugs, depending
 on where the caret is:
 
 - in a `#[test]` function (or `#[tokio::test]` and the like): that test alone,
@@ -100,4 +100,4 @@ card's **Install…** downloads CodeLLDB 1.12.3, the release tested with Editora
 for Linux, macOS or Windows, checks its SHA-256 checksum, and unpacks it into
 your config folder. Cargo and Rust come from rustup; Editora doesn't install
 them. The card's switch, **Enable Rust debugging (CodeLLDB)**, is on by
-default, and the [Doctor](/docs/troubleshooting#doctor) checks for CodeLLDB.
+default, and the [Doctor](/docs/doctor) checks for CodeLLDB.

@@ -143,6 +143,7 @@ update itself: download the new package and install it the same way.
 | Package | Update | Remove |
 | --- | --- | --- |
 | macOS `.dmg` | Drag the new Editora to Applications and replace the old one | Move Editora from Applications to the Trash |
+| Homebrew cask | `brew upgrade --cask editora` | `brew uninstall --cask editora` (`~/.editora/` stays) |
 | Windows `.msi` | Run the new `.msi`; it replaces the installed version | In Windows Settings, **Apps → Installed apps**, then Editora's **Uninstall** |
 | `.deb` | `sudo apt install ./Editora-<version>-linux-x64.deb` | `sudo apt remove editora` |
 | `.rpm` | `sudo dnf install ./Editora-<version>-linux-x64.rpm` | `sudo dnf remove editora` |
@@ -293,7 +294,7 @@ default, and their buttons and panels appear once Editora finds the command they
 need (`git`, `gh`, a language server, a debug adapter, `mmdc`, and so on). A file
 whose language server is missing shows a banner that offers to install it. Run
 *View: Doctor* to see what was found; see
-[Troubleshooting](/docs/troubleshooting#doctor).
+[Doctor](/docs/doctor).
 
 In a folder you have not [trusted](/docs/workspace#trusted-folders), a language
 server that would have to run the project's build to load it waits: Java starts

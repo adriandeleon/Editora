@@ -16,7 +16,7 @@ This page covers what every server offers. What is particular to one language
 (its server's settings, extra refactorings, project setup, running and
 debugging) is on that language's page: [Java](/docs/java),
 [Python](/docs/python), [JavaScript & TypeScript](/docs/javascript-typescript),
-[HTML, CSS & JSON](/docs/html-css-json), [XML & pom.xml](/docs/xml),
+[HTML](/docs/html), [CSS & JSON](/docs/html-css-json), [XML & pom.xml](/docs/xml),
 [Shell & Bash](/docs/shell), [Kotlin](/docs/kotlin), [Groovy](/docs/groovy),
 [Scala](/docs/scala), [Clojure](/docs/clojure), [Go](/docs/go),
 [Rust](/docs/rust), [C & C++](/docs/c-cpp), [C#](/docs/csharp),
@@ -324,7 +324,7 @@ scope.
 
 | Feature | Command | Emacs key | Other keymaps |
 | --- | --- | --- | --- |
-| Code actions / quick fixes | `lsp.codeActions` | `C-c l a` | CUA, Sublime Text, VS Code, IntelliJ: Ctrl+. |
+| Code actions / quick fixes | `lsp.codeActions` | `C-c l a` | CUA, Sublime Text, VS Code: Ctrl+.; IntelliJ: Alt+Enter, Ctrl+. |
 | Generate (Java) | `lsp.generate` | `C-c l g` | IntelliJ: Alt+Insert |
 | Refactor This (Java) | `lsp.refactorThis` | `C-c l t` | IntelliJ: Ctrl+Alt+Shift+T |
 | Undo Last Refactoring | `lsp.undoRefactoring` | `C-c l u` | — |
@@ -535,8 +535,8 @@ Twenty-nine servers are supported:
 - **Ruby** (`ruby-lsp`), **PHP** (`phpactor`), **Kotlin**
   (JetBrains' Kotlin LSP, `kotlin-lsp`), **Groovy** (`gls`, from gvy), **Clojure** (`clojure-lsp`),
   **Scala** (Metals), **Lua** (`lua-language-server`), **Elixir** (ElixirLS, `elixir-ls`),
-  **PowerShell** ([PowerShell Editor Services](/docs/powershell#code-intelligence), on `pwsh`),
-  **Dart** ([Dart's analysis server](/docs/dart#code-intelligence), `dart language-server`)
+  **PowerShell** ([PowerShell Editor Services](/docs/powershell#language-server), on `pwsh`),
+  **Dart** ([Dart's analysis server](/docs/dart#language-server), `dart language-server`)
 - **Astro** (`astro-ls`), **HTML** (`vscode-html-language-server`), **CSS**
   (`vscode-css-language-server`), **JSON** (`vscode-json-language-server`),
   **YAML** (`yaml-language-server`), **XML** (`lemminx`), **Bash**
@@ -546,7 +546,8 @@ Twenty-nine servers are supported:
 
 The HTML, CSS and JSON servers come from one npm package,
 **vscode-langservers-extracted** (the servers taken out of VS Code), so one
-install gives all three; see [HTML, CSS and JSON](/docs/html-css-json#language-servers).
+install gives all three; see [CSS & JSON](/docs/html-css-json#language-servers)
+and [Installing it](/docs/html#installing-it) on the HTML page.
 
 There is also a **Maven-aware `pom.xml` server** (JVM lemminx plus the
 lemminx-maven extension), shown as **lemminx-maven** in Settings, Doctor and
@@ -583,7 +584,7 @@ while it is missing. A command left blank uses the program on your `PATH`. While
 turn it on. The switches for inlay hints, code lenses and the other server
 features are in the **Language server features** card on Settings → Code
 Completion; the LSP page links there.
-[Doctor](/docs/troubleshooting#doctor) reports the same detection for every
+[Doctor](/docs/doctor) reports the same detection for every
 enabled server in one place.
 
 ### Per-project overrides
@@ -656,7 +657,7 @@ channels:
   They need Node.
 - A **pinned npm package** for HTML, CSS and JSON, vscode-langservers-extracted
   4.10.0, installed with npm into Editora's own folder rather than globally
-  (see [HTML, CSS and JSON](/docs/html-css-json#language-servers)). It needs Node.
+  (see [Installing it](/docs/html#installing-it)). It needs Node.
 - **Toolchain** installs that use the language's own package manager (Go, Ruby,
   C#, Rust, PHP, and SQL, whose `sqls` installs with `go install`), which run
   only when that toolchain is already on your `PATH`.
@@ -671,7 +672,7 @@ channels:
   release, with both the zip and the program checked against the release's
   SHA-256 (see [Installing lemminx](/docs/xml#installing-lemminx)).
 - A **pinned release** for the Java server, Eclipse JDT LS (the version is
-  under [The Java server and your project](/docs/java#the-java-server-and-your-project)),
+  under [The Java server and your project](/docs/java#language-server)),
   unpacked into your config folder. A server installed earlier keeps its version until
   you install it again.
 - A **pinned distribution** for the Kotlin server, checked against its published

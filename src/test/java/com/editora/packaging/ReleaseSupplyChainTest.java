@@ -319,6 +319,16 @@ class ReleaseSupplyChainTest {
     }
 
     @Test
+    void packageManagersPointAtTheWebsite() throws IOException {
+        // JReleaser writes project.links.homepage into the Homebrew cask and the winget manifest; it named the
+        // GitHub repository, so `brew info` and winget sent people there instead of to editora-project.dev.
+        String jreleaser = read(REPO.resolve("jreleaser.yml"));
+        assertTrue(
+                jreleaser.contains("\n    homepage: https://editora-project.dev\n"),
+                "the packages' homepage must be the website");
+    }
+
+    @Test
     void theReleaseNotesAreTheVersionsChangelogSectionNotTheCommits() throws IOException {
         String jreleaser = read(REPO.resolve("jreleaser.yml"));
         assertTrue(

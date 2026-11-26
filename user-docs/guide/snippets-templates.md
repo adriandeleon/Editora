@@ -385,7 +385,7 @@ because bash cannot run a script with CRLF line endings.
 The **Node.js Script** template writes a `.js` file with a `#!/usr/bin/env node`
 shebang and an `async function main(args)`. An error thrown from `main` is
 printed and sets a non-zero exit code. It runs from its gutter ▶ (see
-[Node.js scripts](/docs/javascript-typescript#running-nodejs-scripts)). **New ▸ Scripts ▸
+[Node.js scripts](/docs/javascript-typescript#running)). **New ▸ Scripts ▸
 Node.js** in the Project tree's right-click menu creates the same kind of file
 without the wizard.
 

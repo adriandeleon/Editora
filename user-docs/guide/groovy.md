@@ -19,14 +19,14 @@ It reports Groovy compiler errors, and offers completion, hover, go to
 definition, references, rename, the outline and formatting. CodeNarc's style
 rules are off: they flag nearly every line of ordinary Groovy.
 
-A `Jenkinsfile` at a project's root makes [Doctor](/docs/troubleshooting#doctor)
+A `Jenkinsfile` at a project's root makes [Doctor](/docs/doctor)
 expect the Groovy server, as an open `.groovy` file does. A `build.gradle` alone
 does not, because most Gradle projects with a Groovy build script are Java
 projects.
 
-## Running Groovy scripts
+## Running
 
-A Groovy file runs with `groovy` on the JDK chosen in Settings for builds and
+<a id="running-groovy-scripts"></a>A Groovy file runs with `groovy` on the JDK chosen in Settings for builds and
 runs (the one Maven, Gradle and Java use), which Editora passes as
 `JAVA_HOME`. Editora finds `groovy` through `GROOVY_HOME`, then your `PATH`,
 then SDKMAN. When none of them has it, Run says Groovy is not installed instead
@@ -55,7 +55,7 @@ to it, as for a [Java test](/docs/build-tools#test-runner).
 ## Debugging
 
 Groovy is debugged by a debugger built into Editora, so there is nothing to
-install. Debug on a Groovy file runs it as [Run does](#running-groovy-scripts), and
+install. Debug on a Groovy file runs it as [Run does](#running), and
 Debug on a Groovy script run configuration uses that configuration's script,
 arguments, folder, environment, JDK and VM arguments.
 

@@ -120,7 +120,8 @@ symbol under the mouse is underlined and the pointer becomes a hand when Go to
 Definition can take you somewhere from there, that is a symbol the language
 server resolves, or an HTML page's `href` or `src`. Click to go there; let go
 of the key and the underline goes away. Nothing is underlined where a click
-would find nothing.
+would find nothing, nor in a Markdown file (its links are styled as links
+already) or a file open in large-file mode.
 
 ## Sticky scroll
 

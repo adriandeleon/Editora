@@ -48,7 +48,7 @@ itself on every save are a separate feature,
 | Action | Command | Emacs key | Other keymaps |
 | --- | --- | --- | --- |
 | Commit (open the Commit window) | `git.commit` | `C-x v v` | VS Code: Ctrl+Shift+G |
-| Switch branch (dropdown) | `git.switchBranch` | `C-x v b s` | IntelliJ: Ctrl+Shift+' |
+| Switch branch (dropdown) | `git.switchBranch` | `C-x v b s` | IntelliJ: Ctrl+Shift+\` |
 | New branch | `git.newBranch` | `C-x v b c` | — |
 | Pull | `git.pull` | `C-x v S-=` | IntelliJ: Ctrl+T |
 | Push | `git.push` | `C-x v S-p` | IntelliJ: Ctrl+Shift+K |

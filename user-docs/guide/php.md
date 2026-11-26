@@ -13,9 +13,9 @@ tests from the gutter, and debugs with Xdebug.
 PHP's language server is `phpactor`. Editora finds it on the PATH or installs
 it for you; see [language servers](/docs/lsp#servers-are-auto-detected-never-bundled).
 
-## Running PHP files
+## Running
 
-*Run File* (`file.run`, `C-c r` in the Emacs keymap) on a PHP file runs what it
+<a id="running-php-files"></a>*Run File* (`file.run`: `C-c r` in the Emacs keymap, Ctrl+Shift+B (⌘⇧B on macOS) in VS Code) on a PHP file runs what it
 is:
 
 - a **script** runs as `php file` in its folder;
@@ -45,7 +45,7 @@ or `@test`. Elsewhere in the file, all its tests run. The results fill
 PHP is debugged with [Xdebug](https://xdebug.org), through PHP Debug
 (vscode-php-debug), the adapter VS Code uses. **Debug: Start / Continue**
 (`debug.start`: `C-c C-d d` in the Emacs keymap, F5 in the VS Code, CUA and
-Sublime Text keymaps) or **Debug File** runs the file as [Run File](#running-php-files)
+Sublime Text keymaps, Shift+F9 (⌃D on macOS) in the IntelliJ IDEA keymap) or **Debug File** runs the file as [Run File](#running)
 runs it, with Xdebug turned on for that run, and stops at your breakpoints:
 
 - a **script** runs with the arguments set by **File: Run with Arguments…**;

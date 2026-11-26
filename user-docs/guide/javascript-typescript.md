@@ -16,7 +16,7 @@ typescript-language-server **5.3.0** and TypeScript **5.9.3** with npm into
 `plugins/lsp/typescript` under Editora's config folder. Nothing is installed
 globally, so your own `tsc` stays as it is. With the server's command left
 blank, Editora runs that copy. The server runs on the same Node.js as
-[Run](#running-nodejs-scripts).
+[Run](#running).
 
 **Why TypeScript 5.9.** TypeScript 6 leaves out the installed `@types`
 packages, such as `@types/node`, unless a tsconfig lists them. Node.js code
@@ -202,9 +202,9 @@ The **ESLint and formatting** group on the TypeScript / JavaScript card in
 
 They apply to every window at once.
 
-## Running Node.js scripts
+## Running
 
-A `.js`, `.mjs`, `.cjs`, `.ts`, `.mts` or `.cts` file runs under Node.js, and
+<a id="running-nodejs-scripts"></a>A `.js`, `.mjs`, `.cjs`, `.ts`, `.mts` or `.cts` file runs under Node.js, and
 so does a script whose shebang names `node`. A type declaration file (`.d.ts`)
 has no code, so it gets no ▶. JSX and TSX files need a bundler, so Run does not
 start them.
@@ -246,7 +246,7 @@ an old Node.js a project pins cannot break them.
 
 The tooltip of the Run window's runtime chip ends with where that Node.js was
 chosen from, such as *Chosen from: .nvmrc, via nvm*, on a host too.
-[Doctor](/docs/troubleshooting#doctor) has a **Node.js** row that names the
+[Doctor](/docs/doctor) has a **Node.js** row that names the
 Node.js in use and why it was chosen, for example *Node.js setting* or
 *.nvmrc, via nvm*.
 
@@ -315,11 +315,11 @@ file or lists `vitest` in its dependencies, else Jest when it has a
 its `package.json`. The runner must be installed in `node_modules` (in the
 package or a folder above it, as in a workspace); before `npm install`, the
 file runs under `node --test`. Editora runs the runner's own script under the
-Node.js chosen [as for Run](#running-nodejs-scripts), from the package folder:
+Node.js chosen [as for Run](#running), from the package folder:
 Jest with `--runInBand`, Vitest with `vitest run`, which runs once rather than
 watching. A test at the caret is passed by name (`-t`).
 
-**Deno.** A test file in a [Deno project](#running-nodejs-scripts) (`test.ts`,
+**Deno.** A test file in a [Deno project](#running) (`test.ts`,
 `*_test.ts`, `*.test.ts` and the like) runs under `deno test --allow-all`; a
 test at the caret runs alone with `--filter`. A top-level `Deno.test(…)` or
 `describe`, `it` or `test` call is the test at the caret, since Deno's filter
@@ -339,8 +339,8 @@ file again.
 `.mts`, `.cts`, or a `node` shebang script) runs it under vscode-js-debug,
 started exactly as Run starts it: the same Node.js, flags, environment and
 folder, and for TypeScript the project's tsx or the compiled file (see
-[Node.js scripts](#running-nodejs-scripts)). That Node.js is chosen as described in
-[Which Node.js runs](#running-nodejs-scripts): a configuration's own, then a project's
+[Node.js scripts](#running)). That Node.js is chosen as described in
+[Which Node.js runs](#running): a configuration's own, then a project's
 `.nvmrc` or `.node-version`, then the **Node.js** card under **Settings → Build
 Tools**, then `node` on your `PATH`. The Debug console's first line is the command that runs. When that
 is a compiled file older than its source, a red line says so: build the project
@@ -383,7 +383,7 @@ Node.js v24.18.1)*.
   under the package's runner (see [Tests](#tests)) and stops at its
   breakpoints: Jest in one process (`--runInBand`), Vitest with its workers
   attached as they start, or `node --test` with a name pattern.
-- **Deno.** Debug on a file of a [Deno project](#running-nodejs-scripts) runs it under
+- **Deno.** Debug on a file of a [Deno project](#running) runs it under
   `deno run` (`deno test` for a test, or Debug Test at Caret) with
   `--inspect-wait`, and vscode-js-debug attaches to it.
 - **Node.js script** and **npm script** [run configurations](/docs/run-debug#run-configurations)
