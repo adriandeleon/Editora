@@ -253,7 +253,9 @@ jobs:
       # test JVM at 21 (`-Dsurefire.timeout`). On the first run here a hung test JVM outlived the step's
       # 26-minute limit (the step could not be stopped while it held the output), the job ran into its own and
       # was cancelled, and GitHub kept no log. Surefire's own timeout fails the build normally instead, with
-      # the class it was in, and the steps below still run.
+      # the class it was in, and the steps below still run. Two test JVMs, as on macOS: in one the step took
+      # 19.7 minutes (686 tests, about 2 of them building; CommandSweepFxTest alone 7.8), too close to those
+      # limits.
       - name: Test (windows-fx subset)
         timeout-minutes: 26
         shell: bash
@@ -261,7 +263,7 @@ jobs:
           scripts/dump-stuck-jvms.sh 1200 target-jvm-dumps.txt </dev/null >/dev/null 2>&1 &
           dumper=$!
           trap 'kill "$dumper" 2>/dev/null || true' EXIT
-          ./mvnw -B --no-transfer-progress -Dgroups=windows-fx -Djacoco.skip=true -Dsurefire.rerunFailingTestsCount=2 -Dsurefire.timeout=1260 test
+          ./mvnw -B --no-transfer-progress -Dgroups=windows-fx -Djacoco.skip=true -Dsurefire.rerunFailingTestsCount=2 -DforkCount=2 -Dsurefire.timeout=1260 test
 
       - name: Thread dumps of a hung test run
         if: always()
