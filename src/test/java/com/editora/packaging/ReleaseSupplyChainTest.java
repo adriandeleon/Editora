@@ -325,6 +325,37 @@ class ReleaseSupplyChainTest {
     }
 
     @Test
+    void theReleaseOpensTheWingetPullRequestThatJReleaserOnlyPushesABranchFor() throws IOException {
+        // JReleaser's winget packager pushes the manifests to a branch of the fork and stops there: 0.29.0's
+        // pull request on microsoft/winget-pkgs had to be opened by hand. The release job must open it.
+        String jreleaser = read(REPO.resolve("jreleaser.yml"));
+        assertTrue(
+                jreleaser.contains("        branchPush: 'editora-{{projectVersion}}'\n"),
+                "the step below looks for the fork branch by this name");
+        String publish = jobs(read(WORKFLOWS.resolve("release.yml"))).get("release");
+        int jreleaserStep = publish.indexOf("jreleaser/release-action@");
+        int prStep = publish.indexOf("- name: Open the winget pull request\n");
+        assertTrue(prStep > jreleaserStep && jreleaserStep >= 0, "the pull request is opened after JReleaser pushes");
+        String step = publish.substring(prStep, publish.indexOf("\n      - name: ", prStep + 1));
+        assertTrue(
+                step.contains("gh pr create -R \"$upstream\"") && step.contains("upstream=microsoft/winget-pkgs"),
+                "the step opens the pull request on microsoft/winget-pkgs");
+        assertTrue(step.contains("branch=\"editora-$VERSION\""), "from the branch JReleaser pushed");
+        assertTrue(
+                step.contains("GH_TOKEN: ${{ secrets.PACKAGES_TOKEN }}"),
+                "the workflow's own token cannot open a pull request on another repository (REL-14)");
+        assertTrue(
+                step.contains("continue-on-error: true"),
+                "like the packager, a failed submission must never fail a published release");
+        assertTrue(
+                step.contains("!contains(github.ref_name, '-rc')"),
+                "an rc pushes no manifest (`active: RELEASE`), so it opens no pull request");
+        assertTrue(
+                step.contains("--state open") && step.contains("already open"),
+                "a rerun must not open a second pull request for the same version");
+    }
+
+    @Test
     void everyBuildLegStartsThePackagedAppBeforeItIsUploaded() throws IOException {
         String build = jobs(read(WORKFLOWS.resolve("release.yml"))).get("build");
         int tarball = build.indexOf("- name: Build install tarball (Linux)");

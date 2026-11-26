@@ -309,12 +309,17 @@ exactly one file:
   [`src/jreleaser/distributions/editora/brew/cask.rb.tpl`](../src/jreleaser/README.md): JReleaser's
   own always says `auto_updates true`, which makes `brew upgrade` skip the cask, and Editora does not
   update itself.
-- **`editora-windows`**, the MSI, with the `winget` packager. It opens a pull request on
-  [`microsoft/winget-pkgs`](https://github.com/microsoft/winget-pkgs) from the `adriandeleon/winget-pkgs`
-  fork for package `AdrianDeLeon.Editora` (moniker `editora`), so `winget install AdrianDeLeon.Editora`
-  installs it once Microsoft merges the pull request. The first submission for a publisher is
-  reviewed by a person. The manifest's `ProductCode` is the MSI's own: the **Read the MSI's
-  ProductCode** step reads it with `msiinfo` (jpackage makes a new one for every version).
+- **`editora-windows`**, the MSI, with the `winget` packager, for package `AdrianDeLeon.Editora`
+  (moniker `editora`). JReleaser only pushes the manifests to the `editora-X.Y.Z` branch of the
+  `adriandeleon/winget-pkgs` fork; it has no option to open the pull request. The **Open the winget
+  pull request** step after it opens one on
+  [`microsoft/winget-pkgs`](https://github.com/microsoft/winget-pkgs) from that branch, titled
+  *New package* until Editora is in winget and *New version* after. It refuses a branch that changes
+  anything outside that version's manifest folder, and leaves an open pull request for the branch
+  alone, so a rerun is safe. `winget install AdrianDeLeon.Editora` works once Microsoft merges the
+  pull request; the first submission for a publisher is reviewed by a person. The manifest's
+  `ProductCode` is the MSI's own: the **Read the MSI's ProductCode** step reads it with `msiinfo`
+  (jpackage makes a new one for every version).
 
 Neither file is in `files.globs`: a distribution's file is attached to the release anyway, and listed
 in both it would appear twice in `checksums_sha256.txt`.
@@ -323,8 +328,23 @@ in both it would appear twice in `checksums_sha256.txt`.
 They read the repository secret `PACKAGES_TOKEN`, a classic personal access token with `repo` scope.
 The **Decide what JReleaser runs** step leaves both packagers out of a tag's release while the secret
 is unset (a notice on the run says so) and the GitHub release still publishes; once the secret exists
-they run, with no other change. Both are `continueOnError`, so an expired token costs the cask and the
-pull request, never the release.
+they run, with no other change. Both are `continueOnError`, and the pull request step is
+`continue-on-error`, so an expired token costs the cask and the pull request, never the release.
+
+**Publishing a release that is already out.** v0.29.0 was released before the secret existed, so its
+cask and pull request were published afterwards by running JReleaser's `publish` step, which leaves
+the GitHub release alone, from a plain clone of the tag with the release's DMG and MSI in place (see
+the paths below) and the ProductCode from that release run's log:
+
+```
+EDITORA_BUILD_VERSION=X.Y.Z JRELEASER_PROJECT_VERSION=X.Y.Z EDITORA_MSI_PRODUCT_CODE='{…}' \
+JRELEASER_GITHUB_TOKEN=$(gh auth token) JRELEASER_BREW_GITHUB_TOKEN=$(gh auth token) \
+JRELEASER_WINGET_GITHUB_TOKEN=$(gh auth token) \
+jreleaser publish --packager brew --packager winget --basedir .
+```
+
+Add `--dry-run` first to check the rendered files under `out/jreleaser/package/`. Then open the winget
+pull request as the step does (`gh pr create -R microsoft/winget-pkgs --head adriandeleon:editora-X.Y.Z`).
 
 **Checking without releasing.** A manual dispatch runs `full-release --dry-run`: it renders the cask
 and the manifests into the `jreleaser-output` artifact (`out/jreleaser/package/`) and pushes nothing.
