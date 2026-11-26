@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * file of the same name has, and under the same key after a reconnect gives the file a new {@link Path}.
  */
 @Tag("fx")
+@Tag("windows-fx")
 class RemoteBreakpointKeysFxTest {
 
     @TempDir

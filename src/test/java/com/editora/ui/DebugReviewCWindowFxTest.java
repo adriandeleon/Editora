@@ -45,6 +45,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * how the stopped line looks, the exception row, the editor and gutter menus, the breakpoints list and Mute.
  */
 @Tag("fx")
+@Tag("windows-fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 // The debugger's scans, merge and apply texts are worked out off the FX thread (PERF-01): here in place, so
 // each lands before the command returns. HandlersDebugOffFxThreadFxTest runs them where the app does.

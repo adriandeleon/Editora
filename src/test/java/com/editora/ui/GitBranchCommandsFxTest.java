@@ -32,6 +32,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * and manager cards, against a real repository whose only remotes are bare repositories in the temp folder.
  */
 @Tag("fx")
+@Tag("windows-fx")
 class GitBranchCommandsFxTest {
 
     @BeforeAll

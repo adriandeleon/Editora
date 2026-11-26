@@ -47,6 +47,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * file.save} workflow against the chrooted embedded server. Each case is one a local file already survived.
  */
 @Tag("fx")
+@Tag("windows-fx")
 @org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class RemoteSaveFxTest {
 

@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * {@code tool.terminal} hides it, {@code terminal.new} adds a tab, and closing the window ends every shell.
  */
 @Tag("fx")
+@Tag("windows-fx")
 class TerminalToolWindowFxTest {
 
     @BeforeAll

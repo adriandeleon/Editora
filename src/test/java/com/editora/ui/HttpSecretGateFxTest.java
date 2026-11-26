@@ -31,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * never the value. {@code PATH} stands in for a secret: every platform has it.
  */
 @Tag("fx")
+@Tag("windows-fx")
 class HttpSecretGateFxTest {
 
     private static final String SECRET = System.getenv("PATH");

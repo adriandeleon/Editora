@@ -40,6 +40,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * </ul>
  */
 @Tag("fx")
+@Tag("windows-fx")
 class FileRoundTripFxTest {
 
     @BeforeAll

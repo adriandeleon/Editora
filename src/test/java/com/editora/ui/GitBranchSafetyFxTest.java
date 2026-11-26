@@ -31,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * rebase over uncommitted changes, and the work-tree and delete refusals.
  */
 @Tag("fx")
+@Tag("windows-fx")
 class GitBranchSafetyFxTest {
 
     @BeforeAll

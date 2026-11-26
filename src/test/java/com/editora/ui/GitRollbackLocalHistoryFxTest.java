@@ -36,6 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * change made outside Editora (a formatter, {@code sed}, another editor) is in no commit and nowhere else.
  */
 @Tag("fx")
+@Tag("windows-fx")
 class GitRollbackLocalHistoryFxTest {
 
     @BeforeAll

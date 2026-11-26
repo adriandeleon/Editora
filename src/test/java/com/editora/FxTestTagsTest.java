@@ -18,6 +18,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * leaving that tag out ({@code mvn test -DexcludedGroups=fx}) and the lanes that run only the FX suite
  * ({@code -Dgroups=fx}) run all of it. A class without the tag ran in the pure lane with a toolkit it was
  * not meant to have, and in no FX lane at all.
+ *
+ * <p>{@code @Tag("windows-fx")} picks the FX classes that full-tests.yml's Windows job runs
+ * ({@code -Dgroups=windows-fx}): the ones that touch paths, Git, processes, sessions and the terminal. It only
+ * narrows the FX suite, so a class carrying it must carry {@code @Tag("fx")} too.
  */
 @Tag("guard")
 class FxTestTagsTest {
@@ -29,6 +33,8 @@ class FxTestTagsTest {
     private static final Pattern A_TEST = Pattern.compile("@(?:Test|ParameterizedTest|TestFactory|RepeatedTest)\\b");
 
     private static final Pattern FX_TAG = Pattern.compile("@Tag\\(\\s*\"fx\"\\s*\\)");
+
+    private static final Pattern WINDOWS_FX_TAG = Pattern.compile("@Tag\\(\\s*\"windows-fx\"\\s*\\)");
 
     @Test
     void everyTestClassThatStartsTheToolkitIsTaggedFx() throws IOException {
@@ -53,5 +59,34 @@ class FxTestTagsTest {
                 untagged.isEmpty(),
                 () -> "add @Tag(\"fx\") to each of these test classes, which start the JavaFX toolkit:\n"
                         + String.join("\n", untagged));
+    }
+
+    @Test
+    void everyWindowsFxClassIsAlsoAnFxClass() throws IOException {
+        Path root = Path.of("src/test/java");
+        assertTrue(Files.isDirectory(root), "Run from the Maven project root");
+        List<String> tagged = new ArrayList<>();
+        List<String> notFx = new ArrayList<>();
+        try (Stream<Path> files = Files.walk(root)) {
+            for (Path file :
+                    files.filter(p -> p.toString().endsWith(".java")).sorted().toList()) {
+                if (file.endsWith("FxTestTagsTest.java")) {
+                    continue;
+                }
+                String source = Files.readString(file);
+                if (WINDOWS_FX_TAG.matcher(source).find()) {
+                    String name = root.relativize(file).toString().replace('\\', '/');
+                    tagged.add(name);
+                    if (!FX_TAG.matcher(source).find()) {
+                        notFx.add(name);
+                    }
+                }
+            }
+        }
+        assertTrue(!tagged.isEmpty(), "no class carries @Tag(\"windows-fx\"): the Windows FX job would run nothing");
+        assertTrue(
+                notFx.isEmpty(),
+                () -> "@Tag(\"windows-fx\") narrows the FX suite; add @Tag(\"fx\") to these too:\n"
+                        + String.join("\n", notFx));
     }
 }

@@ -52,6 +52,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * model/mode/agent/resume pickers, the pop-out window, and the file requests an agent makes during a turn.
  */
 @Tag("fx")
+@Tag("windows-fx")
 class AgentCoordinatorSessionFxTest {
 
     private static final long WAIT_SECONDS = 30;

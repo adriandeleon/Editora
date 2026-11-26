@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
  * trusted; until then the user's own values apply.
  */
 @Tag("fx")
+@Tag("windows-fx")
 class ProjectScopeFxTest {
 
     private FxWindowFixture fx;
