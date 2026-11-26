@@ -36,6 +36,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Go: Run Test at Caret on a benchmark, and its Rerun.** With the caret in a `func Benchmark…`, Run Test at Caret
+  ran `-test.run ^BenchmarkX$`, which matches no test, so nothing ran; it now runs the benchmark alone
+  (`-test.run ^$ -test.bench ^BenchmarkX$`). Rerun Last after Run Test at Caret ran the whole package; it now runs the
+  same test again.
 - **Doctor's Settings… opens the row's own language.** On a language server or debugger row (PowerShell, Go, …),
   Settings… opened LSP or Debugging on whichever language the page's Language picker last held; it now
   picks the row's language. ESLint, Prettier and Biome open the TypeScript card, Flutter the Dart card.

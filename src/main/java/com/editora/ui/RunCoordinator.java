@@ -1161,7 +1161,8 @@ final class RunCoordinator {
             @Nullable Path dir,
             Runnable again,
             boolean configured,
-            int testLine) {} // the 0-based line a Rust test file's run is narrowed to (Run Test at Caret), else -1
+            int testLine) {} // the 0-based line a Go or Rust test file's run is narrowed to (Run Test at Caret),
+    // else -1
 
     /** A built program found for a {@link CompiledRun}, or why there is none ({@code problem}, said as it is). */
     private record Built(
@@ -1230,7 +1231,10 @@ final class RunCoordinator {
         launchCompiledFile(language, path, args, -1);
     }
 
-    /** As above; a Rust test file's run narrowed to the test at 0-based {@code testLine} (-1: every test). */
+    /**
+     * As above; a Go or Rust test file's run narrowed to the test at 0-based {@code testLine} (-1: every test). The
+     * line, not the test's arguments, is what Rerun keeps: it reads the file again and runs the same test.
+     */
     private void launchCompiledFile(String language, Path path, List<String> args, int testLine) {
         if (!com.editora.process.ExecTargets.runsHere(path)) {
             host.setStatus(tr("status.run.compiledFileRemote", path.getFileName()));
@@ -1423,18 +1427,31 @@ final class RunCoordinator {
                             declared = null; // unreadable: go says so
                         }
                     }
+                    List<String> testArgs = List.of();
+                    if (run.testLine() >= 0) { // Run Test at Caret (or its Rerun): the test at that line, read again
+                        String text;
+                        try {
+                            text = java.nio.file.Files.readString(source);
+                        } catch (java.io.IOException e) {
+                            text = ""; // unreadable: go says so
+                        }
+                        testArgs = com.editora.dap.GoLaunch.testAtCaretArgs(text, run.testLine());
+                    }
                     Path module = com.editora.dap.GoLaunch.moduleRoot(source);
                     if (module != null) {
                         ops.buildExecutableFacts(com.editora.build.BuildTool.GO, module);
                     }
-                    return new GoPlan(declared, module);
+                    return new GoPlan(declared, module, testArgs);
                 },
                 plan -> runGoPlanned(run, source, folder, plan));
     }
 
-    /** What a Go Run read off the FX thread: the file's package clause and its module's root. */
+    /**
+     * What a Go Run read off the FX thread: the file's package clause, its module's root, and the test binary's
+     * arguments for Run Test at Caret's test (empty for any other run).
+     */
     private record GoPlan(
-            @Nullable String declared, @Nullable Path module) {}
+            @Nullable String declared, @Nullable Path module, List<String> testArgs) {}
 
     private void runGoPlanned(CompiledRun run, Path source, Path folder, GoPlan planned) {
         String declared = planned.declared();
@@ -1480,12 +1497,9 @@ final class RunCoordinator {
                             "status.run.compiledBuild",
                             // A program, not a package's archive (what go writes for a package whose clause was not
                             // read).
-                            () -> Built.of(
-                                    java.nio.file.Files.isRegularFile(output)
-                                                    && java.nio.file.Files.isExecutable(output)
-                                            ? output
-                                            : null,
-                                    missing),
+                            () -> java.nio.file.Files.isRegularFile(output) && java.nio.file.Files.isExecutable(output)
+                                    ? new Built(output, planned.testArgs(), null)
+                                    : Built.of(null, missing),
                             folder));
         });
     }
@@ -4321,11 +4335,9 @@ final class RunCoordinator {
         String label = path.getFileName() + ":" + (caret + 1);
         switch (language) {
             case "go" -> {
-                String test = com.editora.dap.GoLaunch.testAt(text, caret);
-                launchCompiledFile(
-                        ScriptRunCommand.GO,
-                        path,
-                        test == null ? List.of("-test.v") : List.of("-test.run", "^" + test + "$", "-test.v"));
+                // The test's arguments are read at the line when it runs, and again on Rerun
+                // (GoLaunch.testAtCaretArgs).
+                launchCompiledFile(ScriptRunCommand.GO, path, List.of(), caret);
             }
             case "rust" -> launchCompiledFile(ScriptRunCommand.RUST, path, List.of(), caret);
             case "c", "cpp" -> {
