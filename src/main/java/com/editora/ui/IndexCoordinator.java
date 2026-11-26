@@ -324,6 +324,7 @@ final class IndexCoordinator {
             return;
         }
         List<Path> touched = new ArrayList<>();
+        java.util.Set<Path> created = new java.util.HashSet<>();
         for (ProjectPanel.FsChange change : changes) {
             Path path = change.path();
             if (path == null || !Vfs.isLocal(path) || !path.startsWith(root)) {
@@ -332,8 +333,13 @@ final class IndexCoordinator {
             if (change.kind() == ProjectPanel.FsKind.DELETED) {
                 touched.remove(path);
                 forget(path);
-            } else if (!touched.contains(path)) {
-                touched.add(path);
+            } else {
+                if (change.kind() == ProjectPanel.FsKind.CREATED) {
+                    created.add(path);
+                }
+                if (!touched.contains(path)) {
+                    touched.add(path);
+                }
             }
         }
         if (touched.isEmpty()) {
@@ -353,8 +359,14 @@ final class IndexCoordinator {
                             java.nio.file.attribute.BasicFileAttributes.class,
                             java.nio.file.LinkOption.NOFOLLOW_LINKS);
                     if (attrs.isDirectory()) {
-                        directory = true; // a new folder: nobody reported what is inside it
-                        break;
+                        if (created.contains(file)) {
+                            directory = true; // a new folder: nobody reported what is inside it
+                            break;
+                        }
+                        // A folder's own "modified": Windows' watcher and the polling one send it whenever an entry
+                        // inside comes, goes or changes, and that entry is reported itself where it is watched.
+                        // Taken for a new folder, every save in .editora/ walked the whole project again.
+                        continue;
                     }
                     if (!ProjectWalk.offers(root, file, ignore)
                             || (!attrs.isRegularFile() && !(attrs.isSymbolicLink() && Files.isRegularFile(file)))) {
