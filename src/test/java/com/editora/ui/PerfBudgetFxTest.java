@@ -33,7 +33,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * The per-pull-request performance gate: budgets for the hot paths that the November 2026 review found had
  * regressed unnoticed (rendered frames per keystroke +88 %, heap per tab ×2). {@code scripts/perf-ab.sh} measures
- * time, which is too noisy for a shared CI runner; everything asserted here is a <em>count</em> — frames rendered,
+ * time, which is too noisy for a shared CI runner; everything asserted here is a <em>count</em> — frames the scene
+ * had a change to draw for ({@link #changedFrameCounter}),
  * bytes the FX thread allocated, live heap and scene nodes per tab, buffers still reachable, timers still
  * registered — so it holds on any machine and fails the pull request that adds the work rather than the release
  * that ships it. Each value is printed as a {@code PERF-BUDGET} line; {@code -Dperf.budget.jfr=<directory>} also
@@ -56,7 +57,11 @@ class PerfBudgetFxTest {
 
     // Measured on master at 2026-11-24 (dcbd393f4), Linux, headless, two runs each: the ranges in the comments.
 
-    /** Rendered frames per paced keystroke in a 2,000-line Java file (measured 1.020–1.025). */
+    /**
+     * Frames with a scene change to draw, per paced keystroke in a 2,000-line Java file (measured 1.020–1.025 on Linux,
+     * 1.045–1.080 on macOS CI). Rendered frames, which this counted until November 2026, measured 1.05 or 1.24–1.45 on
+     * the same macOS commit depending on the runner: see {@link #changedFrameCounter}.
+     */
     static final double TYPING_FRAMES_PER_KEY = 1.25;
     /**
      * Kilobytes the FX thread allocates per paced keystroke, warm JIT (measured 2,362–2,366; 6,760–7,230 before the
@@ -65,7 +70,7 @@ class PerfBudgetFxTest {
      * cell and applying CSS to its nodes among it.
      */
     static final double TYPING_FX_ALLOC_KB_PER_KEY = 2_700;
-    /** Frames a focused, untouched editor renders in 10 s: the caret blink, and nothing else (measured 20–21). */
+    /** Frames with a change a focused, untouched editor draws in 10 s: the caret blink, nothing else (measured 20–21). */
     static final double IDLE_FRAMES_PER_10S = 24;
     /** Live heap per open tab of a 20–60 KB Java source, in MB (measured 3.26–3.50). */
     static final double TABS_HEAP_MB_PER_TAB = 4.0;
@@ -125,7 +130,8 @@ class PerfBudgetFxTest {
 
         int keys = 200;
         AtomicInteger pulses = pulseCounter();
-        AtomicInteger frames = frameCounter();
+        AtomicInteger frames = changedFrameCounter();
+        AtomicInteger rendered = frameCounter();
         long alloc0 = fxAllocated();
         jdk.jfr.Recording jfr = startJfr();
         for (int i = 0; i < keys; i++) {
@@ -142,10 +148,12 @@ class PerfBudgetFxTest {
         stopJfr(jfr, "typing");
         FxTestSupport.runOnFx(b::markClean); // so closing it later asks nothing
         report("typing.frames_per_key", framesPerKey, TYPING_FRAMES_PER_KEY);
+        // Reported, not budgeted: on a slow macOS runner JavaFX renders unchanged frames as well (changedFrameCounter).
+        report("typing.rendered_frames_per_key", rendered.get() / (double) keys, Double.NaN);
         // Pulses are reported, not budgeted: the caret blink keeps a focused editor pulsing at the display rate.
         report("typing.pulses_per_key", pulsesPerKey, Double.NaN);
         report("typing.fx_alloc_kb_per_key", allocKbPerKey, TYPING_FX_ALLOC_KB_PER_KEY);
-        assertWithin("rendered frames per keystroke", framesPerKey, TYPING_FRAMES_PER_KEY);
+        assertWithin("frames with a scene change per keystroke", framesPerKey, TYPING_FRAMES_PER_KEY);
         assertWithin("KB the FX thread allocates per keystroke", allocKbPerKey, TYPING_FX_ALLOC_KB_PER_KEY);
     }
 
@@ -157,7 +165,8 @@ class PerfBudgetFxTest {
         FxTestSupport.runOnFx(() -> b.getFocusedArea().requestFocus());
         settle(5000);
         AtomicInteger pulses = pulseCounter();
-        AtomicInteger frames = frameCounter();
+        AtomicInteger frames = changedFrameCounter();
+        AtomicInteger rendered = frameCounter();
         long alloc0 = fxAllocated();
         long t0 = System.nanoTime();
         OnFx.pulses(IDLE_PULSES);
@@ -166,10 +175,11 @@ class PerfBudgetFxTest {
         double framesPer10s = frames.get() * per10s;
         report("idle.fx_alloc_mb_per_10s", (fxAllocated() - alloc0) / 1048576.0 * per10s, Double.NaN);
         report("idle.frames_per_10s", framesPer10s, IDLE_FRAMES_PER_10S);
+        report("idle.rendered_frames_per_10s", rendered.get() * per10s, Double.NaN);
         // Pulses are reported, not budgeted: RichTextFX's caret blink keeps a focused CodeArea pulsing at the
         // display rate (a bare one does ~62 a second), so extra work would not show as extra pulses. Frames do.
         report("idle.pulses_per_10s", pulses.get() * per10s, Double.NaN);
-        assertWithin("frames an idle editor renders in 10 s", framesPer10s, IDLE_FRAMES_PER_10S);
+        assertWithin("frames with a scene change an idle editor draws in 10 s", framesPer10s, IDLE_FRAMES_PER_10S);
     }
 
     // ---------------------------------------------------------------- tabs
@@ -260,6 +270,43 @@ class PerfBudgetFxTest {
             assertTrue(after < 3, "a hidden window still costs the FX thread " + after + " MB in 30 pulses");
         } finally {
             FxTestSupport.runOnFx(() -> other[0].hide());
+        }
+    }
+
+    /**
+     * The frame budgets count pulses with a scene change, not rendered frames ({@link #changedFrameCounter}). That
+     * count must still see real work: none while nothing changes, one per pulse while something changes every pulse.
+     */
+    @Test
+    void theFrameCountSeesEveryChangeAndNothingElse() throws Exception {
+        Stage[] stage = new Stage[1];
+        javafx.scene.shape.Rectangle[] box = new javafx.scene.shape.Rectangle[1];
+        FxTestSupport.runOnFx(() -> {
+            box[0] = new javafx.scene.shape.Rectangle(20, 20);
+            stage[0] = new Stage();
+            stage[0].setScene(new Scene(new StackPane(box[0]), 200, 100));
+            stage[0].show();
+        });
+        try {
+            OnFx.pulses(10);
+            AtomicInteger changes = changedFrameCounter(stage[0].getScene());
+            OnFx.pulses(30);
+            assertEquals(0, changes.get(), "an untouched scene has no change to draw");
+
+            javafx.animation.AnimationTimer grow = new javafx.animation.AnimationTimer() {
+                @Override
+                public void handle(long now) {
+                    box[0].setWidth(box[0].getWidth() % 100 + 1);
+                }
+            };
+            FxTestSupport.runOnFx(grow::start);
+            int before = changes.get();
+            OnFx.pulses(30);
+            FxTestSupport.runOnFx(grow::stop);
+            int counted = changes.get() - before;
+            assertTrue(counted >= 28, "a scene changed on every pulse has a change to draw in each: " + counted);
+        } finally {
+            FxTestSupport.runOnFx(() -> stage[0].hide());
         }
     }
 
@@ -429,6 +476,52 @@ class PerfBudgetFxTest {
     private AtomicInteger pulseCounter() throws Exception {
         AtomicInteger n = new AtomicInteger();
         FxTestSupport.runOnFx(() -> tabPane().getScene().addPostLayoutPulseListener(n::incrementAndGet));
+        return n;
+    }
+
+    /**
+     * Pulses that hand the render thread a change to draw: the scene has dirty nodes, or dirty bits of its own, once
+     * layout is done. That is the work Editora asks for, and what the frame budgets count.
+     *
+     * <p>Not the frames JavaFX rendered ({@link #frameCounter}). On a slow macOS runner (an Apple M1 virtual machine,
+     * three cores) JavaFX also renders frames with nothing in them changed. A trace of the dirty nodes in every pulse
+     * of the typing window found about 700 pulses after the keys' own with nothing dirty. The rendered count still
+     * came out 0.25–0.4 a key higher than on a quick runner, which rendered 1.05 a key on the same commit. A budget on
+     * rendered frames failed or passed by runner. Changed frames measured 1.045–1.080 on both.
+     *
+     * <p>A scene whose dirty list overflowed drops it ({@code dirtyNodes == null}) and synchronizes the whole tree, so
+     * that counts as a change too. By reflection: the fields are private, and the tests run on the classpath.
+     */
+    private AtomicInteger changedFrameCounter() throws Exception {
+        return changedFrameCounter(FxTestSupport.callOnFx(() -> tabPane().getScene()));
+    }
+
+    private static AtomicInteger changedFrameCounter(Scene scene) throws Exception {
+        AtomicInteger n = new AtomicInteger();
+        FxTestSupport.runOnFx(() -> {
+            try {
+                java.lang.reflect.Field nodes = Scene.class.getDeclaredField("dirtyNodes");
+                java.lang.reflect.Field size = Scene.class.getDeclaredField("dirtyNodesSize");
+                java.lang.reflect.Field bits = Scene.class.getDeclaredField("dirtyBits");
+                nodes.setAccessible(true);
+                size.setAccessible(true);
+                bits.setAccessible(true);
+                scene.addPostLayoutPulseListener(() -> {
+                    try {
+                        boolean changed = nodes.get(scene) == null
+                                || size.getInt(scene) > 0
+                                || !((java.util.Set<?>) bits.get(scene)).isEmpty();
+                        if (changed) {
+                            n.incrementAndGet();
+                        }
+                    } catch (IllegalAccessException e) {
+                        throw new IllegalStateException(e);
+                    }
+                });
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException("cannot read the scene's dirty state on this JavaFX", e);
+            }
+        });
         return n;
     }
 

@@ -1017,13 +1017,17 @@ runs it after its own classes (`ShardTests.java alone`). What a JVM ran before c
 window copies its pixels each frame through `ByteBuffer.asIntBuffer()`, one view object per pixel, which the JIT
 removes only while `HeapByteBuffer.asIntBuffer`'s byte-order branch has seen one byte order. A test before it that used
 the other one (AWT through a math image, JDI) left 34 MB a frame: 41 MB a keystroke against a 2.7 MB budget, with no
-change to Editora. It asserts **counts**, which hold on any machine, never times:
+change to Editora. It asserts **counts**, which hold on any machine, never times. The frame counts are frames
+*with a scene change*: pulses whose scene still has dirty nodes or dirty bits after layout. They are not the frames
+JavaFX rendered: on a slow macOS runner JavaFX also re-renders frames with nothing changed, and those made the same
+commit measure 1.05 or 1.24–1.45 rendered frames a key, by runner. Rendered frames are still printed, unbudgeted,
+as `typing.rendered_frames_per_key` and `idle.rendered_frames_per_10s`:
 
 | Budget | What it catches |
 | --- | --- |
-| rendered frames per keystroke (2,000-line Java file, paced typing) | a listener that dirties the scene again, chained frames |
+| frames with a scene change per keystroke (2,000-line Java file, paced typing) | a listener that dirties the scene again, chained frames |
 | KB the FX thread allocates per keystroke | per-key work: a rescan, a copy of the text, a new overlay |
-| frames an idle, focused editor renders in 10 s | a timer or animation that repaints with nothing happening |
+| frames with a scene change an idle, focused editor draws in 10 s | a timer or animation that repaints with nothing happening |
 | live heap and scene nodes per open tab | per-tab memory and scene-graph growth |
 | `EditorBuffer`s reachable, and pulse receivers registered, after closing every tab | leaks: a listener, a static cache, an `AnimationTimer` left running |
 
