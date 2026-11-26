@@ -111,7 +111,6 @@ without the website next to it, opens the website for both.
 
 - **[Commands](/commands)**: every command, grouped by area.
 - **[Keybindings](/keybindings)**: the default Emacs keymap and the four others.
-- **[Roadmap](/roadmap)**: what's shipped and what's planned.
 
 Editora is built in the open. The source, issues, and changelog live on
 [GitHub](https://github.com/adriandeleon/Editora).
