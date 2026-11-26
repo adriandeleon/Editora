@@ -121,7 +121,8 @@ distributions:
       # would replace Microsoft's own, and the pull request would carry it.
       extraProperties:
         skipLicenseFile: true
-      # A fork of microsoft/winget-pkgs under this account; the pull request is opened from it.
+      # A fork of microsoft/winget-pkgs under this account. JReleaser only pushes the manifests to the
+      # branch below; release.yml's "Open the winget pull request" step opens the pull request from it.
       repository:
         active: RELEASE
         owner: adriandeleon
