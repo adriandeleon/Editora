@@ -36,6 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The column ruler no longer flashes black when a tab is first shown.** Its line was drawn once in the default
+  black before the theme colour reached it (each tab, the first time you switched to it).
+
 - **F5 in an Elixir project that has not been compiled yet no longer fails after 30 s.** ElixirLS compiles the project
   and its dependencies before it starts the program, and Editora gave up waiting with "The debugger did not answer
   within 30 s." — on a fresh Phoenix app, every first F5. It now waits up to 10 minutes while the compiler's output
