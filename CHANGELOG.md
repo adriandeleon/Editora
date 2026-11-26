@@ -36,6 +36,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Maximizing the window no longer blows up the tool windows.** A docked tool window (Project, Structure, the
+  bottom consoles) keeps its size when the main window grows or shrinks, and the editor takes the difference; before,
+  the panel scaled with the window, so maximizing on a wide screen turned a narrow Project tree into a third of it.
+  Sizes are remembered in pixels, so a window that starts maximized opens its panels at the size you left them.
 - **F5 in an Elixir project that has not been compiled yet no longer fails after 30 s.** ElixirLS compiles the project
   and its dependencies before it starts the program, and Editora gave up waiting with "The debugger did not answer
   within 30 s." — on a fresh Phoenix app, every first F5. It now waits up to 10 minutes while the compiler's output

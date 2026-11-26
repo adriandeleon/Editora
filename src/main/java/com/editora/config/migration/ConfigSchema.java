@@ -554,7 +554,10 @@ public enum ConfigSchema {
                     // v35→36: + debugBrowserUrls (additive; absent means no page debugged before)
                     Map.entry(35, ConfigMigrations::identity),
                     // v36→37: + logViews (additive; absent means every file opens as its name decides, unfiltered)
-                    Map.entry(36, ConfigMigrations::identity))),
+                    Map.entry(36, ConfigMigrations::identity),
+                    // v37→38: + toolWindowPixelSizes (additive; absent means each window reopens at its
+                    // remembered fraction, as before)
+                    Map.entry(37, ConfigMigrations::identity))),
     // v1 → v2: Bookmark gained `mnemonic` (additive; absent ⇒ none). The bump is what makes an older build
     // set the file aside rather than rewrite it without the field.
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity)),
