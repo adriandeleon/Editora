@@ -1,17 +1,54 @@
 ---
 title: "Go"
-description: "Debugging Go with Delve: goroutines, tests and core dumps."
+description: "gopls, running Go programs and tests, and debugging Go with Delve: goroutines, tests and core dumps."
 category: Languages
-order: 11
+order: 6
 ---
 
-Go gets code intelligence from `gopls` (see [language servers](/docs/lsp#servers-are-auto-detected-never-bundled)) and debugs with Delve.
+Go gets code intelligence from `gopls`, runs and tests with the `go` command,
+and debugs with Delve.
+
+## Language server
+
+Go's language server is `gopls`. Editora finds it on the PATH or installs it
+for you; see [language servers](/docs/lsp#servers-are-auto-detected-never-bundled).
+
+## Running
+
+**Run File** (`file.run`, `C-c r` in the Emacs keymap) runs a Go file that has
+`package main` and a `func main()`. Editora saves the file, and the module's
+other edited Go files, then builds the program with `go build` into its cache
+folder and runs it in the file's folder:
+
+- A file of a module (a `go.mod` in its folder or above) builds its
+  **package**, as `go run .` does.
+- A file outside any module is built alone, as `go run file.go` does.
+
+The build command and the program's output stream into the **Run** window.
+**File: Run with Arguments…** (`file.runWithArgs`) asks for the program's
+arguments; they are kept for that file and used by every later Run File.
+**Rerun Last** builds and runs it again. Go builds don't ask you to
+[trust the folder](/docs/workspace#trusted-folders). A file on a
+[remote host](/docs/remote) doesn't run.
+
+## Tests
+
+In a `_test.go` file, **Run Test at Caret** (`test.runAtCaret`) builds the
+package's test binary (`go test -c`) and runs the test function the caret is
+in (`-test.run ^Name$ -test.v`), or every test of the package when the caret
+is outside a test function. Its output goes to the Run window. Run File on a
+`_test.go` file runs the package's tests.
+
+**Run Tests** (`test.run`) in a Go module runs `go test -json ./...` and fills
+the [Test Results](/docs/build-tools#test-runner) window, where failed tests
+can be run again. Debugging a test is described under [Debugging](#debugging).
 
 ## Debugging
 
 Go is debugged with [Delve](https://github.com/go-delve/delve), the debugger
 VS Code's Go extension uses. Debug a Go file with **Debug: Start / Continue**
-(`debug.start`, F5 in the VS Code, CUA and Sublime Text keymaps), or with
+(`debug.start`: `C-c C-d d` in the Emacs keymap, F5 in the VS Code, CUA and
+Sublime Text keymaps), or with
 **Debug File** in the editor's right-click menu:
 
 - A file of a module (a `go.mod` in its folder or above) debugs its
@@ -72,6 +109,8 @@ the goroutine the program stopped on.
 **Hide runtime goroutines** (on), **pprof labels in names** (`*` for every
 label, or the keys to show, such as `job, region`; empty shows none, from the
 next session on) and **Goroutine filter**.
+
+## Installing Delve
 
 Delve isn't bundled. Editora finds `dlv` as set on the **Go (Delve)** card of
 **Settings → Debugging**, else on the PATH, else where `go install` puts it

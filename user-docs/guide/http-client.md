@@ -2,7 +2,7 @@
 title: HTTP client
 description: Send HTTP requests from .http and .rest files, with environments, variables, and request chaining.
 category: Run & debug
-order: 2
+order: 4
 ---
 
 Open a `.http` or `.rest` file and click the green ▶ next to a request to send
@@ -362,7 +362,7 @@ sends the request.
 
 **HTTP: Debug Request at Caret** (`http.debugRequest`) sends the request at the
 caret with its pre-request scripts and response handlers under the
-[JavaScript debugger](/docs/debugging). It is also **Debug Request** in
+[JavaScript debugger](/docs/javascript-typescript#debugging). It is also **Debug Request** in
 a `.http` file's right-click menu, and what Debug does in a `.http` file. A
 script stops at its breakpoints with the call stack, variables, watches and
 stepping of any JavaScript session. When you continue, the request goes on.
@@ -440,16 +440,21 @@ model is on.
 
 ## Running and the response
 
-| Action | Command | Default key |
-| --- | --- | --- |
-| Run the request at the caret | `http.runRequest` | `C-c C-c` (or the gutter ▶) |
-| Run every request in the file | `http.runFile` | `C-c C-r` |
-| Cancel the running request | `http.cancelRequest` | `C-c C-k` |
-| Select environment | `http.selectEnvironment` | (palette, Env pill or status bar) |
-| Show or hide the results after request lines | `http.toggleInlineResults` | (palette) |
-| Copy the request as a curl command | `http.copyAsCurl` | (Copy as cURL icon) |
-| Turn a curl command on the clipboard into a request | `http.importCurl` | (palette) |
-| Open the response body in its own tab | `http.openResponseInTab` | (Open in tab icon) |
+| Action | Command | Emacs key | Other keymaps |
+| --- | --- | --- | --- |
+| Run the request at the caret | `http.runRequest` | `C-c C-c` (or the gutter ▶) | CUA, Sublime Text, VS Code, IntelliJ: Ctrl+Alt+R |
+| Run every request in the file | `http.runFile` | `C-c C-r` | CUA, Sublime Text, VS Code, IntelliJ: Ctrl+Alt+Shift+Enter |
+| Cancel the running request | `http.cancelRequest` | `C-c C-k` | CUA, Sublime Text, VS Code, IntelliJ: Ctrl+Alt+K |
+| Select environment | `http.selectEnvironment` | (palette, Env pill or status bar) | — |
+| Show or hide the results after request lines | `http.toggleInlineResults` | (palette) | — |
+| Copy the request as a curl command | `http.copyAsCurl` | (Copy as cURL icon) | — |
+| Turn a curl command on the clipboard into a request | `http.importCurl` | (palette) | — |
+| Open the response body in its own tab | `http.openResponseInTab` | (Open in tab icon) | — |
+
+The **Emacs key** column is the default Emacs keymap; **Other keymaps** gives
+the chords the CUA, Sublime Text, VS Code and IntelliJ IDEA keymaps bind (— where
+none does). On macOS those mostly use ⌘ for Ctrl; the
+[keybindings reference](/keybindings) lists every keymap.
 
 ![An .http file with a GET request and its response handler, and the response pane beside it: a Run button, a 200 OK status pill, the response picker, Body, Headers, Request and Notes tabs, and the formatted JSON body](/screenshots/docs/http-response.png "Running a request: the response opens beside the file.")
 
@@ -641,3 +646,11 @@ history".
 
 Cookies last for one run: Run All shares them between its requests, and a
 request run on its own starts without any.
+
+## From the command line
+
+`editora http api.http` runs a file's requests without a window, as Run All
+does, and prints each response and test result, for CI and scripts. Its
+options choose the environment, set variables, and write a JUnit XML report;
+it exits with 1 when a request or a test fails. See
+[Running .http files](/docs/cli#running-http-files).

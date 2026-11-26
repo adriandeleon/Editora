@@ -11,9 +11,10 @@ particular to one language is on its page under **Languages** in the sidebar.
 
 ## Running files
 
-You can run single-file Java programs, Python scripts, Node.js scripts, shell scripts,
-Groovy scripts, Kotlin files, Clojure files, Scala files and PHP files with
-[language services](/docs/lsp) disabled. A green ▶ appears in the gutter of a
+You can run single-file Java programs, Python, Node.js, Deno and shell
+scripts, Groovy, Kotlin, Clojure, Scala, PHP, Ruby, Elixir, PowerShell and Dart
+files, and C, C++, Go and Rust programs, even with
+[language services](/docs/lsp) off. A green ▶ appears in the gutter of a
 runnable file:
 
 - a **Java compact source file** (JEP 512, a `.java` with a top-level
@@ -32,7 +33,10 @@ runnable file:
   [Python scripts](/docs/python#running-scripts)),
 - a **JavaScript or TypeScript** file (`.js`, `.mjs`, `.cjs`, `.ts`, `.mts`,
   `.cts`) or a script whose shebang names `node` (see
-  [Node.js scripts](/docs/javascript-typescript#running-nodejs-scripts)), or
+  [Node.js scripts](/docs/javascript-typescript#running-nodejs-scripts)). In a
+  **Deno** project (the nearest folder above the file with a `deno.json` or
+  `deno.jsonc`), the file runs with `deno run --allow-all` from that folder,
+  and a test file with `deno test`,
 - a **shell** script: `.sh`, `.bash`, `.zsh`, `.ksh` and the other shell
   types, or a file whose shebang names a shell (see
   [Shell scripts](/docs/shell#running-scripts)). Startup files that a shell reads rather
@@ -55,6 +59,24 @@ runnable file:
 - a **PHP** script with code of its own, a web app's `index.php`, Laravel's
   `artisan` (the ▶ on the first line), or a PHPUnit test file (the ▶ on its
   class). A file of classes alone gets none. See [PHP files](/docs/php#running-php-files).
+- a **Ruby** script, an RSpec or Minitest file, or a Rails app's entry,
+  such as `config.ru`. A file of classes, modules and methods alone gets none.
+  See [Ruby files](/docs/ruby#running-ruby-files).
+- an **Elixir** test file (`…_test.exs`, the ▶ on its `defmodule`) or script
+  (`.exs`, the ▶ on its first line): `mix test` or `mix run` in a Mix project,
+  `elixir file` outside one. A module (`.ex`) gets no ▶. See
+  [Elixir](/docs/elixir#running).
+- a **PowerShell** script (`.ps1`), the ▶ on its first line, run with `pwsh`.
+  A module (`.psm1`) or data file (`.psd1`) gets none. See
+  [PowerShell](/docs/powershell#running).
+- a **C, C++, Go or Rust** program: a lone C or C++ file, or one of a CMake or
+  Make project, with a `main`; a Go file of `package main` (or a Go test file);
+  a Rust file of a Cargo package with a `main`. Run File builds it as
+  [Debug File](/docs/debugging#start-debugging) does (`cc -g -O0` for a lone C file, the
+  project's own build otherwise) and runs the program in the Run console, with
+  its output and exit code.
+- a **Dart** file with a top-level `main`, run with `dart run`, or with
+  `flutter run` in a Flutter app. See [Dart](/docs/dart#running).
 
 Click the ▶, use the right-click *Run File*, or bind `file.run` (`C-c r`). Output
 streams to the **Run** tool window (`M-9`), which accepts **stdin** so
@@ -135,17 +157,22 @@ and `\\` are escapes; a backslash before any other character stays, so a
 Windows path such as `C:\tools\x.exe` is kept as typed. An unclosed quote
 stops the run with a message instead of joining the rest of the line into one
 argument. `$NAME` in an argument is passed as written.
-Running a Java file needs JDK 25 or newer. Editora uses the selected Default JDK
-when one is configured, or `java` on your `PATH`, and checks that exact launcher
-before running. An extensionless shebang can request a newer source release.
+A Java compact source file needs JDK 25 or newer; a single-file program needs
+the JDK named above. Editora checks the exact launcher it picked before
+running, and an extensionless shebang can request a newer source release. The
+JDK is the project's own when it names one (in `.editora/settings.json`, a
+`jkit.toml`, `.sdkmanrc`, `.tool-versions` or `.java-version`; see
+[The project's JDK](/docs/build-tools#the-projects-jdk-maven-gradle-sbt-and-graalvm)),
+else the Default JDK below, else the `java` on your `PATH`.
 
 For Maven projects, **Settings → Build Tools → Default JDK** selects the toolchain used by Run, Debug, Maven classpath resolution,
 Maven tasks, and before-launch steps. Installed JDKs are discovered from the
 usual platform locations and common version managers. A run configuration's
 **JDK** field can inherit that choice or override it for one configuration. The
 Default JDK also applies to standalone Java Run and Debug. A Java file or folder
-without Maven or Gradle runs on the Default JDK, else on the `java` on your
-`PATH`, and the Java language server builds it for that same JDK. A changed
+without Maven or Gradle runs on the project's JDK or the Default JDK, else on
+the `java` on your `PATH`, and the Java language server builds it for that same
+JDK. A changed
 Default JDK reaches a running language server at once, with no restart.
 
 ### Run with Trace
@@ -277,11 +304,21 @@ the tool on your `PATH`. The Maven compile builds from the reactor root with
 carries the Maven window's checked profiles and flags, as the fallback does.
 A failed build aborts the launch, so a fresh clone does
 not stop with `ClassNotFoundException` and an edited file never runs the
-previous binary. **Settings → Build Tools → Build before Run and Debug** (on)
-turns it off; a run configuration with its own
+previous binary. To skip this build, turn off **Build before Run and Debug**
+in **Settings → Build Tools** (it is on by default); a run configuration with its own
 [before-launch step](#a-step-before-the-launch) keeps that step and is not
 built twice. A launch that ran without the build prints a hint to build when
 the JVM cannot find the main class.
+
+## Running tests
+
+A test file has a ▶ beside each test it holds, in the languages whose tests
+Editora runs. **Run Test at Caret** (`test.runAtCaret`) runs the test the caret
+is in, **Debug Test at Caret** (`test.debugAtCaret`) debugs it, and
+**Run Tests** (`test.run`) runs the build tool's test task. The results fill
+the [Test Results](/docs/build-tools#test-runner) window, with a row per test
+to rerun, debug or open. Each language's page under **Languages** says which
+test frameworks it runs.
 
 ## Run configurations
 
@@ -351,13 +388,14 @@ Pick a **Type** in the project's **Run Configurations** window:
 | C program / C++ program | a C or C++ file, built the way Debug builds it: its CMake or Make project, or the file alone with `cc` or `c++` |
 | Go program | a Go file's package (or the file alone outside a module); a test file runs all its tests |
 | Rust program (Cargo) | a Rust file's Cargo package; a test file runs all its tests |
+| Dart program (dart or flutter) | a Dart file with `dart run`, or with `flutter run` in a Flutter app, as [Run File](/docs/dart#running) runs it |
 | Make target | a target in a makefile |
 | npm script | a named `package.json` script, run with the project's package manager |
 
-A C, C++, Go or Rust configuration names a source file and builds it the way
-Debug does, then Run starts the program in the Run console (or a Terminal tab)
-and Debug starts it under CodeLLDB (GDB when that is the C and C++ debugger) or
-Delve. Both use the configuration's arguments, environment variables, working
+A C, C++, Go, Rust or Dart configuration names a source file and builds it the
+way Debug does, then Run starts the program in the Run console (or a Terminal
+tab) and Debug starts it under CodeLLDB (GDB when that is the C and C++
+debugger), Delve or the Dart SDK's debugger. Both use the configuration's arguments, environment variables, working
 directory and before-launch step; a blank working directory is the folder Debug
 uses for the file. These configurations build and run on this computer only,
 not on a remote host, in a container or on a deployment, and Run on a Go file
@@ -414,7 +452,9 @@ module configuration takes the module name in Script / target, the part after
 `python -m` (for example app.main).
 
 Script and make configurations need **no language server**.
-Java, Groovy, Kotlin, Clojure, Scala, Node.js script and npm script configurations can be debugged. A Node.js
+Every type but shell script and Make target can be debugged: Java, Python
+script and module, Node.js script, npm script, Groovy, Kotlin, Clojure, Scala,
+C, C++, Go, Rust and Dart. A Node.js
 or npm configuration is debugged the way Run starts it, with the same Node.js,
 package manager, folder and environment (see
 [Debugging JavaScript and TypeScript](/docs/javascript-typescript#debugging)).
@@ -531,7 +571,7 @@ JSON, one object per configuration:
 ```
 
 `type` is `java`, `python`, `python-module`, `shell`, `make`, `npm`, `node`,
-`groovy`, `kotlin`, `scala` or `clojure`. A field left out is blank, and a
+`groovy`, `kotlin`, `scala`, `clojure`, `c`, `cpp`, `go`, `rust` or `dart`. A field left out is blank, and a
 blank field means the default described above. Relative paths in `target` and
 `workingDir` are relative to the project root.
 

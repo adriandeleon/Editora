@@ -1,6 +1,6 @@
 ---
 title: Language servers (LSP)
-description: Go to definition, code actions, Java refactorings, rename, signature help, inlay hints, code lenses, hierarchy, diagnostics, and completion from 26 language servers.
+description: Go to definition, code actions, Java refactorings, rename, signature help, inlay hints, code lenses, hierarchy, diagnostics, and completion from 29 language servers.
 category: Code intelligence
 order: 2
 ---
@@ -13,29 +13,40 @@ folder you have not trusted, servers that would run the project's build wait
 The master switch is **Enable LSP (language servers)** in **Settings → LSP**.
 
 This page covers what every server offers. What is particular to one language
-(its server's settings, extra refactorings, project setup) is on that
-language's page: [Java](/docs/java), [Python](/docs/python),
-[JavaScript & TypeScript](/docs/javascript-typescript),
+(its server's settings, extra refactorings, project setup, running and
+debugging) is on that language's page: [Java](/docs/java),
+[Python](/docs/python), [JavaScript & TypeScript](/docs/javascript-typescript),
 [HTML, CSS & JSON](/docs/html-css-json), [XML & pom.xml](/docs/xml),
 [Shell & Bash](/docs/shell), [Kotlin](/docs/kotlin), [Groovy](/docs/groovy),
-[Scala](/docs/scala) and [Clojure](/docs/clojure).
+[Scala](/docs/scala), [Clojure](/docs/clojure), [Go](/docs/go),
+[Rust](/docs/rust), [C & C++](/docs/c-cpp), [C#](/docs/csharp),
+[Ruby](/docs/ruby), [PHP](/docs/php), [Elixir](/docs/elixir),
+[PowerShell](/docs/powershell), [Dart](/docs/dart), [Lua](/docs/lua) and
+[Typst](/docs/typst#language-server). Languages whose server needs nothing
+particular (YAML, TOML, Dockerfile, SQL, Terraform and Astro) are described
+under [Servers without a page of their own](#servers-without-a-page-of-their-own).
 
 ## Navigation
 
-| Feature | Command | Default key |
-| --- | --- | --- |
-| Go to definition | `lsp.gotoDefinition` | `M-.` |
-| Peek definition | `lsp.peekDefinition` | (palette) |
-| Go to definition in a split | `lsp.gotoDefinitionInSplit` | (palette) |
-| Go to implementation | `lsp.gotoImplementation` | `C-c l i` |
-| Go to type definition | `lsp.gotoTypeDefinition` | `C-c l d` |
-| Go to declaration | `lsp.gotoDeclaration` | (palette) |
-| Find references | `lsp.findReferences` | `M-S-/` |
-| Go to Symbol in Workspace | `lsp.gotoSymbol` | `M-g s` |
-| Call hierarchy | `lsp.callHierarchy` | `C-c l c` |
-| Type hierarchy | `lsp.typeHierarchy` | `C-c l h` |
-| Next / previous problem | `lsp.nextProblem`, `lsp.previousProblem` | `M-g M-n`, `M-g M-p` |
-| Show problem at caret | `lsp.problemAtCaret` | `C-c l e` |
+| Feature | Command | Emacs key | Other keymaps |
+| --- | --- | --- | --- |
+| Go to definition | `lsp.gotoDefinition` | `M-.` | CUA, Sublime Text, VS Code: F12; IntelliJ: Ctrl+B |
+| Peek definition | `lsp.peekDefinition` | (palette) | VS Code: Alt+F12; IntelliJ: Ctrl+Shift+I |
+| Go to definition in a split | `lsp.gotoDefinitionInSplit` | (palette) | — |
+| Go to implementation | `lsp.gotoImplementation` | `C-c l i` | VS Code: Ctrl+F12; IntelliJ: Ctrl+Alt+B |
+| Go to type definition | `lsp.gotoTypeDefinition` | `C-c l d` | IntelliJ: Ctrl+Shift+B |
+| Go to declaration | `lsp.gotoDeclaration` | (palette) | — |
+| Find references | `lsp.findReferences` | `M-S-/` | CUA, VS Code: Shift+F12; IntelliJ: Alt+F7 |
+| Go to Symbol in Workspace | `lsp.gotoSymbol` | `M-g s` | Sublime Text: Ctrl+Shift+R; VS Code: Ctrl+T; IntelliJ: Ctrl+N |
+| Call hierarchy | `lsp.callHierarchy` | `C-c l c` | IntelliJ: Ctrl+Alt+H |
+| Type hierarchy | `lsp.typeHierarchy` | `C-c l h` | IntelliJ: Ctrl+H |
+| Next / previous problem | `lsp.nextProblem`, `lsp.previousProblem` | `M-g M-n`, `M-g M-p` | CUA, Sublime Text, VS Code: F8; IntelliJ: F2 |
+| Show problem at caret | `lsp.problemAtCaret` | `C-c l e` | IntelliJ: Ctrl+F1 |
+
+The **Emacs key** column is the default Emacs keymap; **Other keymaps** gives
+the chords the CUA, Sublime Text, VS Code and IntelliJ IDEA keymaps bind (— where
+none does). On macOS those mostly use ⌘ for Ctrl; the
+[keybindings reference](/keybindings) lists every keymap.
 
 ![Shelf.java with the caret on discountFor and the References tool window below: 2 references to discountFor in 2 files, one in Shelf.java at 48:41 with its line, and one in ShelfTest.java](/screenshots/docs/lsp-references.png "Find references in a Java project, grouped by file.")
 
@@ -130,12 +141,12 @@ bind them to F8 and Shift+F8, like VS Code.
 
 ## Reading the code
 
-| Feature | Command | Default key |
-| --- | --- | --- |
-| Hover docs | `lsp.hover` | `C-c h` |
-| Signature help | `lsp.signatureHelp` | `C-c l s` (also automatic) |
-| Toggle inlay hints | `view.toggleInlayHints` | (palette) |
-| Toggle code lenses | `view.toggleCodeLens` | (palette) |
+| Feature | Command | Emacs key | Other keymaps |
+| --- | --- | --- | --- |
+| Hover docs | `lsp.hover` | `C-c h` | VS Code: Ctrl+K Ctrl+I; IntelliJ: Ctrl+Q |
+| Signature help | `lsp.signatureHelp` | `C-c l s` (also automatic) | VS Code: Ctrl+Shift+Space; IntelliJ: Ctrl+P |
+| Toggle inlay hints | `view.toggleInlayHints` | (palette) | — |
+| Toggle code lenses | `view.toggleCodeLens` | (palette) | — |
 
 **Hover docs** open in a popup at the caret. Long documentation, such as the
 man page bash-language-server shows for a command like `ls`, scrolls inside a
@@ -311,22 +322,22 @@ scope.
 
 ## Changing the code
 
-| Feature | Command | Default key |
-| --- | --- | --- |
-| Code actions / quick fixes | `lsp.codeActions` | `C-c l a` |
-| Generate (Java) | `lsp.generate` | `C-c l g` |
-| Refactor This (Java) | `lsp.refactorThis` | `C-c l t` |
-| Undo Last Refactoring | `lsp.undoRefactoring` | `C-c l u` |
-| Rename symbol | `lsp.rename` | `C-c l r` |
-| Format Document (or the selection) | `lsp.formatDocument` | `C-c l f` |
-| Organize imports | `lsp.organizeImports` | `C-c l o` |
-| Clean Up File (Java) | `lsp.cleanUp` | (palette) |
-| Smart Type completion (Java) | `lsp.smartTypeCompletion` | (palette) |
-| Copy fully qualified name | `lsp.copyQualifiedName` | (palette) |
-| Reload project configuration | `lsp.reloadProject` | (palette) |
-| Re-indent as you type | `view.toggleOnTypeFormatting` | (palette) |
-| Add imports for pasted Java | `view.togglePasteImports` | (palette) |
-| Smart semicolon placement | `view.toggleSmartSemicolon` | (palette) |
+| Feature | Command | Emacs key | Other keymaps |
+| --- | --- | --- | --- |
+| Code actions / quick fixes | `lsp.codeActions` | `C-c l a` | CUA, Sublime Text, VS Code, IntelliJ: Ctrl+. |
+| Generate (Java) | `lsp.generate` | `C-c l g` | IntelliJ: Alt+Insert |
+| Refactor This (Java) | `lsp.refactorThis` | `C-c l t` | IntelliJ: Ctrl+Alt+Shift+T |
+| Undo Last Refactoring | `lsp.undoRefactoring` | `C-c l u` | — |
+| Rename symbol | `lsp.rename` | `C-c l r` | CUA, Sublime Text, VS Code: F2; IntelliJ: Shift+F6 |
+| Format Document (or the selection) | `lsp.formatDocument` | `C-c l f` | CUA, Sublime Text, VS Code: Alt+Shift+F; IntelliJ: Ctrl+Alt+L |
+| Organize imports | `lsp.organizeImports` | `C-c l o` | VS Code: Alt+Shift+O; IntelliJ: Ctrl+Alt+O |
+| Clean Up File (Java) | `lsp.cleanUp` | (palette) | — |
+| Smart Type completion (Java) | `lsp.smartTypeCompletion` | (palette) | IntelliJ: Ctrl+Shift+Space |
+| Copy fully qualified name | `lsp.copyQualifiedName` | (palette) | IntelliJ: Ctrl+Alt+Shift+C |
+| Reload project configuration | `lsp.reloadProject` | (palette) | — |
+| Re-indent as you type | `view.toggleOnTypeFormatting` | (palette) | — |
+| Add imports for pasted Java | `view.togglePasteImports` | (palette) | — |
+| Smart semicolon placement | `view.toggleSmartSemicolon` | (palette) | — |
 
 **Code actions** ask the server what it can do at the caret or selection: quick
 fixes for the diagnostics there, assists, and extract and inline refactorings.
@@ -340,8 +351,9 @@ only on the squiggle. Typing narrows the list to titles containing what you type
 edits
 arrive back over `workspace/applyEdit`. An edit to the open file is one undo
 step; one that changes other files is applied and saved as one
-[refactoring](/docs/java#java-refactorings-that-ask-a-question), undone together. `Ctrl-.` / `Cmd-.` is bound in the VS Code, Sublime and IntelliJ keymaps;
-the command is in the palette and the right-click menu in every keymap.
+[refactoring](/docs/java#java-refactorings-that-ask-a-question), undone together. `Ctrl-.` / `Cmd-.` is bound in the VS Code, CUA, Sublime and IntelliJ
+keymaps, and `C-c l a` in the Emacs keymap; the command is in the palette and
+the right-click menu in every keymap.
 
 **Organize Imports** works the way the file's server does it: jdtls's own
 request, Pyright's organize-imports command, or the server's organize-imports
@@ -434,8 +446,8 @@ up front when something cannot be renamed. Renaming a public Java class also
 **moves its `.java` file**, and the tab, session state and language server all
 follow to the new path. Renaming a `.java` file or a package folder in the
 **Project** tree renames the class or package too, so references, `package`
-lines and imports follow. `F2` is bound in the VS Code and Sublime keymaps, and
-`Shift+F6` in the IntelliJ keymap.
+lines and imports follow. `F2` is bound in the VS Code, CUA and Sublime
+keymaps, `Shift+F6` in the IntelliJ keymap, and `C-c l r` in the Emacs keymap.
 
 ![The Rename Symbol prompt over Shelf.java: a New name field pre-filled with discountFor, the symbol under the caret, with Cancel and OK buttons](/screenshots/docs/lsp-rename.png "Rename symbol: the prompt comes pre-filled, and the server has already checked the spot.")
 
@@ -449,7 +461,7 @@ straight away, because the result is on screen and one undo away.
 **Format Document** reformats the whole file through the server when it advertises
 formatting (undoable, palette or right-click menu), including `.json`, `.css` and
 `.html` (for HTML, see [Formatting](/docs/html#formatting) on the HTML page:
-`<pre>` and `<textarea>` are kept as written, and without the server Editora
+`<pre>`, `<code>` and `<textarea>` are kept as written, and without the server Editora
 formats it itself). With a selection it formats only the selected lines. It tells the server the file's own indentation: the `indent_style` and
 `indent_size` from [EditorConfig](/docs/editorconfig) when there are any, else
 what the file already uses, not the global tab size. A two-space script stays
@@ -515,7 +527,7 @@ status bar says so, Doctor shows the server as a warning with the reason, and
 
 Editora doesn't ship language servers. It looks for each one on your `PATH` (a
 Settings field can override the command per server) and uses it if present.
-Twenty-six servers are supported:
+Twenty-nine servers are supported:
 
 - **Java** (`jdtls`), **TypeScript / JavaScript** (`typescript-language-server`),
   **Python** (`pyright-langserver`), **Go** (`gopls`), **Rust**
@@ -523,12 +535,14 @@ Twenty-six servers are supported:
 - **Ruby** (`ruby-lsp`), **PHP** (`phpactor`), **Kotlin**
   (JetBrains' Kotlin LSP, `kotlin-lsp`), **Groovy** (`gls`, from gvy), **Clojure** (`clojure-lsp`),
   **Scala** (Metals), **Lua** (`lua-language-server`), **Elixir** (ElixirLS, `elixir-ls`),
-  **PowerShell** ([PowerShell Editor Services](/docs/powershell#code-intelligence), on `pwsh`)
+  **PowerShell** ([PowerShell Editor Services](/docs/powershell#code-intelligence), on `pwsh`),
+  **Dart** ([Dart's analysis server](/docs/dart#code-intelligence), `dart language-server`)
 - **Astro** (`astro-ls`), **HTML** (`vscode-html-language-server`), **CSS**
   (`vscode-css-language-server`), **JSON** (`vscode-json-language-server`),
-  **YAML**, **XML** (`lemminx`), **Bash** (`bash-language-server`),
-  **Dockerfile**, **SQL** (`sqls`), **Terraform** (`terraform-ls`), **TOML**
-  (`taplo`), **Typst** (`tinymist`)
+  **YAML** (`yaml-language-server`), **XML** (`lemminx`), **Bash**
+  (`bash-language-server`), **Dockerfile** (`docker-langserver`), **SQL**
+  (`sqls`), **Terraform** (`terraform-ls`), **TOML** (`taplo`), **Typst**
+  (`tinymist`)
 
 The HTML, CSS and JSON servers come from one npm package,
 **vscode-langservers-extracted** (the servers taken out of VS Code), so one
@@ -541,7 +555,27 @@ folder gets dependency, plugin and GAV completion from it while every other XML
 file keeps the fast native lemminx; see
 [pom.xml and the Maven server](/docs/xml#pomxml-and-the-maven-server).
 
-Each server has a card on the **Settings → LSP** page: its enable switch, its
+### Servers without a page of their own
+
+These servers need nothing beyond what this page describes. Each has a card in
+**Settings → LSP** with its command, and an **Install…** button:
+
+| Language | Server | Files | Installed with |
+| --- | --- | --- | --- |
+| YAML | `yaml-language-server` | `.yaml`, `.yml` | npm |
+| TOML | `taplo` | `.toml`, such as `Cargo.toml` and `pyproject.toml` | npm |
+| Dockerfile | `docker-langserver` | `Dockerfile` and `Containerfile`, also with a suffix such as `Dockerfile.dev` | npm |
+| SQL | `sqls` | `.sql` | `go install` (needs Go) |
+| Terraform | `terraform-ls` | `.tf`, `.tfvars`, `.hcl` | a downloaded release |
+| Astro | `astro-ls` | `.astro` | npm, with a TypeScript SDK (see [One-click install](#one-click-install)) |
+
+They give what the server offers: diagnostics, completion, hover, the outline
+and, where the server formats, Format Document. The grammars that colour these
+files are listed under [Supported languages](/docs/languages#supported-languages).
+
+**Settings → LSP** shows one language's servers at a time: pick it in
+**Language**. A search in Settings ignores the pick and shows every language
+with a match. Each server has a card there: its enable switch, its
 command field with **Browse…**, and a **Detected** line such as *jdtls: found
 (/usr/bin/jdtls)* or *rust-analyzer: not found*, with an **Install…** button
 while it is missing. A command left blank uses the program on your `PATH`. While
@@ -590,11 +624,13 @@ scripts, Maven build extensions, Rust build scripts and proc macros, a
 | --- | --- |
 | Java (jdtls) | Starts without the Maven or Gradle build. Syntax checks, the JDK's types and navigation within the file still work. |
 | Kotlin | Waits when the folder has a `pom.xml`, `build.gradle(.kts)` or `settings.gradle(.kts)`. |
-| Scala (Metals) | Waits when the folder has a `build.sbt`, `build.sc`, `build.mill` or `project.scala`. |
+| Scala (Metals) | Waits when the folder has a `build.sbt`, `build.sc`, `build.mill`, `build.mill.yaml` or `project.scala`. |
 | Rust (rust-analyzer) | Waits when the folder, or a folder one level down, has a `Cargo.toml`. |
 | Ruby (Ruby LSP) | Waits when the folder has a `Gemfile` or `gems.rb`. |
 | C# (csharp-ls) | Waits when the folder, or a folder up to two levels down, has a solution, a project file or `Directory.Build.props`/`.targets`. |
 | Clojure (clojure-lsp) | Waits when the folder has a `project.clj`, `build.boot` or `shadow-cljs.edn`. A `deps.edn` or `bb.edn` is read as data and does not hold it back. |
+| Dart (analysis server) | Waits when the folder has an `analysis_options.yaml`, which can name analyzer plugins that the server runs. |
+| Elixir (ElixirLS) | Waits when the folder has a `mix.exs`: the server compiles the Mix project, and `mix.exs` is Elixir code. |
 
 A file of one of these languages says so, with **Trust Folder** and **Not
 now**. Trusting the folder (the button, or **Workspace: Trust This Folder**)
@@ -604,8 +640,13 @@ server as usual. Other servers, Pyright among them, are not held back.
 
 ## One-click install
 
-If a server isn't installed, Editora can fetch it for you. **Every server** is
-covered through one of these channels, picked per server:
+If a server isn't installed, Editora can fetch it for you. Every server but
+two is covered through one of the channels below, picked per server. The two
+exceptions come with something you install yourself: **Dart**'s analysis server
+is part of the Dart SDK (and so of Flutter's), and **PowerShell**'s server,
+PowerShell Editor Services, comes from VS Code's PowerShell extension or its
+release zip (see [Installing PSES](/docs/powershell#installing-pses)). The
+channels:
 
 - **npm** packages (Astro, Bash, YAML, Dockerfile, TOML, Python/Pyright),
   needing Node.

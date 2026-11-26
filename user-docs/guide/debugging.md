@@ -2,7 +2,7 @@
 title: Debugging
 description: "Breakpoints, stepping, values, watches, threads and several sessions through the Debug Adapter Protocol, with launch.json, compounds and adapters of your own."
 category: Run & debug
-order: 1.5
+order: 2
 ---
 
 Editora debugs [**Java**](/docs/java#debugging), [**Python**](/docs/python#debugging),
@@ -12,7 +12,8 @@ Editora debugs [**Java**](/docs/java#debugging), [**Python**](/docs/python#debug
 [**Rust**](/docs/rust#debugging), [**C and C++**](/docs/c-cpp#debugging),
 [**C#**](/docs/csharp#debugging), [**Ruby**](/docs/ruby#debugging),
 [**PHP**](/docs/php#debugging), [**Bash**](/docs/shell#debugging),
-[**Elixir**](/docs/elixir#debugging) and [**PowerShell**](/docs/powershell#debugging) through the Debug Adapter Protocol, with an IntelliJ-style Debug tool window (`M-g d`). Debugging
+[**Elixir**](/docs/elixir#debugging), [**PowerShell**](/docs/powershell#debugging),
+[**Dart and Flutter**](/docs/dart#debugging) and [**Lua**](/docs/lua#debugging) through the Debug Adapter Protocol, with an IntelliJ-style Debug tool window (`M-g d`). Debugging
 is **on by default**, and each language's debugger starts once its adapter is
 found ([Installing adapters](#installing-adapters)); the switch is **Enable
 debugging (DAP)** in **Settings → Debugging**. A project's
@@ -29,117 +30,38 @@ script as it runs.
 This page covers what every language shares. Each language's own setup, test
 debugging and quirks are on its page under **Languages** in the sidebar.
 
-| Action | Command | Default key |
-| --- | --- | --- |
-| Start / continue | `debug.start` | `C-c C-d d` |
-| Continue | `debug.continue` | `C-c C-d c` |
-| Pause | `debug.pause` | `C-c C-d p` |
-| Stop | `debug.stop` | `C-c C-d k` |
-| Stop every session ([Several sessions](#several-sessions)) | `debug.stopAll` | (palette) |
-| Restart | `debug.restart` | `C-c C-d r` |
-| Step over | `debug.stepOver` | `C-c C-d n` |
-| Step into | `debug.stepInto` | `C-c C-d i` |
-| Step out | `debug.stepOut` | `C-c C-d o` |
-| Step over / into one machine instruction ([Disassembly](#disassembly-and-memory)) | `debug.stepOverInstruction`, `debug.stepIntoInstruction` | (palette) |
-| Run to cursor | `debug.runToCursor` | `C-c C-d u` |
-| Run to cursor past every breakpoint | `debug.forceRunToCursor` | `C-c C-d S-u` |
-| Jump to line | `debug.jumpToLine` | `C-c C-d j` |
-| Have Step Into go over a frame's code ([Don't step into](#dont-step-into)) | `debug.dontStepIntoFrame` | (palette) |
-| [Step back or reverse continue](#stepping-backward) | `debug.stepBack`, `debug.reverseContinue` | (palette) |
-| Have GDB record the program ([Record Execution](#stepping-backward)) | `debug.toggleRecording` | (palette) |
-| Toggle breakpoint | `debug.toggleBreakpoint` | `C-c C-b` |
-| Toggle temporary breakpoint | `debug.toggleTemporaryBreakpoint` | `C-c C-d 1` |
-| Toggle [recording breakpoint](#recording-breakpoints) | `debug.toggleRecordingBreakpoint` | (palette) |
-| Toggle method breakpoint (Java) | `debug.toggleMethodBreakpoint` | `C-c C-d S-m` |
-| Toggle field watchpoint (Java) | `debug.toggleFieldWatchpoint` | `C-c C-d S-w` |
-| Toggle [lambda breakpoint](#lambda-breakpoints) (Java, JavaScript, TypeScript) | `debug.toggleLambdaBreakpoint` | `C-c C-d S-l` |
-| Edit breakpoint | `debug.editBreakpoint` | `C-c C-d e` |
-| Add a [logpoint](#logpoints) | `debug.addLogpoint` | `C-c C-d g` |
-| Add a [triggered breakpoint](#triggered-breakpoints) that waits for another | `debug.addTriggeredBreakpoint` | (palette) |
-| Put the caret line's breakpoint in a [group](#breakpoint-groups) | `debug.moveBreakpointToGroup` | (palette) |
-| Turn a group's breakpoints on or off | `debug.toggleBreakpointGroup` | (palette) |
-| [Export or import breakpoints](#exporting-and-importing-breakpoints) | `debug.exportBreakpoints`, `debug.importBreakpoints` | (palette) |
-| Choose exception breakpoints | `debug.toggleExceptionBreakpoints` | (palette) |
-| Stop on an exception [of a type you name](#exception-breakpoints-by-type) | `debug.addExceptionBreakpoint` | (palette) |
-| Show the [exception card](#exception-card) again | `debug.showException` | (palette) |
-| Debug the current file on its own, as **Debug File** does | `debug.debugFile` | (palette) |
-| Debug a project main class | `debug.mainClass` | (palette) |
-| Debug the main class the caret is on | `debug.mainClassAtCaret` | (palette) |
-| Debug a saved run configuration | `debug.config` | (palette) |
-| Start a [launch.json configuration](#launchjson-configurations) | `debug.startConfiguration` | (palette) |
-| Start a [compound](#compounds) | `debug.startCompound` | (palette) |
-| Make or change the project's compounds | `debug.editCompounds` | (palette) |
-| Open [`debug-adapters.json`](#debug-adapters-of-your-own) | `debug.editCustomAdapters` | (palette) |
-| Debug via build tool | `debug.viaBuild` | (palette) |
-| Attach to a running JVM or Node.js | `debug.attach` | `C-c C-d a` |
-| Attach to a program on this machine ([Attach to Process](#attach-to-process)) | `debug.attachToProcess` | (palette) |
-| Attach to a program under gdbserver elsewhere ([Attach to Remote Program](#attach-to-a-remote-program)) | `debug.attachRemote` | (palette) |
-| Attach again to the last address | `debug.reattach` | `C-c C-d S-a` |
-| Open a [core dump](#opening-a-core-dump) | `debug.openCoreDump` | (palette) |
-| [Listen for Xdebug](/docs/php#debugging) | `debug.listenXdebug` | (palette) |
-| Open the [Evaluate window](#the-evaluate-window) | `debug.evaluate` | `C-c C-d x` |
-| Go to the [evaluate field](#the-evaluate-field-in-variables) in Variables | `debug.focusEvaluate` | (palette) |
-| Pin a value to the caret's line ([pinned values](#pinned-values)) | `debug.pinValue` | (palette) |
-| Unpin the values on the caret's line | `debug.unpinLine` | (palette) |
-| Show numbers as hexadecimal | `debug.toggleHex` | (palette) |
-| Show one number in another base ([Show Value As](#show-value-as)) | `debug.showSelectedAsHex`, `debug.showSelectedAsDecimal`, `debug.showSelectedAsBinary`, `debug.showSelectedAsOctal`, `debug.showSelectedAsCharacter`, `debug.showSelectedAsDefault` | (palette) |
-| Show values without your [type renderers](#type-renderers) | `debug.muteRenderers` | (palette) |
-| Show every thread ([Threads view](#threads-view)) | `debug.threads` | (palette) |
-| Hide or list the Go runtime's goroutines, or filter them ([Goroutines](/docs/go#goroutines)) | `debug.toggleRuntimeGoroutines`, `debug.filterGoroutines` | (palette) |
-| Take a [thread dump](#thread-dump) | `debug.threadDump` | (palette) |
-| Draw every thread's stack as one tree ([Parallel Stacks](#parallel-stacks)) | `debug.parallelStacks` | (palette) |
-| Go back or forward through earlier stops ([Debug History](#debug-history)) | `debug.historyBack`, `debug.historyForward` | (palette) |
-| List the stops of the session | `debug.showHistory` | (palette) |
-| Show the [Disassembly or Memory view](#disassembly-and-memory) | `debug.showDisassembly`, `debug.showMemory` | (palette) |
-| List the program's [loaded sources or modules](#loaded-sources-and-modules) | `debug.loadedSources`, `debug.modules` | (palette) |
-| Turn the Python, JavaScript, Go, Rust, C and C++, C#, Ruby, PHP or Bash debugger on or off | `debug.toggleAdapter` | (palette) |
-| Set an adapter's path | `debug.setAdapterPath` | (palette) |
-| Change a setting of **Settings → Debugging** | `debug.changeSetting` | (palette) |
+## Start debugging
+
+1. **Set a breakpoint** on the line where the program should stop: click the
+   strip at the left of the line numbers, or use **Debug: Toggle Breakpoint**
+   (`debug.toggleBreakpoint`) on the caret's line. Its key is F9 in the VS
+   Code, CUA and Sublime Text keymaps, Ctrl+F8 (⌘F8 on macOS) in the IntelliJ
+   IDEA keymap, and `C-c C-b` in Emacs. A dot marks the line.
+2. **Start the program** under the debugger with **Debug: Start / Continue**
+   (`debug.start`): F5 in the VS Code, CUA and Sublime Text keymaps, Shift+F9
+   (⌃D on macOS) in the IntelliJ IDEA keymap, and `C-c C-d d` in Emacs. It
+   debugs the current file, as **Debug File** in the editor's right-click menu
+   does. In a Maven or Gradle project, **Debug: Debug Main Class…**
+   (`debug.mainClass`) picks a main class instead.
+3. When the program reaches the breakpoint, it stops there: the line is marked,
+   and the [Debug window](#the-debug-window) opens with the call stack, the
+   variables and the console. Step through the code with Step Over, Step Into
+   and Step Out, run on to the next breakpoint with Start / Continue, and end
+   the session with Stop. The keys are in
+   [Commands and menus](#commands-and-menus).
+
+What Start / Continue runs for a file, such as a test, a web app's server or a
+script, is on each language's page under **Languages**. To start a session
+another way, from a launch.json configuration, a saved run configuration or a
+program that is already running, see [Starting a session](#starting-a-session).
+
+When a file cannot be debugged, the status bar says why and what to do: Python
+or JavaScript debugging is turned off, debugpy was not found for the Python
+interpreter, or vscode-js-debug or Node.js was not found.
+
+## The Debug window
 
 ![A Java program paused at a breakpoint in Shelf.java with the Debug tool window below: the call stack, a variables tree with the items list unfolded, and the console](/screenshots/features/debugging.png "Paused at a breakpoint: call stack, variables and console in the Debug window.")
-
-The keys are the Emacs keymap's; the other keymaps' keys are listed under
-[Debugger keys](/docs/keymaps#debugger-keys). The step commands are also
-buttons in the Debug window, and most debugger actions are in the **Run** menu.
-Its top level has Start / Continue, Debug Main Class, Attach, Stop, Stop All
-and Restart. The rest is in four submenus:
-
-- **Launch and Attach**: Run and Debug Selected Configuration (`run.selectedConfig`, `debug.selectedConfig`), Start
-  Configuration, Start Compound, Edit Compounds, Attach to Process, Reattach,
-  Open Core Dump, Debug in Browser and Attach to Browser.
-- **Stepping**: Pause, stepping by line or by instruction, Run to Cursor, Force
-  Run to Cursor, Restart Frame, Don't Step Into This, and Record Execution, Step Back and Reverse
-  Continue.
-- **Breakpoints**: Toggle Breakpoint and the other kinds of breakpoint (with
-  logpoints and triggered breakpoints), Edit Breakpoint, the breakpoint list,
-  groups, export and import, Mute Breakpoints, the exception breakpoints and
-  Add Exception Breakpoint.
-- **Debugger**: Apply Code Changes, evaluate, watches, pinned values,
-  hexadecimal values, Mute Type Renderers, Show Exception, Debug History, the
-  Threads view, Thread Dump, Parallel Stacks, the Loaded Sources, Modules,
-  Disassembly and Memory views, and Edit Debug Adapters.
-
-**Jump to Line** moves the program to another line without running the code in
-between. It needs a debugger that can do that: Python's debugpy can. The Java
-and JavaScript debuggers cannot, and Jump to Line then says it is not supported.
-
-**Force Run to Cursor** runs to the caret line as Run to Cursor does, but no
-breakpoint or logpoint on the way stops it, in any file. Exception breakpoints
-still stop the program. The breakpoints are back at the next stop, wherever
-that is: the caret line, an exception, or Pause. Its keys are `C-c C-d S-u` in
-the Emacs keymap and Ctrl+Alt+F9 (⌥⌘F9 on macOS) in the IntelliJ IDEA keymap;
-it is also in **Run ▸ Stepping** and, while the program is paused, in the
-editor's right-click menu.
-
-While the program is paused, pointing at a line number turns it into an arrow,
-and its tooltip names the line: click it to run to that line, as Run to Cursor
-does, or Shift+click it to get there past every breakpoint on the way, as Force
-Run to Cursor does.
-
-After a step or Continue, the time the program ran until it stopped appears
-faintly after the line it stopped on, as Visual Studio's PerfTips show it.
-**Show how long each step took**, at the top of **Settings → Debugging** (on by
-default), turns it off.
 
 The Debug window has a threads and call-stack view, a lazy variables tree with
 **set-value**, **watches**, an [evaluate field](#evaluating-expressions) and a
@@ -155,40 +77,10 @@ code in the current editor theme: strings, numbers, constants such as `true`,
 value. A watch that cannot be evaluated shows the debugger's message in red
 italics instead.
 
-Breakpoints live in a leftmost gutter strip and are saved per project.
-**Edit Breakpoint** is a form with a **condition**, a **hit count**, a **log
-message** (which turns it into a [logpoint](#logpoints) that logs and never suspends), an
-**Enabled** toggle, **Remove once hit**, which makes it a
-[temporary breakpoint](#temporary-breakpoints), **Record and continue**,
-which makes it a [recording breakpoint](#recording-breakpoints), **Wait for**,
-which makes it a [triggered breakpoint](#triggered-breakpoints),
-**Group**, which puts it in a [group](#breakpoint-groups), and three
-[filters](#breakpoint-filters) that limit it to some threads, callers or one
-object. Its title names the file and line, such as *Edit
-Breakpoint — Main.java:27*, and the line's code is shown above the fields, since
-the form can cover that line. The hit count makes it stop only on that hit: `5`
-stops on the fifth. Python also takes forms such as `>= 3` or `% 2`; the other
-debuggers take only a number, and the field's hint says which. A breakpoint
-with a condition or a hit count is drawn as conditional. Breakpoints in closed
-files are honored too.
-
-![The Edit Breakpoint form for Shelf.java line 50 over the editor: the line's code above the fields, a Condition field with item.price() > 1.0 typed, an empty Log message, a Hit count field whose hint reads Every hit, or a number: 5 stops on the fifth hit, Enabled ticked, Remove once hit, and Cancel and OK buttons](/screenshots/docs/edit-breakpoint.png "Edit Breakpoint: a condition, a hit count, or a log message that turns it into a logpoint.")
-
-The debugger may set a breakpoint on another line than the one you chose: in
-Python, a breakpoint on a blank or comment line goes to a nearby line with code.
-The breakpoint then moves to that line, and the status bar says so. If that line
-already has a breakpoint, the moved one is removed and the one already there,
-with its condition, is kept.
-
-While a session runs, a breakpoint the debugger has **not verified** (its code
-is not loaded yet, or the line has no code) is drawn as a hollow ring, with the
-debugger's explanation on hover. Every breakpoint is hollow from the start of
-the session until the debugger answers, and the markers return to normal when
-the session ends.
-
 When the panel is wide enough, the call stack, variables, and console sit side
-by side; they stack when it is narrow. The call stack lists the innermost 1,000
-frames when the adapter supports partial stacks. The console wraps long lines.
+by side; they stack when it is narrow. A deep call stack lists its top 50
+frames first, and more when you ask ([The call stack](#the-call-stack)). The
+console wraps long lines.
 It is cleared at each launch and kept after the session ends, and its
 right-click menu has **Clear Console**. Your keymap's Find key in the console,
 or **Debug: Find in Console** (`debug.findInConsole`) from anywhere, opens a
@@ -206,6 +98,8 @@ program, so it is greyed out while the program is paused, starting or being
 built. In Java, Pause stops every thread of the program, and Continue resumes
 them all (see [Threads in a Java program](/docs/java#threads-in-a-java-program)).
 
+### Which runtime a session runs under
+
 Beside that status, the Debug window names the runtime the debugged program
 runs under, as the [Run window does](/docs/run-debug#which-runtime-a-program-runs-under): the
 JDK of a Java launch, the Python that debugpy runs the script with, or the
@@ -213,11 +107,194 @@ Node.js of a JavaScript launch. The name clears when the session ends. A
 session started with *Debug → Attach* shows none, because the program was
 already running.
 
-When a file cannot be debugged, the status bar says why and what to do: Python
-or JavaScript debugging is turned off, debugpy was not found for the Python
-interpreter, or vscode-js-debug or Node.js was not found.
+### Keys in the Debug window
 
-## Several sessions
+Starting a session or stopping at a breakpoint never moves the keyboard focus
+into the Debug window: focus stays in the editor, with the caret on the
+stopped line. A stop opens the Debug window again if you closed it.
+
+When you click into the Debug window, single keys drive the session, as in
+gdb:
+
+| Key | Action |
+| --- | --- |
+| `c` | Start or continue |
+| `p` | Pause |
+| `n` | Step over |
+| `s` | Step into |
+| `f` | Step out (finish) |
+| `u` | Run to cursor |
+| `b` | [Step back](#stepping-backward) |
+| Shift+C | [Reverse continue](#stepping-backward) |
+| Shift+K | Stop |
+| Shift+R | Restart |
+
+Stop and Restart need Shift, so a stray `k` or `r` typed in a list does nothing
+to the program. The keys don't apply while you type in the evaluate field or
+the console's input field.
+Stepping keeps the focus in the Debug window, so you can step again and again.
+A toolbar button's tooltip shows both its key in your keymap and its key in the
+Debug window, for example "Step Over (F10 · in this window: N)".
+
+### Program input in the Debug console
+
+A debugged **Java**, **Python**, **JavaScript** or **Rust** program can read its
+standard input from the Debug console, so a Python program that calls `input()` waits
+for a line typed there.
+The field does one of two things, and its prompt says which:
+
+- While the program **runs**, Enter sends the line to the program (an empty
+  line counts).
+- While it is **paused**, Enter evaluates an expression.
+
+The field takes your keymap's editing keys, as the
+[evaluate fields](#typing-an-expression) do.
+
+End the input with `Ctrl+D` in the field, the console's right-click menu, or
+*Debug: End Program Input (EOF)* (`debug.endProgramInput`).
+
+In this mode Editora starts the program itself rather than leaving it to
+the debugger, and stops it on Stop, Restart, a new launch, a failed launch, or
+closing the window. The session ends when the program exits, after its last
+output, and the console reports the exit code. A Python program's output is
+unbuffered, so a prompt shows before the program waits. Lines written to stdout
+and stderr at almost the same moment can appear in either order.
+
+It is **on by default**. The switch, **Run the debugged program in the Debug
+console (program input)**, is on the **Debugged programs** card of
+**Settings → Debugging** (or use
+*Debug: Toggle Program Input in the Debug Console*,
+`debug.toggleProgramConsole`) and takes effect at the next launch. It applies
+to a launched Java or Rust program, and to a Python or JavaScript program
+started on this computer; a Python or JavaScript file on a remote host, in WSL or in a
+container is unaffected, and so are attached sessions.
+
+**Run the program in a Terminal tab instead**, just below it, runs that program
+in a tab of the [Terminal](/docs/terminal#run-and-debug-programs-in-a-terminal)
+tool window rather than the Debug console. Use it for a program that draws on
+the screen, reads single keys or asks for a password. Its output and input are
+then in that tab, which is titled *Debug: <file>* and stays when the program
+ends. The Debug console's first line names the tab. The program's exit still
+ends the session, and Stop ends the program. It is off by default and needs the
+program console switch on.
+
+With the switch off, the debugger starts a Java program itself. A program that
+prints a lot then gets its output to the console well after it writes it; the
+session ends, and the exit line shows, once the last of it has arrived. Until
+then the Debug window's state reads *Program ended, output still arriving*. The
+console still reports the program's exit code on Linux and macOS when the
+program runs on this machine. On Windows, and on a remote host, in WSL or in a container, it
+says "The program ended." instead. A JavaScript program's output, including
+`process.stdout.write`, still reaches the console, but the program cannot read
+input.
+
+## Commands and menus
+
+Every debugger action is a command, so it is in the palette and can be given a
+key under Settings → Keymaps:
+
+| Action | Command | Emacs key | Other keymaps |
+| --- | --- | --- | --- |
+| Start / continue | `debug.start` | `C-c C-d d` | CUA, Sublime Text, VS Code: F5; IntelliJ: Shift+F9 |
+| Continue | `debug.continue` | `C-c C-d c` | IntelliJ: F9 |
+| Pause | `debug.pause` | `C-c C-d p` | CUA, VS Code: F6 |
+| Stop | `debug.stop` | `C-c C-d k` | CUA, Sublime Text, VS Code: Shift+F5; IntelliJ: Ctrl+F2 |
+| Stop every session ([Several sessions](#several-sessions)) | `debug.stopAll` | (palette) | — |
+| Restart | `debug.restart` | `C-c C-d r` | CUA, Sublime Text, VS Code: Ctrl+Shift+F5; IntelliJ: Ctrl+F5 |
+| Step over | `debug.stepOver` | `C-c C-d n` | CUA, Sublime Text, VS Code: F10; IntelliJ: F8 |
+| Step into | `debug.stepInto` | `C-c C-d i` | VS Code: F11; IntelliJ: F7 |
+| Step out | `debug.stepOut` | `C-c C-d o` | CUA, Sublime Text, VS Code: Shift+F11; IntelliJ: Shift+F8 |
+| Step over / into one machine instruction ([Disassembly](#disassembly-and-memory)) | `debug.stepOverInstruction`, `debug.stepIntoInstruction` | (palette) | — |
+| Run to cursor | `debug.runToCursor` | `C-c C-d u` | IntelliJ: Alt+F9 |
+| Run to cursor past every breakpoint | `debug.forceRunToCursor` | `C-c C-d S-u` | IntelliJ: Ctrl+Alt+F9 |
+| Jump to line | `debug.jumpToLine` | `C-c C-d j` | — |
+| Have Step Into go over a frame's code ([Don't step into](#dont-step-into)) | `debug.dontStepIntoFrame` | (palette) | — |
+| [Step back or reverse continue](#stepping-backward) | `debug.stepBack`, `debug.reverseContinue` | (palette) | — |
+| Have GDB record the program ([Record Execution](#stepping-backward)) | `debug.toggleRecording` | (palette) | — |
+| Toggle breakpoint | `debug.toggleBreakpoint` | `C-c C-b` | CUA, Sublime Text, VS Code: F9; IntelliJ: Ctrl+F8 |
+| Toggle temporary breakpoint | `debug.toggleTemporaryBreakpoint` | `C-c C-d 1` | IntelliJ: Ctrl+Alt+Shift+F8 |
+| Toggle [recording breakpoint](#recording-breakpoints) | `debug.toggleRecordingBreakpoint` | (palette) | — |
+| Toggle method breakpoint (Java) | `debug.toggleMethodBreakpoint` | `C-c C-d S-m` | — |
+| Toggle field watchpoint (Java) | `debug.toggleFieldWatchpoint` | `C-c C-d S-w` | — |
+| Toggle [lambda breakpoint](#lambda-breakpoints) (Java, JavaScript, TypeScript) | `debug.toggleLambdaBreakpoint` | `C-c C-d S-l` | CUA, Sublime Text, VS Code: Shift+F9 |
+| Edit breakpoint | `debug.editBreakpoint` | `C-c C-d e` | — |
+| Add a [logpoint](#logpoints) | `debug.addLogpoint` | `C-c C-d g` | — |
+| Add a [triggered breakpoint](#triggered-breakpoints) that waits for another | `debug.addTriggeredBreakpoint` | (palette) | — |
+| Put the caret line's breakpoint in a [group](#breakpoint-groups) | `debug.moveBreakpointToGroup` | (palette) | — |
+| Turn a group's breakpoints on or off | `debug.toggleBreakpointGroup` | (palette) | — |
+| [Export or import breakpoints](#exporting-and-importing-breakpoints) | `debug.exportBreakpoints`, `debug.importBreakpoints` | (palette) | — |
+| Choose exception breakpoints | `debug.toggleExceptionBreakpoints` | (palette) | — |
+| Stop on an exception [of a type you name](#exception-breakpoints-by-type) | `debug.addExceptionBreakpoint` | (palette) | — |
+| Show the [exception card](#exception-card) again | `debug.showException` | (palette) | — |
+| Debug the current file on its own, as **Debug File** does | `debug.debugFile` | (palette) | — |
+| Debug a project main class | `debug.mainClass` | (palette) | — |
+| Debug the main class the caret is on | `debug.mainClassAtCaret` | (palette) | — |
+| Debug a saved run configuration | `debug.config` | (palette) | — |
+| Start a [launch.json configuration](#launchjson-configurations) | `debug.startConfiguration` | (palette) | — |
+| Start a [compound](#compounds) | `debug.startCompound` | (palette) | — |
+| Make or change the project's compounds | `debug.editCompounds` | (palette) | — |
+| Open [`debug-adapters.json`](#debug-adapters-of-your-own) | `debug.editCustomAdapters` | (palette) | — |
+| Debug via build tool | `debug.viaBuild` | (palette) | — |
+| Attach to a running JVM or Node.js | `debug.attach` | `C-c C-d a` | — |
+| Attach to a program on this machine ([Attach to Process](#attach-to-process)) | `debug.attachToProcess` | (palette) | — |
+| Attach to a program under gdbserver elsewhere ([Attach to Remote Program](#attach-to-a-remote-program)) | `debug.attachRemote` | (palette) | — |
+| Attach again to the last address | `debug.reattach` | `C-c C-d S-a` | — |
+| Open a [core dump](#opening-a-core-dump) | `debug.openCoreDump` | (palette) | — |
+| [Listen for Xdebug](/docs/php#debugging) | `debug.listenXdebug` | (palette) | — |
+| Open the [Evaluate window](#the-evaluate-window) | `debug.evaluate` | `C-c C-d x` | IntelliJ: Alt+F8 |
+| Go to the [evaluate field](#the-evaluate-field-in-variables) in Variables | `debug.focusEvaluate` | (palette) | — |
+| Pin a value to the caret's line ([pinned values](#pinned-values)) | `debug.pinValue` | (palette) | — |
+| Unpin the values on the caret's line | `debug.unpinLine` | (palette) | — |
+| Show numbers as hexadecimal | `debug.toggleHex` | (palette) | — |
+| Show one number in another base ([Show Value As](#show-value-as)) | `debug.showSelectedAsHex`, `debug.showSelectedAsDecimal`, `debug.showSelectedAsBinary`, `debug.showSelectedAsOctal`, `debug.showSelectedAsCharacter`, `debug.showSelectedAsDefault` | (palette) | — |
+| Show values without your [type renderers](#type-renderers) | `debug.muteRenderers` | (palette) | — |
+| Show every thread ([Threads view](#threads-view)) | `debug.threads` | (palette) | — |
+| Hide or list the Go runtime's goroutines, or filter them ([Goroutines](/docs/go#goroutines)) | `debug.toggleRuntimeGoroutines`, `debug.filterGoroutines` | (palette) | — |
+| Take a [thread dump](#thread-dump) | `debug.threadDump` | (palette) | — |
+| Draw every thread's stack as one tree ([Parallel Stacks](#parallel-stacks)) | `debug.parallelStacks` | (palette) | — |
+| Go back or forward through earlier stops ([Debug History](#debug-history)) | `debug.historyBack`, `debug.historyForward` | (palette) | — |
+| List the stops of the session | `debug.showHistory` | (palette) | — |
+| Show the [Disassembly or Memory view](#disassembly-and-memory) | `debug.showDisassembly`, `debug.showMemory` | (palette) | — |
+| List the program's [loaded sources or modules](#loaded-sources-and-modules) | `debug.loadedSources`, `debug.modules` | (palette) | — |
+| Turn a debugger on or off: any language's but Java's, or Firefox's | `debug.toggleAdapter` | (palette) | — |
+| Set an adapter's path | `debug.setAdapterPath` | (palette) | — |
+| Change a setting of **Settings → Debugging** | `debug.changeSetting` | (palette) | — |
+
+The **Emacs key** column is the default Emacs keymap; **Other keymaps** gives
+the chords the CUA, Sublime Text, VS Code and IntelliJ IDEA keymaps bind (— where
+none does). On macOS those mostly use ⌘ for Ctrl; the
+[keybindings reference](/keybindings) lists every keymap.
+
+The keys are the Emacs keymap's; the other keymaps' keys are listed under
+[Debugger keys](/docs/keymaps#debugger-keys). The step commands are also
+buttons in the Debug window, and most debugger actions are in the **Run** menu.
+Its top level has Start / Continue, Debug Main Class, Attach, Stop, Stop All
+and Restart. The rest is in four submenus:
+
+- **Launch and Attach**: Run and Debug Selected Configuration (`run.selectedConfig`, `debug.selectedConfig`), Start
+  Configuration, Start Compound, Edit Compounds, Attach to Process, Attach to
+  Remote Program, Reattach, Open Core Dump, Listen for
+  Xdebug, Debug in Browser and Attach to Browser.
+- **Stepping**: Pause, stepping by line or by instruction, Smart Step Into
+  ([Java](/docs/java#stepping-through-java-code)), Run to Cursor, Force Run to
+  Cursor, Restart Frame, Don't Step Into This, and Record Execution, Step Back
+  and Reverse Continue.
+- **Breakpoints**: Toggle Breakpoint and the other kinds of breakpoint (with
+  logpoints and triggered breakpoints), Edit Breakpoint, the breakpoint list,
+  groups, export and import, Mute Breakpoints, the exception breakpoints and
+  Add Exception Breakpoint.
+- **Debugger**: Apply Code Changes, evaluate, watches, pinned values,
+  hexadecimal values, Mute Type Renderers, Show Exception, Debug History, the
+  Threads view, Thread Dump, Parallel Stacks, the Loaded Sources, Modules,
+  Disassembly and Memory views, and Edit Debug Adapters.
+
+## Starting a session
+
+Besides Start / Continue and **Debug File** on the current file, a session can
+start from a launch.json configuration, a compound, a program that is already
+running, a remote debug server or a core dump.
+
+### Several sessions
 
 Editora can debug several programs at once, each in a session of its own: a
 server and its client, or a program and one of its tests. Start debugging
@@ -264,98 +341,149 @@ session runs is debugged beside it, as in VS Code, without asking. A
 [compound](#compounds) starts several programs together, and a Python
 program's [subprocesses](/docs/python#debugging) get sessions of their own.
 
-## Exception breakpoints
+### launch.json configurations
 
-**Debug: Exception Breakpoints…** (`debug.toggleExceptionBreakpoints`) lists
-the exception filters of the debugger for the current session's language (or
-the active file's, when no session runs). A checkmark marks the ones that are
-on; choosing one turns it on or off, also during a session.
+**Debug: Start Configuration…** (`debug.startConfiguration`, in **Run ▸ Launch
+and Attach**) lists the configurations of the project's `.vscode/launch.json`, or
+of the nearest one above the active file, and its [compounds](#compounds), and
+starts the one you pick as VS Code would. A configuration started while a
+session runs is debugged beside it, in a session of its own
+([Several sessions](#several-sessions)). Type to filter the list; the configuration you started last is
+listed first. With no `launch.json`, the status bar says so.
 
-| Language | Filters | On at the start |
-| --- | --- | --- |
-| Python | Raised Exceptions, Uncaught Exceptions, User Uncaught Exceptions | Uncaught Exceptions |
-| Java | Caught Exceptions, Uncaught Exceptions | none |
-| JavaScript | Caught Exceptions, Uncaught Exceptions | none |
-| Groovy, Kotlin, Clojure, Scala | Caught Exceptions, Uncaught Exceptions | Uncaught Exceptions |
-| Rust | Rust: on panic | Rust: on panic |
-| C and C++ (CodeLLDB) | C++: on throw, C++: on catch | C++: on throw |
-| C# | C#: user-unhandled exceptions, C#: all exceptions | C#: user-unhandled exceptions |
-| Ruby | Ruby: any raised exception, Ruby: RuntimeError | none |
-| PHP | PHP: exceptions, errors, warnings, notices, deprecations, everything | none |
+| `type` | Debugger |
+| --- | --- |
+| `lldb`, `codelldb` | CodeLLDB, for Rust, C or C++. Its `cargo` field runs Cargo first and debugs the program Cargo built |
+| `gdb` | GDB's own debug adapter mode (GDB 14 or later); attaches by `pid` |
+| `cppdbg` | GDB, or CodeLLDB when `MIMode` is `lldb`; attaches by `processId` |
+| `go` | Delve, with `exec` for a program you built yourself; `mode: remote` isn't supported |
+| `debugpy`, `python` | debugpy; an attach connects to its `connect` address |
+| `node`, `pwa-node` | vscode-js-debug; an attach connects to its `address` and `port` |
+| `java` | the Java debugger: `mainClass`, `projectName`, `args`, `vmArgs`, `cwd` and `env` |
+| `coreclr` | netcoredbg, `program` being the built assembly; attaches by `processId` |
+| `rdbg` | rdbg, with `useBundler` for `bundle exec`; an attach connects to a local `debugPort` |
+| `php` | PHP Debug; without a `program`, it listens for Xdebug |
+| `bashdb` | Bash Debug, which launches a script under bashdb; it can't attach |
+| `lua-local` | [Local Lua Debugger](/docs/lua#debugging), which launches its `program` (`lua` and `file`) with its `args`; it can't attach |
+| `PowerShell` | [PowerShell Editor Services](/docs/powershell#debugging), which launches a `script` (a file or a command) with its `args`; it can't attach |
+| `chrome`, `msedge`, `pwa-chrome`, `pwa-msedge` | vscode-js-debug driving a [browser](/docs/javascript-typescript#debugging-in-a-browser): a launch needs a `url` or a `file`; an attach connects to its `port` |
+| `firefox` | vscode-firefox-debug driving [Firefox](/docs/javascript-typescript#debugging-in-a-browser), launched or attached to |
+| `mix_task` | [ElixirLS](/docs/elixir#debugging), which runs a Mix `task` with its `taskArgs`; it can't attach |
 
-Go has none to choose: Delve stops on a panic by itself.
+A [debug adapter of your own](#debug-adapters-of-your-own) is used by its
+`type` too. Any other type, such as C# Dev Kit's `dotnet`, is refused with a
+message.
 
-A session starts with the filters its debugger turns on by default, so a
-Python program stops where an uncaught exception is raised, with the
-exception's type and message in the Debug window and the status bar. In
-Python, `sys.exit()` with a non-zero code also counts as an uncaught exception;
-Continue then ends the program. Editora keeps your choice for each language and
-each project, as it does for **Break on Caught Exceptions** and **Break on
-Uncaught Exceptions** (see [Managing breakpoints](#managing-breakpoints)).
+The file is read as VS Code reads it: comments and trailing commas are allowed,
+and a configuration's `linux`, `osx` and `windows` parts apply on that system.
 
-## Exception breakpoints by type
+- **Variables:** `${workspaceFolder}`, `${file}` and the rest of the `${file…}`
+  family, `${relativeFile}`, `${lineNumber}`, `${selectedText}`, `${env:NAME}`,
+  `${userHome}` and `${pathSeparator}` are filled in. `${input:id}` asks for
+  its value once per start, as a list to pick from (`pickString`) or a prompt
+  (`promptString`), before anything runs. `${command:…}` and `${config:…}` name
+  VS Code's own commands and settings, so they are refused with a message.
+- **`preLaunchTask`:** a task of `.vscode/tasks.json` that is a `shell` or
+  `process` command runs first, in the Debug console, after Editora saves the
+  folder's edited files. The command is the folder's own code, so in a folder
+  you have not trusted it first asks you to
+  [trust the folder](/docs/workspace#trusted-folders), naming the command;
+  declining runs nothing. **Restart** runs the task again. Any other kind of
+  task, or one with `dependsOn`, isn't run: the status bar says to run it
+  yourself first.
+- **`postDebugTask`:** a task of `tasks.json`, of the same kinds, that runs
+  when the session ends, in the Debug console after the program's output.
+  **Restart** runs it before the `preLaunchTask` and the new launch, as VS Code
+  does.
+- **`serverReadyAction`:** Editora watches the program's output for the
+  server's address, and the first time it sees it, opens the address or
+  debugs it:
 
-To stop only on some exceptions, name their type, as IntelliJ IDEA's exception
-breakpoints do. **Debug: Add Exception Breakpoint…**
-(`debug.addExceptionBreakpoint`, also in **Run ▸ Breakpoints**) opens a form
-with:
+  ```json
+  {
+    "name": "Server", "type": "node", "request": "launch",
+    "program": "${workspaceFolder}/server.js",
+    "serverReadyAction": { "action": "debugWithChrome", "killOnServerStop": true }
+  }
+  ```
 
-- **Exception type**: a type, or patterns separated by commas. `*` and `?` are
-  wildcards and `!` before a pattern leaves it out, so `java.io.*`, `*Error`
-  and `!InterruptedException` all work. A pattern matches the full type or its
-  last part, so `KeyError` matches Python's `KeyError`. Blank is any type.
-- **Language**: the language whose exceptions it is for.
-- **Condition** (optional): an expression evaluated where the exception was
-  thrown. `KeyError` with `order.id == 42` stops on that one order's error and
-  lets the rest go by.
-- **Enabled**.
+  - `pattern`: a regular expression looked for in each line of output, in
+    any case, with colour codes taken out. It is `listening on.* (https?://\S+|[0-9]+)`
+    when you leave it out, which matches "listening on port 3000" and
+    "Now listening on: https://localhost:5001".
+  - `uriFormat`: the address made of what the pattern's first group caught,
+    with `%s` standing for it. A port number gives `http://localhost:%s` and
+    an address gives itself. A pattern with no group uses `uriFormat` as it is.
+  - `action`: `openExternally` (the default) opens the address in your
+    browser. `debugWithChrome` and `debugWithEdge` open it in Chrome or Edge
+    under the debugger, in a session beside the server's, with `webRoot`
+    (the workspace folder unless you set it) for the page's scripts.
+    `startDebugging` starts another configuration: the one called `name`, or
+    the one given as `config`.
+  - `killOnServerStop`: when the server's session ends, the session the
+    address started stops too.
 
-When the program is stopped on an exception, the form offers that exception's
-type. Subclasses are not matched by themselves: name them, or use a pattern
-such as `*IOException`.
+  The Debug console says what was done with the address. The program's output
+  is watched in the Debug console only: a program you run in a Terminal tab
+  ([program input](#program-input-in-the-debug-console)) isn't watched.
 
-The program then stops only on an exception that matches; the others go by.
-An exception nothing catches always stops, and while **Break on Caught
-Exceptions** is on, every exception stops as before. If the condition can't be
-evaluated, the program stops and the status bar says why.
+### Compounds
 
-Exception breakpoints are listed in **Debug: Exception Breakpoints…**, after
-the debugger's own filters. Choose one to edit it, turn it off or remove it.
-They are kept per project, with the other breakpoints, and work with every
-language whose debugger stops on exceptions.
+A compound starts several configurations together, each in a session of its
+own ([Several sessions](#several-sessions)), in the order it lists them: a
+server and its client, say. It comes from the project's `.vscode/launch.json`,
+or from the project's own saved run configurations.
 
-## Exception card
+A **launch.json compound** is a `compounds` entry, read as VS Code reads it.
+**Debug: Start Configuration…** lists it beside the configurations, as
+*compound · 2 configurations*:
 
-When the program stops on an exception, a card opens under the line that threw
-it, once per stop. Its title says what kind of stop it is:
+```json
+{
+  "version": "0.2.0",
+  "configurations": [
+    { "name": "Server", "type": "debugpy", "request": "launch", "program": "${workspaceFolder}/server.py" },
+    { "name": "Client", "type": "debugpy", "request": "launch", "program": "${workspaceFolder}/client.py" }
+  ],
+  "compounds": [
+    { "name": "Server and client", "configurations": ["Server", "Client"], "stopAll": true }
+  ]
+}
+```
 
-- **Uncaught exception**, in red, for an exception that nothing catches;
-- **Exception (caught)** for one the program catches;
-- **Exception** when the debugger doesn't say which. The Java debugger says
-  which.
+- `configurations`: the configurations it starts, by name.
+- `preLaunchTask`: a task that runs once, before any of them. Each
+  configuration's own `preLaunchTask` still runs before that configuration.
+- `stopAll`: stopping one session of the compound stops them all.
 
-Below the title are the exception's type and its message. When the debugger
-sends them, the card also lists the exceptions that caused it, each on a
-**Caused by** line, and the stack trace. The Python and JavaScript debuggers
-send them; the Java debugger sends only the type and the message.
+An `${input:…}` that several of its configurations use is asked once. When a
+compound names a configuration that isn't in the file, nothing starts, and the
+status bar names the missing one.
 
-- **Copy** copies the type, the message, the causes and the stack trace; so
-  does **Debug: Copy Exception** (`debug.copyException`).
-- **Don’t Stop on Caught Exceptions** appears on a caught exception while
-  **Break on Caught Exceptions** is on, and turns that off, so the program no
-  longer stops on exceptions it catches.
+A **compound of run configurations** debugs the project's saved
+[run configurations](/docs/run-debug#run-configurations) together. **Debug: Edit
+Compounds…** (`debug.editCompounds`, in **Run ▸ Launch and Attach**) opens the
+**Compounds** window: the project's compounds on the left and, for the one
+selected, its **Name**, the **Run configurations to debug together** to tick,
+and **Stopping one stops them all**. **Add** (`debug.addCompound`) makes a compound, **Remove**
+deletes it, and **Debug** starts it. Every change is saved as you make it, with
+the project. The ticked configurations start in the order the run
+configurations are listed, each debugged as **Debug a saved run
+configuration** debugs it, so each must be a kind that can be debugged (see
+[What a configuration can launch](/docs/run-debug#what-a-configuration-can-launch)).
 
-The card never takes focus, so typing stays in the editor. Esc in the editor,
-the card's ✕ or a click anywhere else closes it, and so do Continue, a step,
-picking another frame in the call stack, or the session ending. It follows its
-line when you scroll, and closes when the line leaves the screen.
+![The Compounds window: a compound named Server and worker on the left; on the right its Name, the list Run configurations to debug together with API server and Restock worker ticked and Web client and Price check not, Stopping one stops them all ticked, and Add, Remove, Debug and Close buttons](/screenshots/docs/debug-compounds.png "A compound of two saved run configurations, made in Debug: Edit Compounds….")
 
-**Debug: Show Exception** (`debug.showException`, in **Run ▸ Debugger** while
-the program is paused) opens the card again. If another frame is shown, it goes
-back to the frame that threw first. When the program did not stop on an
-exception, the status bar says so.
+**Debug: Start Compound…** (`debug.startCompound`, in **Run ▸ Launch and Attach**) lists
+both kinds, the project's own first. Type to filter; **New Compound…**, last in
+the list, opens the Compounds window on a new one.
 
-## Attach to Process
+The sessions of a compound build at the same time. When the compound stops
+them all, **Stop** in any of its sessions stops every one that still runs.
+**Stop All** stops every session, compound or not, and a program that ends by
+itself ends only its own session.
+
+### Attach to Process
 
 **Debug: Attach to Process…** (`debug.attachToProcess`, in **Run ▸ Launch and
 Attach**) lists the Java, Node.js, Python, Go, Rust, C and C++ programs
@@ -415,7 +543,7 @@ again.
   its process id. The same `ptrace_scope` setting applies. A macOS program keeps its debug information
   outside the executable, so it isn't listed there.
 
-## Attach to a remote program
+### Attach to a remote program
 
 **Debug: Attach to Remote Program…** (`debug.attachRemote`, also in **Run ▸
 Launch and Attach**) debugs a C, C++ or Rust program that runs on another
@@ -436,7 +564,7 @@ A [launch.json](#launchjson-configurations) `cppdbg` configuration with
 `miDebuggerServerAddress`, or a `gdb` attach with a `target`, attaches the
 same way, as in VS Code.
 
-## Opening a core dump
+### Opening a core dump
 
 **Debug: Open Core Dump…** (`debug.openCoreDump`, also in **Run ▸ Launch and
 Attach**) opens the core file a crashed **Go**, **C**, **C++** or **Rust**
@@ -461,59 +589,47 @@ disabled, and their tooltips and the command palette say why. A
 [launch.json configuration](#launchjson-configurations) that opens a core, such
 as Delve's `"mode": "core"`, is treated the same way.
 
-## Program input in the Debug console
+## Breakpoints
 
-A debugged **Java**, **Python**, **JavaScript** or **Rust** program can read its
-standard input from the Debug console, so a Python program that calls `input()` waits
-for a line typed there.
-The field does one of two things, and its prompt says which:
+Breakpoints live in a leftmost gutter strip and are saved per project. Click
+the strip to set or remove one; each kind below has its own command and glyph.
 
-- While the program **runs**, Enter sends the line to the program (an empty
-  line counts).
-- While it is **paused**, Enter evaluates an expression.
+### Edit Breakpoint
 
-The field takes your keymap's editing keys, as the
-[evaluate fields](#typing-an-expression) do.
+**Edit Breakpoint** (`debug.editBreakpoint`, `C-c C-d e` in the Emacs keymap,
+also in a breakpoint's right-click menu) is a form with a **condition**, a **hit count**, a **log
+message** (which turns it into a [logpoint](#logpoints) that logs and never suspends), an
+**Enabled** toggle, **Remove once hit**, which makes it a
+[temporary breakpoint](#temporary-breakpoints), **Record and continue**,
+which makes it a [recording breakpoint](#recording-breakpoints), **Wait for**,
+which makes it a [triggered breakpoint](#triggered-breakpoints),
+**Group**, which puts it in a [group](#breakpoint-groups), and three
+[filters](#breakpoint-filters) that limit it to some threads, callers or one
+object. Its title names the file and line, such as *Edit
+Breakpoint — Main.java:27*, and the line's code is shown above the fields, since
+the form can cover that line. The hit count makes it stop only on that hit: `5`
+stops on the fifth. Python also takes forms such as `>= 3` or `% 2`; the other
+debuggers take only a number, and the field's hint says which. A breakpoint
+with a condition or a hit count is drawn as conditional. Breakpoints in closed
+files are honored too.
 
-End the input with `Ctrl+D` in the field, the console's right-click menu, or
-*Debug: End Program Input (EOF)* (`debug.endProgramInput`).
+![The Edit Breakpoint form for Shelf.java line 50 over the editor: the line's code above the fields, a Condition field with item.price() > 1.0 typed, an empty Log message, a Hit count field whose hint reads Every hit, or a number: 5 stops on the fifth hit, Enabled ticked, Remove once hit, and Cancel and OK buttons](/screenshots/docs/edit-breakpoint.png "Edit Breakpoint: a condition, a hit count, or a log message that turns it into a logpoint.")
 
-In this mode Editora starts the program itself rather than leaving it to
-the debugger, and stops it on Stop, Restart, a new launch, a failed launch, or
-closing the window. The session ends when the program exits, after its last
-output, and the console reports the exit code. A Python program's output is
-unbuffered, so a prompt shows before the program waits. Lines written to stdout
-and stderr at almost the same moment can appear in either order.
+### Moved and unverified breakpoints
 
-It is **on by default**. The switch, **Run the debugged program in the Debug
-console (program input)**, is on the **Debugged programs** card of
-**Settings → Debugging** (or use
-*Debug: Toggle Program Input in the Debug Console*,
-`debug.toggleProgramConsole`) and takes effect at the next launch. It applies
-to a launched Java or Rust program, and to a Python or JavaScript program
-started on this computer; a Python or JavaScript file on a remote host, in WSL or in a
-container is unaffected, and so are attached sessions.
+The debugger may set a breakpoint on another line than the one you chose: in
+Python, a breakpoint on a blank or comment line goes to a nearby line with code.
+The breakpoint then moves to that line, and the status bar says so. If that line
+already has a breakpoint, the moved one is removed and the one already there,
+with its condition, is kept.
 
-**Run the program in a Terminal tab instead**, just below it, runs that program
-in a tab of the [Terminal](/docs/terminal#run-and-debug-programs-in-a-terminal)
-tool window rather than the Debug console. Use it for a program that draws on
-the screen, reads single keys or asks for a password. Its output and input are
-then in that tab, which is titled *Debug: <file>* and stays when the program
-ends. The Debug console's first line names the tab. The program's exit still
-ends the session, and Stop ends the program. It is off by default and needs the
-program console switch on.
+While a session runs, a breakpoint the debugger has **not verified** (its code
+is not loaded yet, or the line has no code) is drawn as a hollow ring, with the
+debugger's explanation on hover. Every breakpoint is hollow from the start of
+the session until the debugger answers, and the markers return to normal when
+the session ends.
 
-With the switch off, the debugger starts a Java program itself. A program that
-prints a lot then gets its output to the console well after it writes it; the
-session ends, and the exit line shows, once the last of it has arrived. Until
-then the Debug window's state reads *Program ended, output still arriving*. The
-console still reports the program's exit code on Linux and macOS when the
-program runs on this machine. On Windows, and on a remote host, in WSL or in a container, it
-says "The program ended." instead. A JavaScript program's output, including
-`process.stdout.write`, still reaches the console, but the program cannot read
-input.
-
-## Managing breakpoints
+### Managing breakpoints
 
 A breakpoint's glyph shows its kind by shape as well as colour: a dot for a
 plain breakpoint, a diamond for a logpoint, two "=" bars for a breakpoint with
@@ -541,7 +657,7 @@ Lambda Breakpoint on a line that starts a lambda, Add Logpoint, Add Triggered
 Breakpoint, Edit Breakpoint, Move Breakpoint to Group, Enable / Disable
 Breakpoint, then Breakpoints… and Mute Breakpoints. While the program is
 paused, the editor's menu also has Run to Cursor,
-[Force Run to Cursor](/docs/debugging), Show Value at Caret,
+[Force Run to Cursor](#force-run-to-cursor), Show Value at Caret,
 [Evaluate Expression](#the-evaluate-window) and Add to Watches.
 
 Click the gutter strip to toggle a breakpoint; Shift+click it to add a
@@ -601,7 +717,7 @@ At an exception stop, the line that threw is drawn red, the
 [exception card](#exception-card) opens under it, and the exception's type and
 message are the top row of Variables.
 
-## Logpoints
+### Logpoints
 
 A logpoint logs a message each time its line runs, and the program goes on
 without stopping, like a `print` you don't have to add to the code and remove
@@ -616,7 +732,7 @@ right-click **Breakpoints** submenu and in **Run ▸ Breakpoints**. A small form
 **Log message**. Put an expression in braces to include its value:
 `{item.name}: total = {total}`. While the program is paused, the field completes
 the `{expression}` at the caret, as the full
-[Edit Breakpoint](/docs/debugging) form does.
+[Edit Breakpoint](#edit-breakpoint) form does.
 
 ![The Add Logpoint — shelf.js:13 form over the editor: the line's code total += subtotal; above a Log message field holding {item.name}: total = {total}, a hint that it is logged each time the line runs and the program does not suspend, and Cancel and OK buttons](/screenshots/docs/debug-add-logpoint.png "Add Logpoint asks only for the message; braces include a value.")
 
@@ -642,14 +758,16 @@ while Editora writes the message, then lets it go on.
 
 ![A JavaScript session paused on line 20 of shelf.js, the logpoint's blue diamond on line 13, and the Debug window's console showing four logged lines: 'Pencil': total = 0, 'Notebook': total = 4.800000000000001, 'Stapler': total = 13.05 and 'Marker': total = 21.950000000000003](/screenshots/docs/debug-logpoint-console.png "Each pass through the loop logs a line in the console; the program never stopped there.")
 
-The Groovy, Kotlin and Scala debuggers don't support logpoints yet (see their
-sections below). netcoredbg, the C# debugger, doesn't log them itself, so
+Editora's own JVM debugger, which debugs [Groovy](/docs/groovy#debugging),
+[Kotlin](/docs/kotlin#debugging), [Clojure](/docs/clojure#debugging) and
+[Scala scripts](/docs/scala#debugging), doesn't support logpoints yet: a
+logpoint there isn't set, and its hover says why. netcoredbg, the C# debugger, doesn't log them itself, so
 Editora does: at each hit the program pauses briefly, each `{expression}` is
 evaluated where it stopped, the message is written in the Debug console, and
 the program goes on. The editor isn't taken to the line, and the stop isn't
 kept in [Debug History](#debug-history).
 
-## Temporary breakpoints
+### Temporary breakpoints
 
 A temporary breakpoint is removed once the program stops on it, so it stops
 the program only once. **Debug: Toggle Temporary Breakpoint**
@@ -673,7 +791,7 @@ N hit and removed.* A temporary breakpoint with a condition or a hit count is
 removed only when it actually stops the program. A logpoint never stops the
 program, so it is never removed.
 
-## Recording breakpoints
+### Recording breakpoints
 
 A recording breakpoint keeps a stop instead of staying stopped. Each time it
 is hit, [Debug History](#debug-history) keeps that stop, with its call stack,
@@ -706,7 +824,7 @@ the program as an ordinary one does, and the status bar says why. It also
 stops as usual when Debug History is turned off in **Settings → Debugging →
 History**, since there is nowhere to keep the stop.
 
-## Triggered breakpoints
+### Triggered breakpoints
 
 A triggered breakpoint waits until another breakpoint is hit. Until then it
 does not stop the program; from then on it stops like any other breakpoint,
@@ -748,11 +866,11 @@ breakpoint becomes an ordinary one and stops at once. Only line breakpoints can
 be triggers; a [method breakpoint or field
 watchpoint](#method-breakpoints-and-field-watchpoints) can't.
 
-## Breakpoint filters
+### Breakpoint filters
 
 A breakpoint on a line many threads or callers pass through can be told to stop
 only for the ones you care about, as IntelliJ IDEA's breakpoint filters do.
-[Edit Breakpoint](/docs/debugging) has three fields for it:
+[Edit Breakpoint](#edit-breakpoint) has three fields for it:
 
 - **Only in threads:** stops only in threads whose name matches, such as
   `worker-*`.
@@ -771,14 +889,14 @@ its hover and the breakpoints list name them, such as *Only in threads:
 The filters are checked by Editora, not by the debugger, so they work with
 every language. At each hit Editora looks at the thread, the caller and the
 object, and when one doesn't match, lets the program go on without showing the
-stop. A filtered breakpoint's [hit count](/docs/debugging) and
+stop. A filtered breakpoint's [hit count](#edit-breakpoint) and
 [log message](#logpoints) count only the hits that pass the filters.
 
 To stop on one object, mark it at the breakpoint's first stop: while no object
 carries the label, the instance filter lets every hit through, and once one
 does, the next stops are that object's.
 
-## Breakpoint groups
+### Breakpoint groups
 
 Breakpoints can be put in named groups, as in IntelliJ IDEA, and a whole group
 turned on or off at once: the breakpoints for one bug, or for one part of the
@@ -804,7 +922,7 @@ lists its breakpoints, and Alt+G turns the selected row's group on or off.
 
 ![The Breakpoints list over shelf.js: shelf.js:12 and shelf.js:13, hollow, marked Disabled · Group: checkout, and shelf.js:21 marked Waits until shelf.js:12 is hit · Group: report; the key line ends with Alt+G group on/off and Alt+M mute all](/screenshots/docs/debug-breakpoint-groups.png "The Breakpoints list with the checkout group turned off.")
 
-## Exporting and importing breakpoints
+### Exporting and importing breakpoints
 
 **Debug: Export Breakpoints…** (`debug.exportBreakpoints`) writes your
 breakpoints to a file you can keep, or share with a teammate, as Visual
@@ -827,7 +945,7 @@ file, or one written by a newer Editora, is refused, and nothing is imported.
 
 Both commands are in **Run ▸ Breakpoints** and the palette.
 
-## Lambda breakpoints
+### Lambda breakpoints
 
 In Java, a line breakpoint stops once, when its line runs, and never inside a
 lambda on that line. On `items.forEach(x -> System.out.println(x));` it
@@ -884,7 +1002,7 @@ inside its braces.
 Java, JavaScript and TypeScript have lambda breakpoints. The other JVM
 languages and the other debuggers use line breakpoints.
 
-## Method breakpoints and field watchpoints
+### Method breakpoints and field watchpoints
 
 In Java, a breakpoint can be on a method or a field instead of a line.
 
@@ -915,7 +1033,7 @@ them after the line breakpoints, as *Method breakpoint* or *Field watchpoint,
 stops on assignment*. There Alt+E enables or disables one, Alt+D removes it,
 and Enter opens the method or field, found through the Java language server.
 **Mute Breakpoints** mutes them with the others, and
-[Force Run to Cursor](/docs/debugging) runs past them. When one stops the program,
+[Force Run to Cursor](#force-run-to-cursor) runs past them. When one stops the program,
 the Debug window's state line says *Suspended on entering a method* or
 *Suspended on a field access*.
 
@@ -939,6 +1057,190 @@ unmarked line still sets a line breakpoint.
 The marks are placed from the Java language server's outline of the file, so
 without it there are none; the breakpoints still stop the program. Only the
 Java debugger has method breakpoints and field watchpoints.
+
+### Exception breakpoints
+
+**Debug: Exception Breakpoints…** (`debug.toggleExceptionBreakpoints`) lists
+the exception filters of the debugger for the current session's language (or
+the active file's, when no session runs). A checkmark marks the ones that are
+on; choosing one turns it on or off, also during a session.
+
+| Language | Filters | On at the start |
+| --- | --- | --- |
+| Python | Raised Exceptions, Uncaught Exceptions, User Uncaught Exceptions | Uncaught Exceptions |
+| Java | Caught Exceptions, Uncaught Exceptions | none |
+| JavaScript | Caught Exceptions, Uncaught Exceptions | none |
+| Groovy, Kotlin, Clojure, Scala | Caught Exceptions, Uncaught Exceptions | Uncaught Exceptions |
+| Rust | Rust: on panic | Rust: on panic |
+| C and C++ (CodeLLDB) | C++: on throw, C++: on catch | C++: on throw |
+| C# | C#: user-unhandled exceptions, C#: all exceptions | C#: user-unhandled exceptions |
+| Ruby | Ruby: any raised exception, Ruby: RuntimeError | none |
+| PHP | PHP: exceptions, errors, warnings, notices, deprecations, everything | none |
+| Dart and Flutter | All Exceptions, Uncaught Exceptions | Uncaught Exceptions |
+| JavaScript in Firefox | All Exceptions, Uncaught Exceptions, Debugger Statements | Debugger Statements |
+
+Go has none to choose: Delve stops on a panic by itself. Lua's debugger stops
+on an uncaught error by itself too. Elixir and PowerShell have none, and Bash
+has no exceptions.
+
+A session starts with the filters its debugger turns on by default, so a
+Python program stops where an uncaught exception is raised, with the
+exception's type and message in the Debug window and the status bar. In
+Python, `sys.exit()` with a non-zero code also counts as an uncaught exception;
+Continue then ends the program. Editora keeps your choice for each language and
+each project, as it does for **Break on Caught Exceptions** and **Break on
+Uncaught Exceptions** (see [Managing breakpoints](#managing-breakpoints)).
+
+### Exception breakpoints by type
+
+To stop only on some exceptions, name their type, as IntelliJ IDEA's exception
+breakpoints do. **Debug: Add Exception Breakpoint…**
+(`debug.addExceptionBreakpoint`, also in **Run ▸ Breakpoints**) opens a form
+with:
+
+- **Exception type**: a type, or patterns separated by commas. `*` and `?` are
+  wildcards and `!` before a pattern leaves it out, so `java.io.*`, `*Error`
+  and `!InterruptedException` all work. A pattern matches the full type or its
+  last part, so `KeyError` matches Python's `KeyError`. Blank is any type.
+- **Language**: the language whose exceptions it is for.
+- **Condition** (optional): an expression evaluated where the exception was
+  thrown. `KeyError` with `order.id == 42` stops on that one order's error and
+  lets the rest go by.
+- **Enabled**.
+
+When the program is stopped on an exception, the form offers that exception's
+type. Subclasses are not matched by themselves: name them, or use a pattern
+such as `*IOException`.
+
+The program then stops only on an exception that matches; the others go by.
+An exception nothing catches always stops, and while **Break on Caught
+Exceptions** is on, every exception stops as before. If the condition can't be
+evaluated, the program stops and the status bar says why.
+
+Exception breakpoints are listed in **Debug: Exception Breakpoints…**, after
+the debugger's own filters. Choose one to edit it, turn it off or remove it.
+They are kept per project, with the other breakpoints, and work with every
+language whose debugger stops on exceptions.
+
+### Exception card
+
+When the program stops on an exception, a card opens under the line that threw
+it, once per stop. Its title says what kind of stop it is:
+
+- **Uncaught exception**, in red, for an exception that nothing catches;
+- **Exception (caught)** for one the program catches;
+- **Exception** when the debugger doesn't say which. The Java debugger says
+  which.
+
+Below the title are the exception's type and its message. When the debugger
+sends them, the card also lists the exceptions that caused it, each on a
+**Caused by** line, and the stack trace. The Python and JavaScript debuggers
+send them; the Java debugger sends only the type and the message.
+
+- **Copy** copies the type, the message, the causes and the stack trace; so
+  does **Debug: Copy Exception** (`debug.copyException`).
+- **Don’t Stop on Caught Exceptions** appears on a caught exception while
+  **Break on Caught Exceptions** is on, and turns that off, so the program no
+  longer stops on exceptions it catches.
+
+The card never takes focus, so typing stays in the editor. Esc in the editor,
+the card's ✕ or a click anywhere else closes it, and so do Continue, a step,
+picking another frame in the call stack, or the session ending. It follows its
+line when you scroll, and closes when the line leaves the screen.
+
+**Debug: Show Exception** (`debug.showException`, in **Run ▸ Debugger** while
+the program is paused) opens the card again. If another frame is shown, it goes
+back to the frame that threw first. When the program did not stop on an
+exception, the status bar says so.
+
+## Stepping
+
+Step Over, Step Into and Step Out move the program a line at a time, Continue
+runs it to the next breakpoint, and Pause stops it where it is; their keys are
+in [Commands and menus](#commands-and-menus).
+
+### Force Run to Cursor
+
+**Run to Cursor** (`debug.runToCursor`) runs the program to the caret's line
+and stops there, unless a breakpoint on the way stops it first.
+**Force Run to Cursor** (`debug.forceRunToCursor`) runs to the caret line as Run to Cursor does, but no
+breakpoint or logpoint on the way stops it, in any file. Exception breakpoints
+still stop the program. The breakpoints are back at the next stop, wherever
+that is: the caret line, an exception, or Pause. Its keys are `C-c C-d S-u` in
+the Emacs keymap and Ctrl+Alt+F9 (⌥⌘F9 on macOS) in the IntelliJ IDEA keymap;
+it is also in **Run ▸ Stepping** and, while the program is paused, in the
+editor's right-click menu.
+
+While the program is paused, pointing at a line number turns it into an arrow,
+and its tooltip names the line: click it to run to that line, as Run to Cursor
+does, or Shift+click it to get there past every breakpoint on the way, as Force
+Run to Cursor does.
+
+### Jump to Line
+
+**Jump to Line** moves the program to another line without running the code in
+between. It needs a debugger that can do that: Python's debugpy can. The Java
+and JavaScript debuggers cannot, and Jump to Line then says it is not supported.
+
+### Step timing
+
+After a step or Continue, the time the program ran until it stopped appears
+faintly after the line it stopped on, as Visual Studio's PerfTips show it.
+**Show how long each step took**, at the top of **Settings → Debugging** (on by
+default), turns it off.
+
+### Don't step into
+
+**Don't step into**, in **Settings → Debugging**, lists code that Step Into
+goes over: a step that lands there leaves at once. An entry can name:
+
+- a class or package: `com.shop.util.*`
+- a module: `requests`
+- a function: `fmt.*`, `std::*`
+- a file: `**/vendor/**`
+
+`*` stands for any text. Each entry is for one language or every language, and
+has its own on/off switch. **Add…**, **Edit…** and **Remove** change the list.
+
+To add the code you are in, right-click a frame in the call stack and choose
+**Don't Step Into This…** (`debug.dontStepIntoFrame`, also in
+**Run ▸ Stepping**). It offers the frame's code as its language names it: the
+class in Java, the file in Python (or the npm package in JavaScript), the
+package in Go and C#, or the outer namespace in C++ and Rust.
+
+A breakpoint inside code on the list still stops. The Java, Python and
+JavaScript debuggers, and the other JVM languages', skip the code themselves;
+with Go, Rust, C and C++ and the rest, Editora steps back out when a step
+lands there.
+
+### Stepping backward
+
+In a session that can run the program backward, the Debug window has two more
+buttons: **Step Back** (`debug.stepBack`) goes back over the last statement, with the
+variables as they were before it, and **Reverse Continue**
+(`debug.reverseContinue`) runs backward to the previous breakpoint, or as far
+back as the program was recorded. Both are also in **Run ▸ Stepping** and,
+in the Debug window, on the keys `b` and Shift+C. Unlike
+[Debug History](#debug-history), which shows a stop as it was without touching
+the program, these move the program itself back, and you can step forward
+again from there.
+
+For C and C++ debugged with **GDB** (**C and C++ debugger** on the
+[Rust, C and C++ card](/docs/c-cpp#debugging) of **Settings → Debugging**), turn
+on **Record Execution** (`debug.toggleRecording`, a toggle button in the Debug
+window and in **Run ▸ Stepping**) while the program is paused. GDB records the program from there, the Debug window's
+state line says *recording*, and Step Back and Reverse Continue go back over
+what ran since. Run it again to stop recording. Recording slows the program
+down a great deal, so turn it on just before the part you want to replay, not
+at the start. GDB's recorder needs nothing installed, and it records up to
+200,000 machine instructions by default. In a GDB session, Step Back and
+Reverse Continue are there from the start but disabled until Record Execution
+is on.
+
+A debugger that says it can step back by itself is used as it is: the buttons
+show in its sessions, and Record Execution is not needed. In a session that
+can't run backward, the commands are greyed out in the command palette and say
+why.
 
 ## Inspecting values
 
@@ -979,6 +1281,8 @@ variables are compared with what they were before the call. A variable that
 was not there before, such as one just declared, is not highlighted, and a new
 session starts with nothing to compare. Choosing another frame and coming back,
 or setting a value, keeps the highlights of the current stop.
+
+### The Variables tree
 
 In the Variables tree, the right-click menu has **Copy Value** (a string is
 copied without its quotes and escapes), **Copy Name**, **Copy as Expression**,
@@ -1047,6 +1351,22 @@ inline values. One limit remains, from a bug in the Java language server's
 debugger: a string that an evaluation builds, such as `name + "!"`, and the
 text inside a `toString()` result can still show such characters garbled.
 
+### Autos
+
+At each stop, the end of the Variables view has an **Autos** list, as Visual
+Studio has: open it to see the values of the variables and fields used on the
+line the program stopped at and on the line before. Once you open it, it stays
+open from stop to stop. It works with every debugger Editora runs.
+
+### Return values
+
+When a step leaves a function, Variables shows what the function returned,
+first in the caller's locals, as `(return) name`. This works in Python, and in
+Kotlin, Groovy and Clojure on Editora's own JVM debugger, for the function you
+step out of. JavaScript's debugger shows a "Return value" of its own.
+
+### The call stack
+
 The thread list leaves out the JVM's own housekeeping threads and puts the
 stopped thread first, marked "(paused)". The [Threads view](#threads-view)
 shows every thread at once. After the program ends, the state line
@@ -1070,7 +1390,7 @@ Thread "main"
 
 A frame without a source file is copied with its name only.
 
-## Evaluating expressions
+### Evaluating expressions
 
 While the program is paused, an expression can be evaluated in the frame
 selected in the call stack, as in IntelliJ IDEA: in the field at the top of
@@ -1086,7 +1406,7 @@ Expressions are evaluated only at a stop. While you look at an earlier stop in
 first. A step pressed while an evaluation runs is refused, and the status bar
 says why.
 
-### The evaluate field in Variables
+#### The evaluate field in Variables
 
 The Debug window's Variables start with an evaluate field. Type an expression
 and press Enter: its result is the first row of the tree, and an object, list
@@ -1100,7 +1420,7 @@ The button beside the field adds the expression to [Watches](#watches), so you
 can follow it at every stop (`debug.watchEvaluated`). **Debug: Focus Evaluate Field**
 (`debug.focusEvaluate`) puts the keyboard in the field from anywhere.
 
-### The Evaluate window
+#### The Evaluate window
 
 **Debug: Evaluate Expression** (`debug.evaluate`: Alt+F8 in the IntelliJ IDEA
 keymap, `C-c C-d x` in Emacs, and in the editor's right-click menu while the
@@ -1120,11 +1440,10 @@ back in the field. Esc or **Close** closes the window. After the program moves
 on, the last result can still be read but not unfolded; evaluate again for the
 new stop.
 
-Before, *Debug: Evaluate Expression* went to the Debug console's input field;
-use [Focus Evaluate Field](#the-evaluate-field-in-variables) for a field in the
-Debug window.
+To type in the evaluate field in Variables instead, use
+[Focus Evaluate Field](#the-evaluate-field-in-variables).
 
-### Typing an expression
+#### Typing an expression
 
 The evaluate field and the Evaluate window's field are small code editors:
 
@@ -1133,7 +1452,7 @@ The evaluate field and the Evaluate window's field are small code editors:
   that is `C-a` and `C-e`, `M-f` and `M-b`, `C-d`, `C-k`, `M-d`, `M-DEL`,
   `C-w`, `M-w` and `C-y`, and `C-/` to undo.
 - **Completion** lists what the debugger can complete: press Ctrl+Space, or
-  type `.` (see [completion](#inspecting-values)).
+  type `.` (see [completion](#the-variables-tree)).
 - They share one **history**, kept between sessions. Up and Down bring back
   the expressions you evaluated before; in Emacs, `C-p` and `C-n` do too at the
   first and last line, and so do `M-p` and `M-n`.
@@ -1145,7 +1464,7 @@ Java and JavaScript give a fragment's value: `int x = 2; return x * 3;` in
 Java, or `let x = 2; x * 3` in JavaScript, shows 6. Python runs a fragment but
 shows no value; evaluate an expression on its own to see one.
 
-### Quick Evaluate
+#### Quick Evaluate
 
 While the program is paused, **Alt+click** an expression in the editor to
 evaluate it at once. Clicking a name evaluates it with the names before it, as
@@ -1160,7 +1479,7 @@ Evaluate runs code, so a call it evaluates has its effects. **Debug: Quick
 Evaluate at Caret** (`debug.quickEvaluate`) does the same from the keyboard,
 for the selection or the expression at the caret.
 
-### Time limit
+#### Time limit
 
 An expression that calls a function which never returns, in a watch, the
 Debug console or a hover, would hold the paused program for good. With GDB and
@@ -1174,7 +1493,7 @@ CodeLLDB stops such a call in a watch or a hover by itself. The Java,
 JavaScript and Go debuggers have no limit to set: after 30 seconds Editora
 stops waiting and says the program is still running the expression.
 
-## Watches
+### Watches
 
 A watch is an expression evaluated at every stop and listed under **Watches**
 in Variables. Add one with **Add to Watches** in a Variables row's menu, the
@@ -1204,7 +1523,7 @@ A watch row's right-click menu has:
   evaluates an assignment for a field such as `o.n`.
 - **Remove All Watches**, also on the Watches heading: removes every watch.
 
-## Pinned values
+### Pinned values
 
 A pinned value is an expression kept on a line and shown at the end of that
 line at every stop, as Visual Studio's pinned DataTips and IntelliJ's inline
@@ -1239,7 +1558,61 @@ Pins are kept when no session runs, though they show only while the program is
 paused. They follow their line as you edit above it, are saved with the
 project's breakpoints, and come back on their line when the file opens again.
 
-## Marking objects
+### Filtering Variables
+
+The **Filter** field beside the Variables heading narrows each scope to the
+variables whose name contains what you type, ignoring case: `id` keeps `id`,
+`userId` and `ID_PREFIX`. Rows that arrive later, such as the next page of a
+scope, are filtered as they come. Watches are never filtered. In the field, Esc
+clears it and Down moves into the Variables tree.
+
+### Long lists and arrays
+
+A list or array opens 100 elements at a time in Variables and Watches; the last
+row reads *Show N more… (M remaining)*. Once a list or array with more than
+100 elements is open, its right-click menu has **Go to Index…**
+(`debug.goToSelectedIndex`), which asks for
+an index from 0 to the last one and shows the elements from there, still 100 at
+a time. The index can be written `250`, `[250]`, `1_000` or `1,000`. Go to
+Index 0 goes back to the start. While you look at a part of a list this way,
+its other children, such as a Java list's fields, are left out.
+
+### Hexadecimal values
+
+**Debug: Show Numbers as Hexadecimal** (`debug.toggleHex`), also in
+**Run ▸ Debugger** and as a check item in the Variables tree's right-click
+menu, shows
+integer values in hexadecimal in Variables, watches, the hover popup and inline
+values, so `255` reads `0xff`. Run it again to go back to decimal. The values
+are fetched again at once, and the switch holds for later sessions until you
+turn it off or quit Editora. Switching does not mark every number as
+[changed](#inspecting-values).
+
+The debugger formats the numbers: the Java and Python debuggers do,
+JavaScript's does not, so a JavaScript program's numbers stay decimal. CodeLLDB
+and Delve ignore it too; [Show Value As](#show-value-as) works with every
+debugger.
+
+### Show Value As
+
+Right-click a whole number in Variables or a watch and choose **Show Value As ▸
+Decimal**, **Hexadecimal**, **Binary**, **Octal** or **Character** to see that
+one value that way, while the others stay as they are. **As the Debugger Shows
+It** goes back.
+
+- A negative number shows as its two's complement for its type: `-42` as an
+  `int` is `0xffffffd6`. A `char` shows its code.
+- Chosen on an array or an object, it applies to the numbers inside, except
+  one with its own choice.
+- The choice holds at the next stop and in the next session, until the window
+  closes.
+- **Copy Value** copies what is shown.
+- On a value that is not a number, the submenu is greyed out and says why.
+
+It works with every debugger. GDB and Delve don't give a value's type, so with
+them a negative number keeps its sign, such as `-0x2a`.
+
+### Marking objects
 
 **Mark Object…**, in the right-click menu of a Variables, watch or
 [evaluate result](#evaluating-expressions) row that shows an object, gives
@@ -1270,7 +1643,7 @@ object; it can't be used in an expression. IntelliJ IDEA's *Referring
 Objects* is not offered: the Java debugger has no way to find which objects
 refer to another.
 
-## Viewing a string as JSON, XML or text
+### Viewing a string as JSON, XML or text
 
 **View As ▸ JSON**, **View As ▸ XML** and **View As ▸ Text**, in the
 right-click menu of a Variables, watch or evaluate result row that holds a
@@ -1290,7 +1663,7 @@ string that a row cuts short (JavaScript shows about 1,000 characters) opens
 complete. At an earlier stop in Debug History, it opens what that stop kept.
 XML is read without its DTD and without loading anything outside the text.
 
-## Viewing a collection as a table
+### Viewing a collection as a table
 
 **View as Table** (`debug.viewSelectedAsTable`), in the right-click menu of a
 Variables, watch or evaluate result row that holds a list, array, slice, set
@@ -1319,7 +1692,7 @@ collection shows its first 1,000 elements, and the note says how many there
 are. Each collection opens its own window. [Type renderers](#type-renderers)
 apply to the cells. Checked with Python, Java and Go.
 
-### DataFrames and numpy arrays
+#### DataFrames and numpy arrays
 
 In a Python program, the row is named **View as DataFrame** on a pandas
 DataFrame or Series, and **View as Array** on a numpy array, as PyCharm's data
@@ -1336,7 +1709,7 @@ viewer does. It opens the data's rows, not the object's attributes:
 Filter, sort, Copy and Open as CSV work as for any table, and Refresh reads
 the first rows again while the program is paused.
 
-## Type renderers
+### Type renderers
 
 A type renderer chooses how the debugger shows a value of one type, as IntelliJ
 IDEA's type renderers and Visual Studio's natvis do: a `Money` as `12.50 EUR`
@@ -1375,7 +1748,12 @@ right-click menu and **Run ▸ Debugger**, shows every value as the debugger giv
 it; run it again to turn the renderers back on. Checked with Java, Python and
 Go.
 
-## Debug History
+## History, threads and code views
+
+These views show a session from other sides: its earlier stops, every thread
+at once, and the code and memory under the source.
+
+### Debug History
 
 The Debug window keeps each stop of a session as it was shown: the call stack,
 the values you looked at in Variables, your watches, the inline values and the
@@ -1419,60 +1797,7 @@ last session's stops until you start the next one.
 [Recording breakpoints](#recording-breakpoints) add stops to the history
 without stopping the program.
 
-## Don't step into
-
-**Don't step into**, in **Settings → Debugging**, lists code that Step Into
-goes over: a step that lands there leaves at once. An entry can name:
-
-- a class or package: `com.shop.util.*`
-- a module: `requests`
-- a function: `fmt.*`, `std::*`
-- a file: `**/vendor/**`
-
-`*` stands for any text. Each entry is for one language or every language, and
-has its own on/off switch. **Add…**, **Edit…** and **Remove** change the list.
-
-To add the code you are in, right-click a frame in the call stack and choose
-**Don't Step Into This…** (`debug.dontStepIntoFrame`, also in
-**Run ▸ Stepping**). It offers the frame's code as its language names it: the
-class in Java, the file in Python (or the npm package in JavaScript), the
-package in Go and C#, or the outer namespace in C++ and Rust.
-
-A breakpoint inside code on the list still stops. The Java, Python and
-JavaScript debuggers, and the other JVM languages', skip the code themselves;
-with Go, Rust, C and C++ and the rest, Editora steps back out when a step
-lands there.
-
-## Stepping backward
-
-In a session that can run the program backward, the Debug window has two more
-buttons: **Step Back** (`debug.stepBack`) goes back over the last statement, with the
-variables as they were before it, and **Reverse Continue**
-(`debug.reverseContinue`) runs backward to the previous breakpoint, or as far
-back as the program was recorded. Both are also in **Run ▸ Stepping** and,
-in the Debug window, on the keys `b` and Shift+C. Unlike
-[Debug History](#debug-history), which shows a stop as it was without touching
-the program, these move the program itself back, and you can step forward
-again from there.
-
-For C and C++ debugged with **GDB** (**C and C++ debugger** on the
-[Rust, C and C++ card](/docs/c-cpp#debugging) of **Settings → Debugging**), turn
-on **Record Execution** (`debug.toggleRecording`, a toggle button in the Debug
-window and in **Run ▸ Stepping**) while the program is paused. GDB records the program from there, the Debug window's
-state line says *recording*, and Step Back and Reverse Continue go back over
-what ran since. Run it again to stop recording. Recording slows the program
-down a great deal, so turn it on just before the part you want to replay, not
-at the start. GDB's recorder needs nothing installed, and it records up to
-200,000 machine instructions by default. In a GDB session, Step Back and
-Reverse Continue are there from the start but disabled until Record Execution
-is on.
-
-A debugger that says it can step back by itself is used as it is: the buttons
-show in its sessions, and Record Execution is not needed. In a session that
-can't run backward, the commands are greyed out in the command palette and say
-why.
-
-## Threads view
+### Threads view
 
 The call stack shows one thread at a time, the one picked in the thread
 dropdown above it (**Debug: Choose Thread…**, `debug.chooseThread`, opens it
@@ -1513,7 +1838,7 @@ the program runs update it.
 With Python (debugpy), Pause Thread and Resume Thread pause or resume the whole
 program, not one thread.
 
-## Thread Dump
+### Thread Dump
 
 **Debug: Thread Dump** (`debug.threadDump`, also in **Run ▸ Debugger** and the
 right-click menus of the [Threads view](#threads-view) and the call stack)
@@ -1545,7 +1870,7 @@ a breakpoint stops only its own thread (see
 with Java, Python, Go and every other debugger that lists threads; Go's
 goroutines are listed as threads.
 
-## Parallel Stacks
+### Parallel Stacks
 
 **Debug: Parallel Stacks** (`debug.parallelStacks`, beside Thread Dump in
 **Run ▸ Debugger** and the Threads view's and call stack's menus) draws every
@@ -1563,61 +1888,7 @@ text, and **Take Again** draws it anew. As with Thread Dump, a running program i
 and goes on, and threads that were running at a stop, with no stack to draw,
 are counted in a note. Checked with Python, Java and Go.
 
-## Filtering Variables
-
-The **Filter** field beside the Variables heading narrows each scope to the
-variables whose name contains what you type, ignoring case: `id` keeps `id`,
-`userId` and `ID_PREFIX`. Rows that arrive later, such as the next page of a
-scope, are filtered as they come. Watches are never filtered. In the field, Esc
-clears it and Down moves into the Variables tree.
-
-## Long lists and arrays
-
-A list or array opens 100 elements at a time in Variables and Watches; the last
-row reads *Show N more… (M remaining)*. Once a list or array with more than
-100 elements is open, its right-click menu has **Go to Index…**
-(`debug.goToSelectedIndex`), which asks for
-an index from 0 to the last one and shows the elements from there, still 100 at
-a time. The index can be written `250`, `[250]`, `1_000` or `1,000`. Go to
-Index 0 goes back to the start. While you look at a part of a list this way,
-its other children, such as a Java list's fields, are left out.
-
-## Hexadecimal values
-
-**Debug: Show Numbers as Hexadecimal** (`debug.toggleHex`), also in
-**Run ▸ Debugger** and as a check item in the Variables tree's right-click
-menu, shows
-integer values in hexadecimal in Variables, watches, the hover popup and inline
-values, so `255` reads `0xff`. Run it again to go back to decimal. The values
-are fetched again at once, and the switch holds for later sessions until you
-turn it off or quit Editora. Switching does not mark every number as
-[changed](#inspecting-values).
-
-The debugger formats the numbers: the Java and Python debuggers do,
-JavaScript's does not, so a JavaScript program's numbers stay decimal. CodeLLDB
-and Delve ignore it too; [Show Value As](#show-value-as) works with every
-debugger.
-
-## Show Value As
-
-Right-click a whole number in Variables or a watch and choose **Show Value As ▸
-Decimal**, **Hexadecimal**, **Binary**, **Octal** or **Character** to see that
-one value that way, while the others stay as they are. **As the Debugger Shows
-It** goes back.
-
-- A negative number shows as its two's complement for its type: `-42` as an
-  `int` is `0xffffffd6`. A `char` shows its code.
-- Chosen on an array or an object, it applies to the numbers inside, except
-  one with its own choice.
-- The choice holds at the next stop and in the next session, until the window
-  closes.
-- **Copy Value** copies what is shown.
-- On a value that is not a number, the submenu is greyed out and says why.
-
-It works with every debugger. GDB and Delve don't give a value's type, so with
-them a negative number keeps its sign, such as `-0x2a`.
-
-## Disassembly and Memory
+### Disassembly and Memory
 
 For C, C++, Rust and Go, the Debug window's third area shows the machine code
 and the memory of the program as well as its console, as VS Code, Visual
@@ -1625,8 +1896,8 @@ Studio and IntelliJ do. Three toggles in the area's header switch between
 **Console** (`debug.showConsoleArea`), **Disassembly** and **Memory**. **Debug: Show Disassembly**
 (`debug.showDisassembly`) and **Debug: Show Memory** (`debug.showMemory`), also
 in **Run ▸ Debugger**, open the Debug window on them. Both views need a
-debugger that offers them: CodeLLDB, which debugs Rust, C and C++, and Delve,
-which debugs Go, do. With another debugger, the view says it can't.
+debugger that offers them: CodeLLDB, which debugs Rust, C and C++, GDB, which
+debugs C and C++, and Delve, which debugs Go, do. With another debugger, the view says it can't.
 
 **Disassembly** shows the machine instructions around the selected frame,
 about 120 of them, with their addresses. The instruction the frame is at is
@@ -1656,7 +1927,24 @@ opens the view at that variable.
 Memory that can't be read, or an expression with no address, is said in the
 view.
 
-## Loaded Sources and Modules
+To change memory while the program is paused, double-click a row of the
+Memory view, press F2, or choose **Edit Bytes…** in its right-click menu, and
+type the new bytes, in hexadecimal or as "quoted text". Only the bytes you
+changed are written, and the Memory view and Variables show the new values.
+This works on CodeLLDB, GDB and Delve.
+
+#### Instruction breakpoints
+
+In the Disassembly view, click the margin before an instruction's address,
+press F9, or use the row's right-click menu to put a breakpoint on that one
+machine instruction. The program stops there, and the Disassembly view opens
+at it. **Edit Breakpoint…** on the row gives it a condition and a hit count,
+as a line breakpoint has. The Breakpoints list shows the session's
+instruction breakpoints too: Enter opens the Disassembly view at one, and
+Alt+D removes it. An address belongs to one run of the program, so instruction
+breakpoints last for the debug session. They work on CodeLLDB, GDB and Delve.
+
+### Loaded Sources and Modules
 
 While a session runs, two lists show what the program has loaded. Both are in
 **Run ▸ Debugger** and the palette, where they are greyed out when no session
@@ -1695,7 +1983,7 @@ When the debugger doesn't fill a list, as Java's and Go's fill neither, the
 command says so in the status bar. The lists follow the program as
 it runs: a source or module it unloads drops out.
 
-## Code without a file
+### Code without a file
 
 When a JavaScript or TypeScript program stops in, or steps into, code the
 debugger holds only in memory, such as code run through `eval`, that code opens in a read-only tab, named as the debugger names it
@@ -1716,175 +2004,87 @@ leaves code run through `exec` out of the call stack by default, so in practice
 this is for JavaScript and TypeScript. An earlier stop in such code, seen in
 [Debug History](#debug-history), still says there is no source.
 
-## Keys in the Debug window
+## Adapters and remote debugging
 
-Starting a session or stopping at a breakpoint never moves the keyboard focus
-into the Debug window: focus stays in the editor, with the caret on the
-stopped line. A stop opens the Debug window again if you closed it.
+Where each debugger comes from, how to add one of your own, and debugging a
+program on another machine, in a container or in WSL.
 
-When you click into the Debug window, single keys drive the session, as in
-gdb:
+### Installing adapters
 
-| Key | Action |
-| --- | --- |
-| `c` | Start or continue |
-| `p` | Pause |
-| `n` | Step over |
-| `s` | Step into |
-| `f` | Step out (finish) |
-| `u` | Run to cursor |
-| `b` | [Step back](#stepping-backward) |
-| Shift+C | [Reverse continue](#stepping-backward) |
-| Shift+K | Stop |
-| Shift+R | Restart |
+Adapters are not bundled. Most languages' cards on **Settings → Debugging**
+have an **Install…** button that downloads what is missing into your config folder:
+for Java and Python, the adapter together with its language server. The same
+installs are three palette commands:
 
-Stop and Restart need Shift, so a stray `k` or `r` typed in a list does nothing
-to the program. The keys don't apply while you type in the evaluate field or
-the console's input field.
-Stepping keeps the focus in the Debug window, so you can step again and again.
-A toolbar button's tooltip shows both its key in your keymap and its key in the
-Debug window, for example "Step Over (F10 · in this window: N)".
+| Command | Installs | Needs |
+| --- | --- | --- |
+| **Install: Java Language Support** (`install.javaSupport`) | jdtls and the Microsoft java-debug plugin | `tar`, and a JDK to run `jdtls` |
+| **Install: Python Language Support (Pyright, debugpy)** (`install.pythonSupport`) | Pyright and debugpy | Python with `pip` for debugpy; Node.js with `npm` for Pyright |
+| **Install: TypeScript / JavaScript (Node.js) Language Support** (`install.jsSupport`) | `typescript-language-server` 5.3.0 with TypeScript 5.9.3, and vscode-js-debug v1.117.0 | Node.js with `npm`, and `tar` |
 
-## launch.json configurations
+The Java and Python cards on the **Settings → Debugging** page have the same
+**Install…** button; the JavaScript card's **Install…** installs only
+vscode-js-debug. The **Go (Delve)** card's **Install…** runs `go install` for
+Delve, the **Rust, C and C++ (CodeLLDB)** card's downloads CodeLLDB, the **C#
+(netcoredbg)** card's downloads netcoredbg, the **Ruby (rdbg)** card's runs
+`gem install` for the debug gem, the **PHP (Xdebug)** card's downloads PHP
+Debug, and the **Bash (bashdb)** card's downloads Bash Debug with its own bashdb, the
+**Lua (local-lua-debugger)** card's downloads Local Lua Debugger, the
+**Firefox (vscode-firefox-debug)** card's downloads vscode-firefox-debug, and
+the **Elixir (ElixirLS)** card's downloads ElixirLS. Dart's debugger comes with
+the Dart SDK, and PowerShell's (PowerShell Editor Services) you install
+yourself, so those two cards have no Install…. See
+[Debugging Go](/docs/go#debugging), [Debugging Rust](/docs/rust#debugging),
+[Debugging C#](/docs/csharp#debugging), [Debugging Ruby](/docs/ruby#debugging),
+[Debugging PHP](/docs/php#debugging), [Debugging Bash](/docs/shell#debugging),
+[Debugging Lua](/docs/lua#debugging), [Debugging Dart](/docs/dart#debugging),
+[Debugging in Firefox](/docs/javascript-typescript#debugging-in-a-browser),
+[Debugging Elixir](/docs/elixir#debugging) and
+[Debugging PowerShell](/docs/powershell#debugging). An install fetches only what is missing. When one tool's
+runtime is missing, the others still install and the status bar names the one
+that waits (debugpy installs without Node.js, for example). When Python has no
+`pip`, the error says so. After a debugger installs while debugging is off, the
+status bar says where to turn it on.
 
-**Debug: Start Configuration…** (`debug.startConfiguration`, in **Run ▸ Launch
-and Attach**) lists the configurations of the project's `.vscode/launch.json`, or
-of the nearest one above the active file, and its [compounds](#compounds), and
-starts the one you pick as VS Code would. A configuration started while a
-session runs is debugged beside it, in a session of its own
-([Several sessions](#several-sessions)). Type to filter the list; the configuration you started last is
-listed first. With no `launch.json`, the status bar says so.
+Editora does not install those runtimes for you. A downloaded server or adapter
+is unpacked beside the installed version and replaces it only once it is
+complete, so a failed install leaves the working one in place.
 
-| `type` | Debugger |
-| --- | --- |
-| `lldb` | CodeLLDB, for Rust, C or C++. Its `cargo` field runs Cargo first and debugs the program Cargo built |
-| `gdb` | GDB's own debug adapter mode (GDB 14 or later); attaches by `pid` |
-| `cppdbg` | GDB, or CodeLLDB when `MIMode` is `lldb`; attaches by `processId` |
-| `go` | Delve, with `exec` for a program you built yourself; `mode: remote` isn't supported |
-| `debugpy`, `python` | debugpy; an attach connects to its `connect` address |
-| `node`, `pwa-node` | vscode-js-debug; an attach connects to its `address` and `port` |
-| `java` | the Java debugger: `mainClass`, `projectName`, `args`, `vmArgs`, `cwd` and `env` |
-| `coreclr` | netcoredbg, `program` being the built assembly; attaches by `processId` |
-| `rdbg` | rdbg, with `useBundler` for `bundle exec`; an attach connects to a local `debugPort` |
-| `php` | PHP Debug; without a `program`, it listens for Xdebug |
-| `bashdb` | Bash Debug, which launches a script under bashdb; it can't attach |
-| `PowerShell` | [PowerShell Editor Services](/docs/powershell#debugging), which launches a `script` (a file or a command) with its `args`; it can't attach |
-| `chrome`, `msedge` | vscode-js-debug driving a [browser](/docs/javascript-typescript#debugging-in-a-browser): a launch needs a `url` or a `file`; an attach connects to its `port` |
+To install an adapter by hand instead, the Editora repository has a helper
+script for each:
 
-A [debug adapter of your own](#debug-adapters-of-your-own) is used by its
-`type` too. Any other type, such as C# Dev Kit's `dotnet`, is refused with a
-message.
+- **Java**: the Microsoft java-debug plugin (layered onto `jdtls`),
+  `scripts/install-java-debug.sh`. If your `jdtls` distribution already bundles
+  and loads java-debug itself (Homebrew's does), Editora detects that and needs
+  no second copy.
+- **Python**: `debugpy`, `scripts/install-debugpy.sh`.
+- **JavaScript**: vscode-js-debug, `scripts/install-js-debug.sh`.
 
-The file is read as VS Code reads it: comments and trailing commas are allowed,
-and a configuration's `linux`, `osx` and `windows` parts apply on that system.
+**Settings → Debugging** shows one language's card at a time: pick it in
+**Language**, under **Enable debugging (DAP)**. The cards every language
+shares follow it. A search in Settings ignores the pick and shows the
+matching settings of every language.
 
-- **Variables:** `${workspaceFolder}`, `${file}` and the rest of the `${file…}`
-  family, `${relativeFile}`, `${lineNumber}`, `${selectedText}`, `${env:NAME}`,
-  `${userHome}` and `${pathSeparator}` are filled in. `${input:id}` asks for
-  its value once per start, as a list to pick from (`pickString`) or a prompt
-  (`promptString`), before anything runs. `${command:…}` and `${config:…}` name
-  VS Code's own commands and settings, so they are refused with a message.
-- **`preLaunchTask`:** a task of `.vscode/tasks.json` that is a `shell` or
-  `process` command runs first, in the Debug console, after Editora saves the
-  folder's edited files. The command is the folder's own code, so in a folder
-  you have not trusted it first asks you to
-  [trust the folder](/docs/workspace#trusted-folders), naming the command;
-  declining runs nothing. **Restart** runs the task again. Any other kind of
-  task, or one with `dependsOn`, isn't run: the status bar says to run it
-  yourself first.
-- **`postDebugTask`:** a task of `tasks.json`, of the same kinds, that runs
-  when the session ends, in the Debug console after the program's output.
-  **Restart** runs it before the `preLaunchTask` and the new launch, as VS Code
-  does.
-- **`serverReadyAction`:** Editora watches the program's output for the
-  server's address, and the first time it sees it, opens the address or
-  debugs it:
+Each language's card has a **Detected** line, for example
+*debugpy: found (/usr/bin/python3)* (the interpreter that has debugpy) or
+*js-debug: not found*, also while that language's debugging is switched off.
+Every card but Python's also has the adapter's path field with **Browse…** (C
+and C++ use Rust's CodeLLDB path, or the **GDB path**), and every card but
+Java's a switch that turns that language's
+debugging on or off. While **Enable debugging (DAP)** is off, the cards are greyed and
+a note says to turn it on. Python has no path field there: debugpy runs under
+a Python interpreter, and the **Python interpreter (fallback for Run, Debug and
+code intelligence)** is on the Python card of **Settings → LSP**, which stays
+editable with debugging off. It is the Python used when a project has no
+interpreter of its own, and the one that runs debugpy when the project's
+interpreter cannot import it. A link at the top of the Debugging page leads
+there.
 
-  ```json
-  {
-    "name": "Server", "type": "node", "request": "launch",
-    "program": "${workspaceFolder}/server.js",
-    "serverReadyAction": { "action": "debugWithChrome", "killOnServerStop": true }
-  }
-  ```
+![The Language picker of Settings → Debugging set to Go (Delve), and under it the Go (Delve) card: Enable Go debugging (Delve) on, an empty Delve (dlv) path field with Browse…, and Detected dlv: found (/home/ada/go/bin/dlv) with the Install button reading Installed](/screenshots/docs/debug-settings-go.png "The Go card: Delve found where go install puts it.")
 
-  - `pattern`: a regular expression looked for in each line of output, in
-    any case, with colour codes taken out. It is `listening on.* (https?://\S+|[0-9]+)`
-    when you leave it out, which matches "listening on port 3000" and
-    "Now listening on: https://localhost:5001".
-  - `uriFormat`: the address made of what the pattern's first group caught,
-    with `%s` standing for it. A port number gives `http://localhost:%s` and
-    an address gives itself. A pattern with no group uses `uriFormat` as it is.
-  - `action`: `openExternally` (the default) opens the address in your
-    browser. `debugWithChrome` and `debugWithEdge` open it in Chrome or Edge
-    under the debugger, in a session beside the server's, with `webRoot`
-    (the workspace folder unless you set it) for the page's scripts.
-    `startDebugging` starts another configuration: the one called `name`, or
-    the one given as `config`.
-  - `killOnServerStop`: when the server's session ends, the session the
-    address started stops too.
+![The Language picker of Settings → Debugging open, listing Java, Python, JavaScript (Node.js), Go (Delve), Rust, C and C++ (CodeLLDB), C# (netcoredbg), Ruby (rdbg), PHP (Xdebug) and Bash (bashdb), with C# picked; behind it the C# (netcoredbg) card with its Enable switch, netcoredbg path field and an Install… button](/screenshots/docs/debug-settings-languages.png "One language at a time: the Language picker lists every language with a debugger.")
 
-  The Debug console says what was done with the address. The program's output
-  is watched in the Debug console only: a program you run in a Terminal tab
-  (Settings → Debug) isn't watched.
-
-## Compounds
-
-A compound starts several configurations together, each in a session of its
-own ([Several sessions](#several-sessions)), in the order it lists them: a
-server and its client, say. It comes from the project's `.vscode/launch.json`,
-or from the project's own saved run configurations.
-
-A **launch.json compound** is a `compounds` entry, read as VS Code reads it.
-**Debug: Start Configuration…** lists it beside the configurations, as
-*compound · 2 configurations*:
-
-```json
-{
-  "version": "0.2.0",
-  "configurations": [
-    { "name": "Server", "type": "debugpy", "request": "launch", "program": "${workspaceFolder}/server.py" },
-    { "name": "Client", "type": "debugpy", "request": "launch", "program": "${workspaceFolder}/client.py" }
-  ],
-  "compounds": [
-    { "name": "Server and client", "configurations": ["Server", "Client"], "stopAll": true }
-  ]
-}
-```
-
-- `configurations`: the configurations it starts, by name.
-- `preLaunchTask`: a task that runs once, before any of them. Each
-  configuration's own `preLaunchTask` still runs before that configuration.
-- `stopAll`: stopping one session of the compound stops them all.
-
-An `${input:…}` that several of its configurations use is asked once. When a
-compound names a configuration that isn't in the file, nothing starts, and the
-status bar names the missing one.
-
-A **compound of run configurations** debugs the project's saved
-[run configurations](/docs/run-debug#run-configurations) together. **Debug: Edit
-Compounds…** (`debug.editCompounds`, in **Run ▸ Launch and Attach**) opens the
-**Compounds** window: the project's compounds on the left and, for the one
-selected, its **Name**, the **Run configurations to debug together** to tick,
-and **Stopping one stops them all**. **Add** (`debug.addCompound`) makes a compound, **Remove**
-deletes it, and **Debug** starts it. Every change is saved as you make it, with
-the project. The ticked configurations start in the order the run
-configurations are listed, each debugged as **Debug a saved run
-configuration** debugs it, so each must be a kind that can be debugged (see
-[What a configuration can launch](/docs/run-debug#what-a-configuration-can-launch)).
-
-![The Compounds window: a compound named Server and worker on the left; on the right its Name, the list Run configurations to debug together with API server and Restock worker ticked and Web client and Price check not, Stopping one stops them all ticked, and Add, Remove, Debug and Close buttons](/screenshots/docs/debug-compounds.png "A compound of two saved run configurations, made in Debug: Edit Compounds….")
-
-**Debug: Start Compound…** (`debug.startCompound`, in **Run ▸ Launch and Attach**) lists
-both kinds, the project's own first. Type to filter; **New Compound…**, last in
-the list, opens the Compounds window on a new one.
-
-The sessions of a compound build at the same time. When the compound stops
-them all, **Stop** in any of its sessions stops every one that still runs.
-**Stop All** stops every session, compound or not, and a program that ends by
-itself ends only its own session.
-
-## Debug adapters of your own
+### Debug adapters of your own
 
 Any program that speaks the Debug Adapter Protocol can debug in Editora, such
 as `lldb-dap` or a language's own debugger. **Debug: Edit Debug Adapters**
@@ -1924,7 +2124,7 @@ A [trusted](/docs/workspace#trusted-folders) project can bring its own in
 `.editora/debug-adapters.json`; they replace yours of the same type. An entry
 that can't be read is named in the status bar, and the others still work.
 
-## Debugging on a remote host
+### Debugging on a remote host
 
 A file in a [remote folder](/docs/remote) is debugged on its host, when that
 host [may run commands](/docs/remote#allowing-a-host-to-run-commands), with
@@ -1955,7 +2155,7 @@ A Java configuration that runs on a [deployment](/docs/deployments#debugging-on-
 is debugged on its host too: the program starts there and the debugger attaches
 through a tunnel, with breakpoints in the local files.
 
-## Debugging in a container or WSL
+### Debugging in a container or WSL
 
 A project whose tools [run in a container](/docs/remote#tools-in-a-container)
 or [in a WSL distribution](/docs/remote#tools-in-wsl-windows) is debugged there,
@@ -1969,70 +2169,7 @@ reached from here whatever the container's network, through a relay that needs
 [Ports and debuggers](/docs/remote#ports-and-debuggers)). Containers and WSL
 are part of [Remote](/docs/remote), which is in Beta.
 
-## Installing adapters
-
-Adapters are not bundled. Each language's card on **Settings → Debugging** has
-an **Install…** button that downloads what is missing into your config folder:
-for Java and Python, the adapter together with its language server. The same
-installs are three palette commands:
-
-| Command | Installs | Needs |
-| --- | --- | --- |
-| **Install: Java Language Support** (`install.javaSupport`) | jdtls and the Microsoft java-debug plugin | `tar`, and a JDK to run `jdtls` |
-| **Install: Python Language Support (Pyright, debugpy)** (`install.pythonSupport`) | Pyright and debugpy | Python with `pip` for debugpy; Node.js with `npm` for Pyright |
-| **Install: TypeScript / JavaScript (Node.js) Language Support** (`install.jsSupport`) | `typescript-language-server` 5.3.0 with TypeScript 5.9.3, and vscode-js-debug v1.117.0 | Node.js with `npm`, and `tar` |
-
-The Java and Python cards on the **Settings → Debugging** page have the same
-**Install…** button; the JavaScript card's **Install…** installs only
-vscode-js-debug. The **Go (Delve)** card's **Install…** runs `go install` for
-Delve, the **Rust, C and C++ (CodeLLDB)** card's downloads CodeLLDB, the **C#
-(netcoredbg)** card's downloads netcoredbg, the **Ruby (rdbg)** card's runs
-`gem install` for the debug gem, and the **PHP (Xdebug)** card's downloads PHP
-Debug; see [Debugging Go](/docs/go#debugging), [Debugging Rust](/docs/rust#debugging),
-[Debugging C#](/docs/csharp#debugging), [Debugging Ruby](/docs/ruby#debugging) and
-[Debugging PHP](/docs/php#debugging). An install fetches only what is missing. When one tool's
-runtime is missing, the others still install and the status bar names the one
-that waits (debugpy installs without Node.js, for example). When Python has no
-`pip`, the error says so. After a debugger installs while debugging is off, the
-status bar says where to turn it on.
-
-Editora does not install those runtimes for you. A downloaded server or adapter
-is unpacked beside the installed version and replaces it only once it is
-complete, so a failed install leaves the working one in place.
-
-To install an adapter by hand instead, the Editora repository has a helper
-script for each:
-
-- **Java**: the Microsoft java-debug plugin (layered onto `jdtls`),
-  `scripts/install-java-debug.sh`. If your `jdtls` distribution already bundles
-  and loads java-debug itself (Homebrew's does), Editora detects that and needs
-  no second copy.
-- **Python**: `debugpy`, `scripts/install-debugpy.sh`.
-- **JavaScript**: vscode-js-debug, `scripts/install-js-debug.sh`.
-
-**Settings → Debugging** shows one language's card at a time: pick it in
-**Language**, under **Enable debugging (DAP)**. The cards every language
-shares follow it. A search in Settings ignores the pick and shows the
-matching settings of every language.
-
-Each language's card has a **Detected** line, for example
-*debugpy: found (/usr/bin/python3)* (the interpreter that has debugpy) or
-*js-debug: not found*, also while that language's debugging is switched off.
-The Java, JavaScript, Go, Rust, C#, Ruby and PHP cards also have the adapter's
-path field with **Browse…** (C and C++ use Rust's CodeLLDB path, or the **GDB
-path**), and every card but Java's a switch that turns that language's
-debugging on or off. While **Enable debugging (DAP)** is off, the cards are greyed and
-a note says to turn it on. Python has no path field there: debugpy runs under
-a Python interpreter, and the **Python interpreter (fallback for Run, Debug and
-code intelligence)** is on the Python card of **Settings → LSP**, which stays
-editable with debugging off. It is the Python used when a project has no
-interpreter of its own, and the one that runs debugpy when the project's
-interpreter cannot import it. A link at the top of the Debugging page leads
-there.
-
-![The Language picker of Settings → Debugging set to Go (Delve), and under it the Go (Delve) card: Enable Go debugging (Delve) on, an empty Delve (dlv) path field with Browse…, and Detected dlv: found (/home/ada/go/bin/dlv) with the Install button reading Installed](/screenshots/docs/debug-settings-go.png "The Go card: Delve found where go install puts it.")
-
-![The Language picker of Settings → Debugging open, listing Java, Python, JavaScript (Node.js), Go (Delve), Rust, C and C++ (CodeLLDB), C# (netcoredbg), Ruby (rdbg), PHP (Xdebug) and Bash (bashdb), with C# picked; behind it the C# (netcoredbg) card with its Enable switch, netcoredbg path field and an Install… button](/screenshots/docs/debug-settings-languages.png "One language at a time: the Language picker lists every language with a debugger.")
+## Related pages
 
 For sending HTTP requests from `.http` files, see the
 [HTTP client](/docs/http-client). For Maven, Gradle, npm, Cargo, Go, sbt,

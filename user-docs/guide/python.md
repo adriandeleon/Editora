@@ -2,7 +2,7 @@
 title: "Python"
 description: "Pyright and the Python interpreter, sub-projects and formatting, running scripts, and debugging Python with debugpy."
 category: Languages
-order: 2
+order: 16
 ---
 
 Python gets code intelligence from Pyright, runs a script from its `__main__` guard, and debugs with debugpy. What every language shares is on the [language servers](/docs/lsp), [running](/docs/run-debug) and [debugging](/docs/debugging) pages; this page is what is particular to Python.
@@ -224,9 +224,49 @@ they have a `__main__` guard. A guard inside a string or docstring does not
 count. A test file (`test_*.py`, `*_test.py`) gets a ▶ for each test instead,
 and Run on it runs its tests: see [Test runner](/docs/build-tools#test-runner).
 
+## Web apps
+
+Run File and Debug File on the file that starts a Django, Flask or FastAPI app
+serve the app, under the Python that [Run](#running-scripts) uses:
+
+| File | Runs |
+| --- | --- |
+| a `manage.py` that mentions Django | `manage.py runserver` |
+| a module that makes `app = Flask(…)` | `python -m flask --app module:app run --reload` |
+| a module that makes `app = FastAPI(…)` | `python -m uvicorn module:app --reload` |
+
+The app's variable can have any name, and a module inside packages (folders
+with an `__init__.py`) is named with its package, such as `shop.web:app`, and
+served from the folder above the top package, so its imports work. An app made
+only inside a factory function, such as `create_app()`, isn't recognised, and
+neither is a file with an `if __name__ == "__main__":` guard, which starts its
+own server: those run as scripts. The arguments set by **File: Run with
+Arguments…** follow the command; on `manage.py` they replace `runserver`, so
+`migrate` runs a migration. The framework's own default port is used, and no
+browser opens. Stop ends the server and its reloader.
+
+The debugger follows the reloader: the server's reloaded process is debugged
+in a session of its own (see the subprocesses below), so breakpoints keep
+stopping after each code change reloads it. On a remote host, in WSL or in a
+container, the server is debugged without its reloader instead (`--noreload`,
+`--no-reload`). Breakpoints in Django and Jinja templates are described under
+[Debugging](#debugging).
+
+**Run: Add Run Configuration** (`run.addConfig`) on such a file suggests a configuration named after
+the framework, such as `app.py (Flask)`.
+
+## Tests
+
+Python tests run with pytest, or with `unittest` when pytest isn't installed,
+with a ▶ on each test, Run Test at Caret, and their results in Test Results;
+see [Python tests](/docs/build-tools#python-tests). Debugging a test is
+described at the end of [Debugging](#debugging).
+
 ## Debugging
 
-Debug a Python file with **Debug: Start / Continue** (`debug.start`), or with
+Debug a Python file with **Debug: Start / Continue** (`debug.start`:
+`C-c C-d d` in the Emacs keymap, F5 in the VS Code, CUA and Sublime Text
+keymaps), or with
 **Debug File** in the editor's right-click menu, next to **Run File**. The
 program runs the way [Run](#running-scripts) runs it: under the same
 interpreter (the project's virtual environment, the one picked for the project,

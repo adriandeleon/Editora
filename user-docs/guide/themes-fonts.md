@@ -2,7 +2,7 @@
 title: Themes & fonts
 description: Editor color themes, bundled monospace fonts, and text zoom.
 category: Customization
-order: 3
+order: 1
 ---
 
 Appearance settings live in **Settings → Appearance**, which includes a live
@@ -14,19 +14,31 @@ preview that recolors as you change things.
 palette in its icon: a teal accent, an ink-navy ground, and a periwinkle reserved
 for keybindings. They are what a fresh install starts in.
 
-Twenty-eight themes ship in total:
+Thirty themes ship in total:
 
 - **Editora** (light and dark), the default
+- **High Contrast Light** and **High Contrast Dark**, with black or white
+  grounds and text, accents and syntax colors that read at 7:1 or better
 - **Primer** (GitHub-style), **Nord** and **Cupertino**, each in light and dark
 - **Dracula**
 - A community set of nineteen themes in twelve families: Army, Autumn, Blacky,
   Blue, Browny, Fall, Navy, News, Spring, Summer, Winter and Yacht (seven of
   them in light and dark)
 
+**System**, first in the app theme picker, is not a theme of its own: it is
+Editora Light while your system is set to light and Editora Dark while it is
+set to dark, and it switches as soon as the system does, without a restart.
+
+While Windows' high-contrast mode is on, Editora switches to High Contrast
+Light or High Contrast Dark by itself, whichever matches the Windows scheme,
+and goes back to your theme when the mode ends.
+
 The app chrome is themed by AtlantaFX; the editor surface, gutter, syntax tokens
 and project tree are themed separately. The **Editor theme** picker starts with
 **Automatic**, which follows the app theme. A theme you pick there stays when
 the app theme changes; choose **Automatic** again to go back to following it.
+The editor theme can also be set to **System** on its own, to follow your
+system's light or dark setting whatever the app theme is.
 
 Both pickers group the themes under **Light** and **Dark** headings, with the
 members of a family next to each other. Your own themes are listed last, under

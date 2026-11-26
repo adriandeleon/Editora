@@ -1,8 +1,8 @@
 ---
 title: AI assistance
 description: One-shot AI actions and an embedded coding agent, using the Anthropic API or a local OpenAI-compatible model. Off by default.
-category: Customization
-order: 7
+category: Integrations
+order: 1
 beta: true
 ---
 
@@ -170,18 +170,27 @@ same text. The note under **API key** on the AI Actions page
 says where the keys are.
 
 Where no keychain answers (libsecret is not installed, or no Secret Service
-runs, as on a headless machine or in an SSH session), keys are saved in
-`settings.json` in your [config folder](/docs/configuration) as plain text,
-and the note says so. If the keychain that holds your keys does not answer at
-a start, a key typed in that session goes to `settings.json`, and the note
-says that too. If the keychain refuses a key, Editora puts the keys back in
-`settings.json` for the rest of the session. On a shared machine without a
-keychain, leave the Anthropic field empty and set `ANTHROPIC_API_KEY` in your
-environment instead.
+runs, as on a headless machine or in an SSH session), keys are saved in an
+encrypted file of their own, `keys/secrets.enc` in your
+[config folder](/docs/configuration) (`~/.editora/keys/secrets.enc`), never in
+`settings.json`. It is encrypted with AES-256-GCM under a random key Editora
+generates beside it, `keys/secrets.key`; where the file system has permissions,
+the folder and both files are readable by you alone. The note says so. The same
+happens when the keychain that holds your keys does not answer at a start (a
+key typed in that session goes to the file, and moves into the keychain once it
+answers again) and when the keychain refuses a key.
 
-Keys in the keychain are never exported. **Export Configuration…** leaves keys
-kept in `settings.json` out too, unless you tick **Include AI API keys**, and
-**Reset to Defaults** keeps your keys; see
+A key an older version of Editora left in `settings.json`, or in a backup of
+it, is moved into the keychain or the encrypted file at the next start and
+blanked in the file. If `secrets.enc` can't be decrypted, the note says so and
+Editora reads it as holding no keys; saving a key then moves the old file aside
+rather than writing over it. The file keeps keys from anyone who copies your
+settings, not from someone who can read your whole config folder as you. On a
+shared machine without a keychain, you can leave the Anthropic field empty and
+set `ANTHROPIC_API_KEY` in your environment instead.
+
+AI API keys are never exported, and [Settings sync](/docs/settings-sync) never
+carries them, wherever they are kept. **Reset to Defaults** keeps your keys; see
 [Export and reset](/docs/configuration#export-and-reset).
 
 ## What leaves your machine

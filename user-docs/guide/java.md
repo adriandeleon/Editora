@@ -2,10 +2,103 @@
 title: "Java"
 description: "The Java language server and its refactorings, Java projects, and debugging Java: hot code replace, threads, and debugging through Maven or Gradle."
 category: Languages
-order: 1
+order: 10
 ---
 
 Java gets code intelligence from Eclipse JDT LS (`jdtls`), runs a compact source file, a single-file program or any main class from the gutter, and debugs with the Java debug adapter. What every language shares is on the [language servers](/docs/lsp), [running](/docs/run-debug) and [debugging](/docs/debugging) pages; this page is what is particular to Java.
+
+## The Java server and your project
+
+- **Untrusted folders.** In a folder you have not trusted, jdtls starts
+  without the project's Maven or Gradle build, and the file says so with
+  **Trust Folder**; see
+  [Servers that load a project's build](/docs/lsp#servers-that-load-a-projects-build).
+- **Which jdtls.** Install fetches jdtls **1.63.0**. [Doctor](/docs/doctor)
+  names the installed version and warns when it is older, with an
+  [Update…](/docs/doctor#update-for-servers-older-than-editoras)
+  button that installs 1.63.0 and restarts the server on it.
+- **Which JDK.** jdtls itself needs a recent Java (25 for jdtls 1.63, read from
+  the installed jdtls), and is given one Editora finds even when `JAVA_HOME` is
+  older; when there is none, it says so, and Doctor's jdtls row names the Java
+  it runs on and its version. Of two JDKs of one version, a project gets the one
+  with its sources, so JDK parameter names and docs show; when no JDK of that
+  version has them, Doctor says which package adds them, reading the JDK the build
+  compiles with (the compiler plugin's `<release>`, a parent pom, a Gradle
+  toolchain or version catalog). The
+  default JDK for your projects, which Gradle also runs on, is Settings → Build
+  Tools → Default JDK, else the JDK of the `java` on your `PATH`, else
+  `JAVA_HOME`, else the newest JDK installed. It is the JDK a Java file without a
+  build tool runs on, so jdtls builds a loose file or a plain folder for the
+  Java that runs it, and a JDK class opened while debugging shows that JDK's
+  source. A changed Default JDK reaches a running jdtls at once; only the Java
+  jdtls itself runs on waits for **Restart Language Servers**. The Gradle daemons
+  jdtls starts for its imports stop after 10 idle minutes.
+- **Library sources.** A Maven library class you open (with Go to Definition,
+  say) gets its sources when a repository has them: the tab shows the real code,
+  with its parameter names and Javadoc. A class that has none is shown
+  decompiled, and its tab says so with two buttons: **Download Sources** looks in
+  your local repository and on Maven Central (whose search it can ask by the
+  jar's checksum), and **Choose Sources…** attaches a `-sources.jar` or
+  zip from disk, for a `lib/` jar or an artifact only installed locally. The
+  palette has both as **LSP: Download Library Sources**
+  (`lsp.downloadLibrarySources`) and **LSP: Choose Library Sources…**
+  (`lsp.attachLibrarySources`). A Gradle library's sources come from its build,
+  and a JDK class without sources is a JDK with no `src.zip` (see Which JDK
+  above). Once a library has its sources, every open tab of it shows them at
+  once. To fetch every dependency's sources up front, turn on Settings → LSP →
+  **Download library sources when a Java project is imported** (off by default;
+  Maven only), or run **View: Toggle Downloading Library Sources at Import**
+  (`view.toggleJavaDownloadSources`). It applies at the next import; **LSP: Clean Java
+  Workspace and Restart** applies it now.
+- **A failed import says why.** When jdtls cannot import the project, the status
+  bar names the reason, each of its open files says **Not checked**, and Problems
+  lists the build file's own errors. That covers a Gradle build that does not run
+  (a settings file that `include`s a folder that does not exist, say), a pom that
+  does not parse, and a pom Maven cannot build a model of: a dependency without a
+  `<version>`, a parent it cannot resolve. A failure that belongs to one module or
+  folder is named with it, as in **jdtls (app): the project did not import**, and
+  the rest of the project stays checked. A module with
+  `<packaging>pom</packaging>` that holds Java sources says Maven compiles none of
+  them. Fix the build file and save it, or run **Reload Project Configuration**:
+  the project imports again, after a pom's model error with a cleaned workspace,
+  and a fix that arrives by `git pull` or another editor does the same. A project
+  that imports with build problems (a Maven dependency or a Gradle one that cannot
+  be found) is loaded and checked, and Problems lists them. A file the build
+  leaves out on purpose (a nested sample project, `buildSrc`, an excluded source)
+  does not make a healthy project look broken.
+- **Your project folder stays clean.** jdtls keeps Eclipse's `.project`,
+  `.classpath` and `.settings/` in its own workspace, not in your project.
+- **Build files sync on save.** A change to `pom.xml` or `build.gradle` reaches
+  the classpath when you save it, also a module's in a folder you never expanded,
+  and so does one made outside Editora (a `git pull`, a branch switch).
+- **One server per build.** Files of the modules of one Maven reactor or Gradle
+  build share a server even without a project open. A plain folder of `.java`
+  files with packages, and no build file, gets the right source folder as soon as
+  a file opens. Java files keep their server up to 50,000 lines.
+- **The project's own code style.** IntelliJ's import settings in the project's
+  `.editorconfig` (`ij_java_imports_layout`,
+  `ij_java_class_count_to_use_import_on_demand`,
+  `ij_java_names_count_to_use_import_on_demand`) set the import order and when
+  imports become `*`. The Eclipse formatter profile your build formats with
+  (Spotless's `<eclipse><file>` or `eclipse().configFile(…)`, else
+  `eclipse-formatter.xml` at the project root) is what Format Document uses.
+  Editing the profile, or removing it, applies without restarting the server,
+  also for a profile kept in Eclipse's `.settings` or a `config` folder, and a
+  profile removed while Editora was closed no longer formats the old way. A
+  project that already has an Eclipse `.settings` folder gets jdtls's compiler
+  settings written into it (a committed `org.eclipse.jdt.core.prefs` changes);
+  a project without one gets none.
+- **Lombok.** For a project whose build declares Lombok, jdtls runs with it as
+  its agent, using the newest Lombok jar already in your local Maven or Gradle
+  cache, so the members Lombok generates are seen. When none has been downloaded
+  yet, Editora offers to download Lombok from Maven Central and restarts the
+  server with it.
+- **Null analysis.** In a project with JSpecify, `javax.annotation`, Spring or
+  Eclipse null annotations, jdtls checks `@Nullable` and `@NonNull` use.
+- **A fresh start.** **LSP: Clean Java Workspace and Restart**
+  (`lsp.cleanJavaWorkspace`) deletes the project's jdtls index and the
+  classpath it worked out, then imports the project again: the cure for a stale
+  or corrupt index.
 
 ## Java refactorings that ask a question
 
@@ -109,98 +202,21 @@ four are on by default; the others rewrite code, so they are yours to pick.
 **Clean up on save (Java)** runs them after an explicit save, before Organize
 Imports and Format.
 
-## The Java server and your project
+## Running
 
-- **Untrusted folders.** In a folder you have not trusted, jdtls starts
-  without the project's Maven or Gradle build, and the file says so with
-  **Trust Folder**; see
-  [Servers that load a project's build](/docs/lsp#servers-that-load-a-projects-build).
-- **Which jdtls.** Install fetches jdtls **1.63.0**. [Doctor](/docs/troubleshooting#doctor)
-  names the installed version and warns when it is older, with an
-  [Update…](/docs/troubleshooting#update-for-servers-older-than-editoras)
-  button that installs 1.63.0 and restarts the server on it.
-- **Which JDK.** jdtls itself needs a recent Java (25 for jdtls 1.63, read from
-  the installed jdtls), and is given one Editora finds even when `JAVA_HOME` is
-  older; when there is none, it says so, and Doctor's jdtls row names the Java
-  it runs on and its version. Of two JDKs of one version, a project gets the one
-  with its sources, so JDK parameter names and docs show; when no JDK of that
-  version has them, Doctor says which package adds them, reading the JDK the build
-  compiles with (the compiler plugin's `<release>`, a parent pom, a Gradle
-  toolchain or version catalog). The
-  default JDK for your projects, which Gradle also runs on, is Settings → Build
-  Tools → Default JDK, else the JDK of the `java` on your `PATH`, else
-  `JAVA_HOME`, else the newest JDK installed. It is the JDK a Java file without a
-  build tool runs on, so jdtls builds a loose file or a plain folder for the
-  Java that runs it, and a JDK class opened while debugging shows that JDK's
-  source. A changed Default JDK reaches a running jdtls at once; only the Java
-  jdtls itself runs on waits for **Restart Language Servers**. The Gradle daemons
-  jdtls starts for its imports stop after 10 idle minutes.
-- **Library sources.** A Maven library class you open (with Go to Definition,
-  say) gets its sources when a repository has them: the tab shows the real code,
-  with its parameter names and Javadoc. A class that has none is shown
-  decompiled, and its tab says so with two buttons: **Download Sources** looks in
-  your local repository and on Maven Central (whose search it can ask by the
-  jar's checksum), and **Choose Sources…** attaches a `-sources.jar` or
-  zip from disk, for a `lib/` jar or an artifact only installed locally. The
-  palette has both as **LSP: Download Library Sources**
-  (`lsp.downloadLibrarySources`) and **LSP: Choose Library Sources…**
-  (`lsp.attachLibrarySources`). A Gradle library's sources come from its build,
-  and a JDK class without sources is a JDK with no `src.zip` (see Which JDK
-  above). Once a library has its sources, every open tab of it shows them at
-  once. To fetch every dependency's sources up front, turn on Settings → LSP →
-  **Download library sources when a Java project is imported** (off by default;
-  Maven only), or run **View: Toggle Downloading Library Sources at Import**
-  (`view.toggleJavaDownloadSources`). It applies at the next import; **LSP: Clean Java
-  Workspace and Restart** applies it now.
-- **A failed import says why.** When jdtls cannot import the project, the status
-  bar names the reason, each of its open files says **Not checked**, and Problems
-  lists the build file's own errors. That covers a Gradle build that does not run
-  (a settings file that `include`s a folder that does not exist, say), a pom that
-  does not parse, and a pom Maven cannot build a model of: a dependency without a
-  `<version>`, a parent it cannot resolve. A failure that belongs to one module or
-  folder is named with it, as in **jdtls (app): the project did not import**, and
-  the rest of the project stays checked. A module with
-  `<packaging>pom</packaging>` that holds Java sources says Maven compiles none of
-  them. Fix the build file and save it, or run **Reload Project Configuration**:
-  the project imports again, after a pom's model error with a cleaned workspace,
-  and a fix that arrives by `git pull` or another editor does the same. A project
-  that imports with build problems (a Maven dependency or a Gradle one that cannot
-  be found) is loaded and checked, and Problems lists them. A file the build
-  leaves out on purpose (a nested sample project, `buildSrc`, an excluded source)
-  does not make a healthy project look broken.
-- **Your project folder stays clean.** jdtls keeps Eclipse's `.project`,
-  `.classpath` and `.settings/` in its own workspace, not in your project.
-- **Build files sync on save.** A change to `pom.xml` or `build.gradle` reaches
-  the classpath when you save it, also a module's in a folder you never expanded,
-  and so does one made outside Editora (a `git pull`, a branch switch).
-- **One server per build.** Files of the modules of one Maven reactor or Gradle
-  build share a server even without a project open. A plain folder of `.java`
-  files with packages, and no build file, gets the right source folder as soon as
-  a file opens. Java files keep their server up to 50,000 lines.
-- **The project's own code style.** IntelliJ's import settings in the project's
-  `.editorconfig` (`ij_java_imports_layout`,
-  `ij_java_class_count_to_use_import_on_demand`,
-  `ij_java_names_count_to_use_import_on_demand`) set the import order and when
-  imports become `*`. The Eclipse formatter profile your build formats with
-  (Spotless's `<eclipse><file>` or `eclipse().configFile(…)`, else
-  `eclipse-formatter.xml` at the project root) is what Format Document uses.
-  Editing the profile, or removing it, applies without restarting the server,
-  also for a profile kept in Eclipse's `.settings` or a `config` folder, and a
-  profile removed while Editora was closed no longer formats the old way. A
-  project that already has an Eclipse `.settings` folder gets jdtls's compiler
-  settings written into it (a committed `org.eclipse.jdt.core.prefs` changes);
-  a project without one gets none.
-- **Lombok.** For a project whose build declares Lombok, jdtls runs with it as
-  its agent, using the newest Lombok jar already in your local Maven or Gradle
-  cache, so the members Lombok generates are seen. When none has been downloaded
-  yet, Editora offers to download Lombok from Maven Central and restarts the
-  server with it.
-- **Null analysis.** In a project with JSpecify, `javax.annotation`, Spring or
-  Eclipse null annotations, jdtls checks `@Nullable` and `@NonNull` use.
-- **A fresh start.** **LSP: Clean Java Workspace and Restart**
-  (`lsp.cleanJavaWorkspace`) deletes the project's jdtls index and the
-  classpath it worked out, then imports the project again: the cure for a stale
-  or corrupt index.
+**Run File** (`file.run`, `C-c r` in the Emacs keymap) runs a compact source
+file, a single-file program (`java File.java`) or a `java --source` shebang
+script. In a Maven or Gradle project, every `main` gets a ▶ in the gutter and
+runs with the project's classpath. See
+[Running files](/docs/run-debug#running-files) and
+[Running a project's main class](/docs/run-debug#running-a-projects-main-class).
+
+## Tests
+
+JUnit tests in a Maven or Gradle project get a ▶ in the gutter on each test
+and test class. **Run Test at Caret** (`test.runAtCaret`) runs the test the
+caret is in through the build tool, and the results fill Test Results; see the
+[test runner](/docs/build-tools#test-runner).
 
 ## Debugging
 

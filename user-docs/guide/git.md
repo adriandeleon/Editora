@@ -45,21 +45,26 @@ hunk, whole-file, Result, Undo, and Save controls. See
 itself on every save are a separate feature,
 [Local History](/docs/workspace#local-file-history).
 
-| Action | Command | Default key |
-| --- | --- | --- |
-| Commit (open the Commit window) | `git.commit` | `C-x v v` |
-| Switch branch (dropdown) | `git.switchBranch` | `C-x v b s` |
-| New branch | `git.newBranch` | `C-x v b c` |
-| Pull | `git.pull` | `C-x v S-=` |
-| Push | `git.push` | `C-x v S-p` |
-| Fetch | `git.fetch` | (palette) |
-| Next / previous change in the file | `git.nextChange` / `git.previousChange` | `C-x v ]` / `C-x v [` |
-| Git Log | `tool.gitLog` | `C-x v S-l` |
-| Show Git History (the active file's commits) | `git.fileHistory` | `C-x v l` |
-| Toggle blame annotations | `git.toggleBlame` | `C-x v g` |
-| Clone a repository | `git.clone` | (palette) |
-| Create a repository in a folder | `git.init` | (palette) |
-| Refresh | `git.refresh` | (palette) |
+| Action | Command | Emacs key | Other keymaps |
+| --- | --- | --- | --- |
+| Commit (open the Commit window) | `git.commit` | `C-x v v` | VS Code: Ctrl+Shift+G |
+| Switch branch (dropdown) | `git.switchBranch` | `C-x v b s` | IntelliJ: Ctrl+Shift+' |
+| New branch | `git.newBranch` | `C-x v b c` | — |
+| Pull | `git.pull` | `C-x v S-=` | IntelliJ: Ctrl+T |
+| Push | `git.push` | `C-x v S-p` | IntelliJ: Ctrl+Shift+K |
+| Fetch | `git.fetch` | (palette) | — |
+| Next / previous change in the file | `git.nextChange` / `git.previousChange` | `C-x v ]` / `C-x v [` | VS Code: Alt+F5 / Alt+Shift+F5; IntelliJ: Ctrl+Alt+Shift+Down / Ctrl+Alt+Shift+Up |
+| Git Log | `tool.gitLog` | `C-x v S-l` | IntelliJ: Alt+9 |
+| Show Git History (the active file's commits) | `git.fileHistory` | `C-x v l` | CUA, Sublime Text, VS Code, IntelliJ: Ctrl+Alt+Shift+H |
+| Toggle blame annotations | `git.toggleBlame` | `C-x v g` | — |
+| Clone a repository | `git.clone` | (palette) | — |
+| Create a repository in a folder | `git.init` | (palette) | — |
+| Refresh | `git.refresh` | (palette) | — |
+
+The **Emacs key** column is the default Emacs keymap; **Other keymaps** gives
+the chords the CUA, Sublime Text, VS Code and IntelliJ IDEA keymaps bind (— where
+none does). On macOS those mostly use ⌘ for Ctrl; the
+[keybindings reference](/keybindings) lists every keymap.
 
 The **Git** menu keeps the daily actions at the top level (Commit, Commit and
 Push, Push, Pull, Fetch, Switch Branch, Git Log, and Continue / Skip / Abort)
@@ -162,7 +167,7 @@ A merge, rebase, cherry-pick, or revert that stops part-way is shown in the
 status bar and as a banner at the top of the Commit window, with **Continue**,
 **Skip**, and **Abort**.
 
-| Action | Command | Default key |
+| Action | Command | Emacs key |
 | --- | --- | --- |
 | Continue once the conflicts are resolved | `git.continueOperation` | (palette) |
 | Skip the commit a rebase, cherry-pick, or revert stopped at | `git.skipOperation` | (palette) |
@@ -205,11 +210,11 @@ Rebase and merge pulls carry uncommitted changes across with `--autostash` and
 report what happened to them; if applying them back conflicts, they stay in the
 stash and the conflicts appear in the Commit window.
 
-| Action | Command | Default key |
-| --- | --- | --- |
-| Push the current branch | `git.push` | `C-x v S-p` |
-| Push to another remote or under another branch name | `git.pushTo` | (palette) |
-| Push every local tag the remote lacks | `git.pushTags` | (palette) |
+| Action | Command | Emacs key | Other keymaps |
+| --- | --- | --- | --- |
+| Push the current branch | `git.push` | `C-x v S-p` | IntelliJ: Ctrl+Shift+K |
+| Push to another remote or under another branch name | `git.pushTo` | (palette) | — |
+| Push every local tag the remote lacks | `git.pushTags` | (palette) | — |
 
 The first push of a branch publishes it to the push remote configured in Git
 (the branch's `pushRemote`, then the repository's `pushDefault`) or to the
@@ -347,14 +352,14 @@ Deleting a tag removes it locally only.
 The gutter marks are also the way to work on one change at a time, compared
 with HEAD.
 
-| Action | Command | Default key |
-| --- | --- | --- |
-| Go to the next / previous change | `git.nextChange` / `git.previousChange` | `C-x v ]` / `C-x v [` |
-| Peek the change at the caret | `git.peekChange` | (palette) |
-| Revert the change at the caret | `git.revertHunk` | (palette) |
-| Stage the change at the caret | `git.stageHunk` | (palette) |
-| Stage / unstage the whole file | `git.stageFile` / `git.unstageFile` | (palette) |
-| Discard the file's changes | `git.discardFile` | (palette) |
+| Action | Command | Emacs key | Other keymaps |
+| --- | --- | --- | --- |
+| Go to the next / previous change | `git.nextChange` / `git.previousChange` | `C-x v ]` / `C-x v [` | VS Code: Alt+F5 / Alt+Shift+F5; IntelliJ: Ctrl+Alt+Shift+Down / Ctrl+Alt+Shift+Up |
+| Peek the change at the caret | `git.peekChange` | (palette) | — |
+| Revert the change at the caret | `git.revertHunk` | (palette) | — |
+| Stage the change at the caret | `git.stageHunk` | (palette) | — |
+| Stage / unstage the whole file | `git.stageFile` / `git.unstageFile` | (palette) | — |
+| Discard the file's changes | `git.discardFile` | (palette) | — |
 
 Next and previous wrap around at the ends of the file and report the position
 ("Change 2 of 5"). Clicking a change bar, or **Peek Change at Caret**, opens a
@@ -409,8 +414,10 @@ Project tree, and **Git ▸ History & Blame**.
 - The chip's **✕**, or Escape in the commit list, returns to the branch log.
 - **Load More** continues through the file's whole history, a page of 200
   commits at a time.
-- A search finds commits from before a rename too. A `path:` term is ignored in
-  a file history, and the status bar says so.
+- A search finds commits from before a rename too. It covers the newest 5,000
+  commits of the file's history, and the list says so when older ones were not
+  searched. A `path:` term is ignored in a file history, and the status bar says
+  so.
 - A file that is untracked or not yet committed says it has no commits, and a
   shallow clone says under its last row that older history is not available
   locally.
@@ -468,7 +475,7 @@ The two toggles apply to the window they are set in.
 **Copy Permalink** (`git.copyPermalink`, in **Git ▸ History & Blame**) copies
 the web address of the current file at the HEAD commit, with the selected lines
 (or the caret's line) marked, ready to paste in a chat or an issue. On the
-[Project Map](/docs/workspace#project-map) it is in a code card's menu and in a
+[Project Map](/docs/project-map) it is in a code card's menu and in a
 file's or folder's menu (`projectMap.copyPermalink`).
 
 - It works with GitHub, GitLab, Bitbucket (Cloud, and Server / Data Center),

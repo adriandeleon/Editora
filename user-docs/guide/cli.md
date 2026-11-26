@@ -1,8 +1,8 @@
 ---
 title: Command line
-description: Command-line flags for opening files, projects, config folders, and the focus modes.
+description: Command-line flags for opening files, projects, config folders, and the focus modes, and running .http files from the command line.
 category: Help
-order: 2
+order: 4
 ---
 
 Editora takes a few command-line arguments. With the native installers the
@@ -20,10 +20,18 @@ exists depends on how you installed:
 | **Linux `.tar.gz`** | `editora` on your `PATH` after `./install.sh` (`~/.local/bin/editora`, or `/usr/local/bin/editora` with `sudo`); or run `./Editora/bin/Editora` in place |
 | **Linux `.rpm`** | `/opt/editora/bin/Editora`; no `editora` command is added, so add your own symlink if you want one |
 | **Linux `.AppImage`** | The `.AppImage` file itself; nothing is added to your `PATH` |
-| **macOS `.dmg`**, **Windows `.msi`** | The installed application's own launcher; no `editora` command is added to your `PATH` |
+| **macOS `.dmg`** | The installed application's own launcher; no `editora` command is added to your `PATH` |
+| **macOS Homebrew cask** | The same as the `.dmg`: the app goes to Applications, and no `editora` command is added to your `PATH` |
+| **Windows `.msi`** | `editora` on your `PATH`: the installer adds Editora's folder to it (and removes it on uninstall). For what prints in the terminal, use `editora-cli` (see below) |
 | **Fat jar** | `java -jar Editora-<version>-<platform>.jar` (needs JDK 25) |
 
 Where there is no `editora` command, substitute the launcher in the examples.
+
+On Windows, `Editora.exe` is a window program: it opens files from any
+terminal, but whatever it prints is lost and the terminal does not wait for it.
+Beside it is a console launcher, **`editora-cli.exe`**, for the commands that
+print: `editora-cli --version`, `editora-cli --help` and
+`editora-cli http api.http` write to the terminal and return their exit status.
 
 ## Flags
 
@@ -31,9 +39,9 @@ Where there is no `editora` command, substitute the launcher in the examples.
 | --- | --- |
 | `--version`, `-V`, `-v` | Print the version and exit (no GUI) |
 | `--help`, `-h` | Print usage and exit (no GUI) |
-| `--config-dir <path>` | Use this config folder |
+| `--config-dir <path>`, `--config-dir=<path>` | Use this config folder (or set `EDITORA_CONFIG_DIR`) |
 | `--dev` | Use an isolated `~/.editora-dev/` config |
-| `--project <dir>` | Open this folder as a project (if projects are enabled) |
+| `--project <dir>`, `--project=<dir>` | Open this folder as a project (if projects are enabled) |
 | `--new-file[=name]` | Open a new untitled buffer (optionally named) |
 | `--zen` | Start in Zen mode (session-only) |
 | `--expert` | Start in Expert mode, a lighter focus mode (session-only) |
@@ -71,6 +79,44 @@ left as they were and are not replaced by the files you opened.
 breaks Editora at startup. Settings → Plugins and the Doctor say when it is on.
 Switch the plugin off or remove it there; **Restart Now** starts Editora again
 without the flag. See [Plugins](/docs/plugins#if-a-plugin-breaks-startup).
+
+## Running .http files
+
+`editora http` runs the requests of one or more `.http` files without opening a
+window, for CI and scripts, in the manner of JetBrains' `ijhttp`:
+
+```bash
+editora http api.http
+```
+
+Each file runs as **Run All** runs it in the editor: its requests in order, one
+cookie jar, later requests reading earlier responses, and each request's
+`# @assert` checks and JavaScript handlers after its response (see the
+[HTTP client](/docs/http-client#tests-and-response-handlers)). It prints each
+response and each test result. Environment files are found as the editor finds
+them.
+
+| Option | Effect |
+| --- | --- |
+| `-e`, `--env <name>` | Use environment `<name>` from the env files |
+| `--env-file <file>` | The public env file (default: `http-client.env.json`, found as the editor finds it) |
+| `--private-env-file <file>` | The private env file (default: `http-client.private.env.json`) |
+| `-V`, `--env-variables <name=value>` | Set a variable over the env files; repeat it for more |
+| `-P`, `--private-env-variables <name=value>` | The same, with the value masked in what is printed |
+| `-L`, `--log-level <level>` | `BASIC` (the default), `HEADERS`, or `VERBOSE` (bodies too) |
+| `-r`, `--report[=<dir>]` | Write a JUnit XML report to `<dir>/report.xml` (`reports` by default) |
+| `--no-scripts` | Don't run JavaScript handlers or pre-request scripts, which need Node.js |
+| `--node <path>` | The Node.js that runs them (default: `node`) |
+| `-h`, `--help` | Print the options and exit |
+
+Secrets (`$processEnv`, `$env`, `$dotenv`) are read and scripts run without
+asking: running the command is the consent the editor would ask for. The exit
+status is 0 when every request got a response and every test passed, 1 when a
+request failed or was not sent, a test failed or a handler stopped with an
+error, and 2 for a usage error, such as an unknown option, a file that can't be
+read or an environment no env file defines. A status such as 404 alone is not a
+failure; an `# @assert` says what is expected. On Windows, run it as
+`editora-cli http …`.
 
 ## Opening files
 

@@ -1,8 +1,8 @@
 ---
 title: Configuration
 description: The config folder, settings.json, session state, and how to export or reset it.
-category: Customization
-order: 1
+category: Getting started
+order: 4
 ---
 
 Editora keeps preferences and session state in a config folder. Most settings
@@ -185,7 +185,7 @@ change the same setting or entry, the one saved last wins.
 
 | File | Holds |
 | --- | --- |
-| `settings.json` | Preferences: font, theme, keymap, tab size, view options, auto-save, keybinding overrides. AI API keys only where no system keychain is available (see [where API keys are kept](/docs/ai#where-api-keys-are-kept)) |
+| `settings.json` | Preferences: font, theme, keymap, tab size, view options, auto-save, keybinding overrides. Never AI API keys |
 | `workspace-state.json` | Session of the no-project window: open files, folds, tool-window layout, window geometry, and the [Python interpreter](/docs/python#the-python-interpreter) picked for loose files |
 | `windows/<id>.json` | Session of each extra no-project window |
 | `recent-files.json` | Recent files list |
@@ -206,6 +206,7 @@ change the same setting or entry, the one saved last wins.
 | `themes/*.css`, `editor-themes/*.css` | Your [own themes](/docs/themes-fonts) |
 | `history/` | [Local History](/docs/workspace#local-file-history) |
 | `http-history/` | The [HTTP client](/docs/http-client)'s last responses and chosen environment for each `.http` file |
+| `keys/secrets.enc` + `keys/secrets.key` | AI API keys, encrypted with AES-256-GCM, only where no system keychain answers (see [where API keys are kept](/docs/ai#where-api-keys-are-kept)). Settings export leaves the folder out |
 | `cache/` | Data Editora downloads or builds and can rebuild: XML schemas, the Maven archetype catalog, compiled Kotlin scripts, the HTTP client's script runner. Settings export leaves it out |
 
 Preferences, sessions, and list files are **JSON**. If `settings.json` is absent,
@@ -523,11 +524,9 @@ copy back, provided the file left in its place still holds only defaults.
   `.bak` backups and installed plugins are included. Local History is left out,
   because it holds the text of your files rather than configuration. A dialog
   asks before exporting when there is something sensitive to leave out:
-  - AI API keys kept in the system keychain are never exported. Keys kept in
-    `settings.json`, where there is no keychain, are blank in the exported
-    `settings.json` and its backups unless you tick **Include AI API keys**. A
-    key is a billable credential. When keys were left out, the status bar says
-    so.
+  - AI API keys are never exported: neither the system keychain nor the
+    encrypted `keys/` folder that holds them where there is no keychain (see
+    [Where API keys are kept](/docs/ai#where-api-keys-are-kept)).
   - The HTTP client's response history is left out unless you tick **Include
     HTTP response history**: saved responses hold response bodies and full
     request URLs, which can contain tokens or keys.

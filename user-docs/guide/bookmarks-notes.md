@@ -2,7 +2,7 @@
 title: Bookmarks & notes
 description: Bookmarks and Personal Notes attached to code or project folders, with cross-file navigation.
 category: Workspace
-order: 2
+order: 3
 ---
 
 Two ways to mark up code. Both are scoped per project and stored outside your

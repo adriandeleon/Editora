@@ -1,16 +1,39 @@
 ---
 title: "C#"
-description: "Debugging C# with netcoredbg, and C# tests at the caret."
+description: "csharp-ls, C# tests at the caret, and debugging C# with netcoredbg."
 category: Languages
-order: 14
+order: 2
 ---
 
-C# gets code intelligence from `csharp-ls` (see [language servers](/docs/lsp#servers-are-auto-detected-never-bundled)) and debugs with netcoredbg.
+C# gets code intelligence from `csharp-ls`, runs tests with `dotnet test`, and
+debugs with netcoredbg.
+
+## Language server
+
+C#'s language server is `csharp-ls`. Editora finds it on the PATH or installs
+it for you; see [language servers](/docs/lsp#servers-are-auto-detected-never-bundled).
+
+## Running
+
+Run File doesn't run C# files. Debug a C# program as described under
+[Debugging](#debugging), or run it with `dotnet run` in the
+[terminal](/docs/terminal).
+
+## Tests
+
+**Run Test at Caret** (`test.runAtCaret`) in a test project (one that uses
+`Microsoft.NET.Test.Sdk`, xUnit, NUnit or MSTest, the nearest `.csproj` above
+the file) runs the test method the caret is in, or every test of its class when
+the caret is in the class but in no test. It runs `dotnet test` with a
+`--filter` on the test's full name, in the project's folder, after the same
+trust question as a debug build (see below). Its output goes to the **Run**
+window. Debugging a test is described under [Debugging](#debugging).
 
 ## Debugging
 
 C# is debugged with [netcoredbg](https://github.com/Samsung/netcoredbg), the
-open-source .NET debugger. **Debug: Start / Continue** (`debug.start`, F5) or
+open-source .NET debugger. **Debug: Start / Continue** (`debug.start`: `C-c C-d d` in the Emacs
+keymap, F5 in the VS Code, CUA and Sublime Text keymaps) or
 **Debug File** in the editor's right-click menu builds the program with
 `dotnet build` in the Debug console, after Editora saves the project's edited
 C# files, then debugs it:
@@ -49,6 +72,8 @@ test again.
 Attaching to a running .NET program isn't offered; a
 [launch.json](/docs/debugging#launchjson-configurations) `coreclr` configuration can attach
 by process id.
+
+## Installing netcoredbg
 
 netcoredbg isn't bundled. Editora finds it as set on the **C# (netcoredbg)**
 card of **Settings → Debugging**, else in its own install, else in the free C#

@@ -612,8 +612,8 @@ for RSpec, `-n` for Minitest, `--only test:` for ExUnit, `--name` for Dart,
 `--gtest_filter` for GoogleTest, a test spec for Catch2 and `--test-case` for
 doctest. A C or C++ test program is built again before them
 ([C & C++](/docs/c-cpp#tests)).
-*Run File* on a Dart test file now runs `dart test` (`flutter test` in a
-Flutter package) rather than `dart run`. sbt, Mill and Scala CLI tests are not
+*Run File* on a Dart test file runs `dart test` (`flutter test` in a
+Flutter package). sbt, Mill and Scala CLI tests are not
 read yet: their output stays in the Output console. Where a structured format isn't available, the
 window says so and points at the Output console.
 
@@ -636,11 +636,16 @@ tooltip naming what it runs), and a test file's right-click menu offers **Run
 Tests** for the whole class. `test.runAtCaret` and `test.runClassAtCaret` do the
 same from the keyboard (`test.debugClassAtCaret` debugs the class), and `test.rerun`, `test.rerunFailed`, and `test.stop`
 control the run. These JUnit gutter icons need a detected Maven or Gradle
-project. Python test files get their own, one per test (see
-[Python tests](#python-tests)). A Node.js test file has one ▶ for the whole
-file, which runs `node --test` (see
-[Node.js scripts](/docs/javascript-typescript#running-nodejs-scripts)); its results can be rerun one
-test at a time or failed-only.
+project. Kotlin and Groovy test files get them too: a JUnit test in Kotlin can
+have a backtick name (``fun `adds a book`()``), a Spock specification's feature
+methods (`def "adds a book"()`) are tests, and a Kotest spec (`StringSpec`,
+`FunSpec`, `DescribeSpec` and the other spec styles) runs as a whole class (see
+[Kotlin tests](/docs/kotlin#tests) and [Groovy tests](/docs/groovy#tests)).
+Python test files get their own, one per test (see
+[Python tests](#python-tests)). A JavaScript or TypeScript test file has one ▶ for
+the whole file, which runs it under Jest, Vitest, Deno or `node --test` (see
+[JavaScript and TypeScript tests](/docs/javascript-typescript#tests)); its
+results can be rerun one test at a time or failed-only.
 
 **Run Test at Caret** (`test.runAtCaret`) also runs one test in the other test
 files Editora debugs at the caret, without the debugger: it runs the file as
@@ -673,8 +678,8 @@ port N…*, and **Debug: Stop** (`debug.stop`) ends the Maven run before a sessi
 further fork of the same run (several forks, reruns) is attached after the
 first has finished; forks are debugged one at a time. The test JVM prints one
 "Debugger failed to attach: handshake failed" line in the Output console: that
-is Editora's port check, not an error. Gradle keeps its own banner. In a Node.js test file,
-Debug Test at Caret debugs the `node:test` test at the caret (see
+is Editora's port check, not an error. Gradle keeps its own banner. In a JavaScript or TypeScript test file,
+Debug Test at Caret debugs the test at the caret under its runner (see
 [Debugging JavaScript and TypeScript](/docs/javascript-typescript#debugging)). In a Go test file it debugs the
 test function at the caret under Delve, and in a Rust `#[test]` function that
 test alone under CodeLLDB (see [Debugging Go](/docs/go#debugging) and
