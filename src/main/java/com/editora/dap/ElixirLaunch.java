@@ -17,6 +17,14 @@ public final class ElixirLaunch {
 
     private ElixirLaunch() {}
 
+    /**
+     * How long ElixirLS is given to answer {@code launch}. It answers only once {@code mix compile} has run and every
+     * module is interpreted: a fresh {@code mix phx.new} app's first launch compiled 20-odd dependencies and timed
+     * out at the usual 30 s on CI (its language server, compiling the same project, held the build lock meanwhile).
+     * The compiler's output streams to the Debug console while it waits, and Stop ends it.
+     */
+    public static final java.time.Duration LAUNCH_WAIT = java.time.Duration.ofMinutes(10);
+
     /** ElixirLS's configuration type. */
     public static final String TYPE = "mix_task";
 

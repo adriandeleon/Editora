@@ -2714,6 +2714,7 @@ public final class DapManager {
             c.setTerminateOnDisconnect(false); // Stop detaches; the program runs on
         }
         c.setTerminateFirst(DebugLanguages.FLUTTER.equals(language) && !attach); // else the app outlives Stop
+        c.setLaunchWait(launchWait(language));
         AdapterStderr stderr = null;
         java.util.concurrent.CompletableFuture<org.eclipse.lsp4j.debug.Capabilities> connected;
         switch (external.transport()) {
@@ -2787,6 +2788,17 @@ public final class DapManager {
                 }
             });
         });
+    }
+
+    /**
+     * How long {@code language}'s adapter is given to answer {@code launch}: ElixirLS compiles the project (a fresh
+     * Phoenix app's dependencies, all of them) and interprets its modules before it answers, so it gets {@link
+     * ElixirLaunch#LAUNCH_WAIT}; the rest the usual request wait. Pure.
+     */
+    static java.time.Duration launchWait(DebugLanguage language) {
+        return DebugLanguages.ELIXIR.equals(language)
+                ? ElixirLaunch.LAUNCH_WAIT
+                : java.time.Duration.ofSeconds(DapClient.requestTimeoutSeconds());
     }
 
     /**
@@ -7005,8 +7017,10 @@ public final class DapManager {
             t = t.getCause();
         }
         if (t instanceof java.util.concurrent.TimeoutException) {
-            // "java.util.concurrent.TimeoutException" told the user nothing
-            return tr("status.debug.noAnswer", DapClient.requestTimeoutSeconds());
+            // "java.util.concurrent.TimeoutException" told the user nothing; a launch names its own (longer) wait
+            return tr(
+                    "status.debug.noAnswer",
+                    t instanceof DapClient.NoAnswer waited ? waited.seconds : DapClient.requestTimeoutSeconds());
         }
         // java-debug words a refusal as the Java exception behind it: "org.eclipse.debug.core.DebugException:
         // com.sun.jdi.…: what happened". Only what happened is for the user.

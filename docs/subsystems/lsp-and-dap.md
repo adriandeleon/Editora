@@ -1367,7 +1367,9 @@ controller breakpoint stops on a request; Stop ends the BEAM). Without a
 Mix project ElixirLS fails the launch (`Mix.NoProjectError`): `ui/ElixirDebugLaunch` says so
 (`status.debug.elixirNeedsMix`) and Run File runs `elixir file`. Run File and F5 in a project ask the trust question
 first (`dialog.trust.item.mix`: Mix compiles the project and its dependencies). A launch.json `mix_task` configuration is
-`LaunchRoute.Kind.ELIXIR_LS`. No exception filters. ElixirLS does not pass ExUnit's report to the console.
+`LaunchRoute.Kind.ELIXIR_LS`. ElixirLS answers `launch` only after `mix compile` and interpreting every module, so its
+launch is waited for `ElixirLaunch.LAUNCH_WAIT` (10 min; `DapManager.launchWait`, `DapClient.setLaunchWait`), not the
+30 s request wait: a fresh `mix phx.new` app's first launch passed 30 s on CI. No exception filters. ElixirLS does not pass ExUnit's report to the console.
 
 **PowerShell.** The `powershell` profile is PowerShell Editor Services (Microsoft, MIT; probed with 4.7.0 on pwsh
 7.5.13): its `Start-EditorServices.ps1` ([`InstalledAdapter.POWERSHELL`](../../src/main/java/com/editora/dap/InstalledAdapter.java):

@@ -204,7 +204,7 @@ class ElixirDebugProbeFxTest {
             run(w, "debug.start");
             await("the session started", 60, () -> call(w.dap::isActive));
             // The server runs on after phx.server returns: the session must still be there to stop.
-            await("the server up", 240, () -> get(home + "nothing-here", 5) == 404 || !call(w.dap::isActive));
+            await("the server up", 600, () -> get(home + "nothing-here", 5) == 404 || !call(w.dap::isActive));
             assertTrue(
                     call(w.dap::isActive),
                     "the session runs on with the server:\n" + console(w) + "\nstatus: " + status(w));
