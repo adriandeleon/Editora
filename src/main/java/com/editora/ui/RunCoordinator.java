@@ -3294,7 +3294,8 @@ final class RunCoordinator {
             com.editora.run.PythonWebApps.@Nullable Server web,
             com.editora.run.PhpApps.@Nullable Plan php,
             com.editora.run.RubyApps.@Nullable Plan ruby,
-            com.editora.run.ElixirRun.@Nullable Plan elixir) {}
+            com.editora.run.ElixirRun.@Nullable Plan elixir,
+            String fallbackJdk) {}
 
     private FilePlan planFile(
             String language,
@@ -3368,8 +3369,30 @@ final class RunCoordinator {
                                 project,
                                 java.nio.file.Files::isRegularFile,
                                 ElixirDebugLaunch::read)
-                        : null);
+                        : null,
+                fallbackJdk(language, path));
     }
+
+    /**
+     * The JDK a local Java or JVM-script run falls back to when none is chosen and PATH has no {@code java}: jkit's
+     * default ({@code jkit use --global}); blank when PATH has one, there is no such default, or the file runs on a
+     * host. Reads the disk: with the plan, off the FX thread.
+     */
+    private static String fallbackJdk(String language, Path path) {
+        boolean jvm = "java".equals(language) || com.editora.run.JvmScriptRun.supports(language);
+        if (!jvm || !com.editora.process.ExecTargets.runsHere(path)) {
+            return "";
+        }
+        boolean onPath = JdkToolchain.javaOnPath(processPathForFallback.get());
+        return JdkToolchain.fallbackHome(onPath, onPath ? null : jkitDefaultJdk.get());
+    }
+
+    /** This process's PATH, as {@link #fallbackJdk} reads it (a seam: a test stands in a PATH without java). */
+    static java.util.function.Supplier<@Nullable String> processPathForFallback = () -> System.getenv("PATH");
+
+    /** jkit's default JDK ({@code jkit use --global}), or null (a seam: a test stands in for jkit's folder). */
+    static java.util.function.Supplier<@Nullable Path> jkitDefaultJdk =
+            () -> com.editora.toolchain.JkitInstalls.global(com.editora.toolchain.JkitInstalls.home(), "jdk");
 
     /**
      * A PHP file's run ({@link com.editora.run.PhpApps}): a script, a web app's server, its PHPUnit tests. A file on
@@ -3438,8 +3461,10 @@ final class RunCoordinator {
         // On a remote host the program runs with the host's own java and environment: this machine's JDK
         // setting is a path here, and its PATH means nothing there. A host can name its JDK (jdk.home).
         boolean remote = !com.editora.process.ExecTargets.runsHere(path);
-        String jdkHome =
+        String chosenJdk =
                 !onJdk ? "" : remote ? remoteJdkHome(path) : host.projectScope().jdkHome(host.settings());
+        // Nothing chosen and no java on PATH (Windows has no system Java): jkit's default, found with the plan.
+        String jdkHome = onJdk && !remote && chosenJdk.isBlank() ? plan.fallbackJdk() : chosenJdk;
         String selectedJava = JdkToolchain.javaExecutable(jdkHome);
         String javaExecutable = selectedJava.isBlank() ? "java" : selectedJava;
         java.util.Map<String, String> launchEnv = !onJdk
@@ -3472,7 +3497,10 @@ final class RunCoordinator {
             }
             service.detectJavaMajor(javaExecutable, remote ? path.getParent() : null, major -> {
                 if (major < 0) {
-                    host.setStatus(tr("status.run.javaVersionUnreadable", javaExecutable));
+                    host.setStatus(
+                            selectedJava.isBlank() && !remote
+                                    ? tr("status.run.noJava") // nothing chosen, nothing on PATH, no jkit default
+                                    : tr("status.run.javaVersionUnreadable", javaExecutable));
                     return;
                 }
                 // A compact source needs JDK 25; a classic class with a public static main runs on 11 (JEP 330).

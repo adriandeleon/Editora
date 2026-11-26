@@ -245,4 +245,41 @@ class ProjectScopeFxTest {
             assertEquals("# Title\n\nword  after\n", buffer.getContent(), "two spaces: the project's tab size");
         });
     }
+
+    /**
+     * A project file written outside Editora — {@code jkit pin} in a terminal, another editor — is read as soon as
+     * the project's watcher reports it, not at the next restart. Found on Windows: a {@code jkit.toml} created
+     * beside an open window left Run on PATH's java (there was none) until Editora was restarted.
+     */
+    @Test
+    void aProjectFileWrittenElsewhereAppliesWhenTheWatcherSeesIt() throws Exception {
+        com.editora.toolchain.ToolInstall jdk21 = new com.editora.toolchain.ToolInstall(
+                "jdk", "21.0.9+10", "temurin", false, Path.of("/jk/jdk21"), "jkit", "21.0.9+10-temurin");
+        FxTestSupport.runOnFx(() -> {
+            config.getSettings().setMavenJdkHome("/mine/jdk");
+            ProjectScope scope = scope();
+            scope.reads = Runnable::run;
+            scope.toolchainReads = Runnable::run;
+            scope.installs =
+                    () -> new com.editora.toolchain.ProjectToolchain.Installs(List.of(jdk21), List.of(), List.of());
+            scope.filePins =
+                    r -> com.editora.toolchain.ProjectToolchain.sdkmanrcPins(com.editora.toolchain.SdkmanRc.read(r));
+            scope.reload();
+            assertEquals("/mine/jdk", scope.jdkHome(config.getSettings()), "nothing named yet: the Default JDK");
+        });
+        Path sdkmanrc = project.resolve(".sdkmanrc");
+        Files.writeString(sdkmanrc, "java=21.0.9-tem\n"); // by another program: Editora saved nothing
+        FxTestSupport.runOnFx(() -> {
+            ProjectPanel panel = FxTestSupport.field(fx.controller, "projectPanel");
+            java.util.function.Consumer<ProjectWatchChanges.Plan> watcher =
+                    FxTestSupport.field(panel, "onExternalChange");
+            watcher.accept(new ProjectWatchChanges.Plan(
+                    false,
+                    java.util.Set.of(project),
+                    List.of(),
+                    List.of(new ProjectPanel.FsChange(sdkmanrc, ProjectPanel.FsKind.CREATED)),
+                    false));
+            assertEquals("/jk/jdk21", scope().jdkHome(config.getSettings()), "the new .sdkmanrc's java=");
+        });
+    }
 }

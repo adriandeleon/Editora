@@ -105,6 +105,32 @@ class ShellFileNoticeFxTest {
         }
     }
 
+    /**
+     * A Java file with a byte-order mark gets a notice — javac stops at the mark — whose action drops the mark and
+     * keeps the CRLF line endings, which javac reads. Found on Windows, where PowerShell 5 writes UTF-8 with a BOM:
+     * Run failed with "illegal character: '﻿'" and nothing in Editora had said why.
+     */
+    @Test
+    void aJavaFileWithABomGetsANoticeThatDropsOnlyTheMark(@TempDir Path dir) throws Exception {
+        String source = "public class Hello {\r\n    public static void main(String[] a) {}\r\n}\r\n";
+        Path bom = Files.write(dir.resolve("Hello.java"), ("﻿" + source).getBytes(StandardCharsets.UTF_8));
+        Path plain = Files.writeString(dir.resolve("Plain.java"), source);
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+
+            EditorBuffer b = open(async, fx, bom);
+            String text = FxTestSupport.callOnFx(b::fileNoticeText);
+            assertNotNull(text, "a Java file with a BOM gets the notice");
+            assertTrue(text.contains("Hello.java") && text.contains("javac") && text.contains("'\\ufeff'"), text);
+            pressNoticeAction(b);
+            assertNull(FxTestSupport.callOnFx(b::fileNoticeText), "the action closes the notice");
+            save(async, fx, b);
+            assertEquals(source, Files.readString(bom), "no mark, CRLF kept");
+
+            assertNull(FxTestSupport.callOnFx(open(async, fx, plain)::fileNoticeText), "nothing to say without one");
+        }
+    }
+
     /** A clean load hides only the shell notice: another feature's notice on the file stays (XML/pom review 2). */
     @Test
     void aCleanLoadHidesOnlyItsOwnNotice() throws Exception {

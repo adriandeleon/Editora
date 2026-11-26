@@ -572,4 +572,30 @@ class AppArgsTest {
         assertTrue(App.isEditoraOption("--disable-plugins"));
         assertTrue(App.helpText().contains("--disable-plugins"));
     }
+
+    /**
+     * {@code editora DIR} opens the folder as a project rather than reporting "Failed to open" (found on Windows:
+     * {@code Editora.exe C:\\work\\proj}). Not when {@code --project} names one, nor for {@code --diff-ui}'s
+     * operands; files and a folder:line stay targets.
+     */
+    @Test
+    void aFolderArgumentOpensAsAProject(@org.junit.jupiter.api.io.TempDir java.nio.file.Path tmp) throws Exception {
+        java.nio.file.Path dir = java.nio.file.Files.createDirectories(tmp.resolve("proj"));
+        java.nio.file.Path file = java.nio.file.Files.writeString(tmp.resolve("a.txt"), "");
+        java.util.function.Predicate<java.nio.file.Path> isDir = java.nio.file.Files::isDirectory;
+
+        List<String> rewritten = App.folderAsProject(List.of("--zen", dir.toString(), file.toString()), isDir);
+        assertEquals(List.of("--project=" + dir, "--zen", file.toString()), rewritten);
+        assertEquals(dir.toString(), App.projectArg(rewritten));
+        assertEquals(
+                List.of(file),
+                App.fileTargets(rewritten).stream().map(t -> t.file()).toList());
+
+        List<String> named = List.of("--project", "/repo", dir.toString());
+        assertEquals(named, App.folderAsProject(named, isDir), "--project names the project");
+        List<String> diff = List.of("--diff-ui", dir.toString(), tmp.toString());
+        assertEquals(diff, App.folderAsProject(diff, isDir), "diff operands may be folders");
+        List<String> files = List.of(file.toString(), dir + ":3");
+        assertEquals(files, App.folderAsProject(files, isDir), "files, and a folder with a line, stay as they are");
+    }
 }

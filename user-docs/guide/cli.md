@@ -40,7 +40,7 @@ print: `editora-cli --version`, `editora-cli --help` and
 | `--help`, `-h` | Print usage and exit (no GUI) |
 | `--config-dir <path>` | Use this config folder |
 | `--dev` | Use an isolated `~/.editora-dev/` config |
-| `--project <dir>` | Open this folder as a project (if projects are enabled) |
+| `--project <dir>` | Open this folder as a project (if projects are enabled). A folder given on its own, as in `editora .`, does the same |
 | `--new-file[=name]` | Open a new untitled buffer (optionally named) |
 | `--zen` | Start in Zen mode (session-only) |
 | `--expert` | Start in Expert mode, a lighter focus mode (session-only) |

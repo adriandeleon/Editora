@@ -92,4 +92,27 @@ class JdkToolchainTest {
         assertFalse(JdkToolchain.isGone(""), "none chosen");
         assertFalse(JdkToolchain.isGone(null));
     }
+
+    /**
+     * PATH's java is found by its platform name, in quoted Windows entries too; with none there, a run that chose no
+     * JDK falls back to jkit's default when that has a launcher (found on Windows, where no java is on PATH).
+     */
+    @Test
+    void withNoJavaOnPathARunFallsBackToAJdkWithALauncher(@TempDir Path tmp) throws Exception {
+        String launcher = isWindows() ? "java.exe" : "java";
+        Path bin = Files.createDirectories(tmp.resolve("jdk/bin"));
+        Path empty = Files.createDirectories(tmp.resolve("empty"));
+        assertFalse(JdkToolchain.javaOnPath(null));
+        assertFalse(JdkToolchain.javaOnPath(""));
+        assertFalse(JdkToolchain.javaOnPath(empty + File.pathSeparator + bin));
+        Files.writeString(bin.resolve(launcher), "");
+        assertTrue(JdkToolchain.javaOnPath(empty + File.pathSeparator + bin));
+        assertTrue(JdkToolchain.javaOnPath(File.pathSeparator + "\"" + bin + "\""), "a quoted entry");
+
+        Path jdk = tmp.resolve("jdk");
+        assertEquals(jdk.toString(), JdkToolchain.fallbackHome(false, jdk), "no java on PATH: the fallback");
+        assertEquals("", JdkToolchain.fallbackHome(true, jdk), "PATH's java wins, as before");
+        assertEquals("", JdkToolchain.fallbackHome(false, null), "no fallback");
+        assertEquals("", JdkToolchain.fallbackHome(false, empty), "a fallback without a launcher");
+    }
 }
