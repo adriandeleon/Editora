@@ -229,8 +229,14 @@ class MainControllerWindowFxTest {
             Label indicator = statusSegment("mcp");
             assertFalse(settings.isMcpSupport());
 
+            FxTestSupport.invoke(controller, "copyMcpHttpEndpoint");
+            assertEquals(tr("status.mcp.notRunning"), echoNow(), "no port or token to copy while off");
+            // The connect command holds no port or token (`editora mcp` finds the server), so it is copied while off.
             FxTestSupport.invoke(controller, "copyMcpEndpoint");
-            assertEquals(tr("status.mcp.notRunning"), echoNow());
+            assertEquals(tr("status.mcp.connectCopiedOff"), echoNow());
+            String connect = Clipboard.getSystemClipboard().getString();
+            assertTrue(connect.startsWith("claude mcp add --scope user editora -- "), connect);
+            assertTrue(connect.contains(" mcp --config-dir "), "a test config folder is not the default: " + connect);
 
             List<SettingsRig.Shown> asked = SettingsRig.answering(
                     ButtonBar.ButtonData.CANCEL_CLOSE, () -> FxTestSupport.invoke(controller, "toggleMcpSupport"));
@@ -259,6 +265,11 @@ class MainControllerWindowFxTest {
             assertTrue(server.url().startsWith("http://127.0.0.1:"), "loopback only: " + server.url());
 
             FxTestSupport.invoke(controller, "copyMcpEndpoint");
+            assertEquals(tr("status.mcp.endpointCopied"), echoNow());
+            assertTrue(
+                    Clipboard.getSystemClipboard().getString().startsWith("claude mcp add --scope user editora -- "),
+                    "the same connect command while it runs");
+            FxTestSupport.invoke(controller, "copyMcpHttpEndpoint");
             assertEquals(tr("status.mcp.endpointCopied"), echoNow());
             String copied = Clipboard.getSystemClipboard().getString();
             assertEquals(

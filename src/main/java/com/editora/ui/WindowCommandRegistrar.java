@@ -258,6 +258,8 @@ final class WindowCommandRegistrar {
 
         void copyMcpEndpoint();
 
+        void copyMcpHttpEndpoint();
+
         void ifLsp(Runnable action);
 
         /** Whether LSP support is on in this window (the setting, and not Simple mode). */
@@ -1363,6 +1365,7 @@ final class WindowCommandRegistrar {
                                                 .applyViewSettingsToAllBuffers(
                                                         host.config().getSettings()))));
         host.registry().register(Command.of("mcp.copyEndpoint", () -> host.ifMcp(host::copyMcpEndpoint)));
+        host.registry().register(Command.of("mcp.copyHttpEndpoint", () -> host.ifMcp(host::copyMcpHttpEndpoint)));
         host.registry().register(Command.of("view.toggleMcp", host::toggleMcpSupport));
         host.registry()
                 .register(Command.of(

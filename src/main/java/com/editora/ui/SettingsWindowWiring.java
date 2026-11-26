@@ -43,6 +43,7 @@ final class SettingsWindowWiring {
                         ? ""
                         : MainController.mcpServer.url(),
                 mc::copyMcpEndpoint,
+                mc::copyMcpHttpEndpoint,
                 () -> {
                     if (MainController.mcpServer != null) { // the buttons only show while it runs
                         MainController.mcpServer.newToken();

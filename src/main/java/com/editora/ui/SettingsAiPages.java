@@ -231,8 +231,14 @@ final class SettingsAiPages {
         mcpStatusLabel.setWrapText(true);
         mcpCopyButton = new Button(tr("settings.mcp.copy"));
         mcpCopyButton.setOnAction(e -> {
-            if (mcpActions != null) { // the buttons are enabled only while the server runs
+            if (mcpActions != null) { // `editora mcp` finds the server by itself: worth copying while it is off too
                 mcpActions.copyCommand().run();
+            }
+        });
+        mcpCopyHttpButton = new Button(tr("settings.mcp.copyHttp"));
+        mcpCopyHttpButton.setOnAction(e -> {
+            if (mcpActions != null) { // enabled only while the server runs: the command names its port and token
+                mcpActions.copyHttpCommand().run();
             }
         });
         mcpNewTokenButton = FocusCommands.press(new Button(tr("settings.mcp.newToken")), "mcp.newToken");
@@ -250,7 +256,10 @@ final class SettingsAiPages {
                         tr("settings.mcp.status"),
                         tr("settings.mcp.status.desc"),
                         UiZoom.spacing(
-                                new VBox(mcpStatusLabel, UiZoom.spacing(new HBox(mcpCopyButton, mcpNewTokenButton), 8)),
+                                new VBox(
+                                        mcpStatusLabel,
+                                        UiZoom.spacing(
+                                                new HBox(mcpCopyButton, mcpCopyHttpButton, mcpNewTokenButton), 8)),
                                 6)),
                 "mcp status running port endpoint url copy command token new rotate claude mcp add");
         refreshMcpStatus();
@@ -269,6 +278,7 @@ final class SettingsAiPages {
     private @Nullable McpActions mcpActions;
     private @Nullable Label mcpStatusLabel;
     private @Nullable Button mcpCopyButton;
+    private @Nullable Button mcpCopyHttpButton;
     private @Nullable Button mcpNewTokenButton;
 
     void setMcpActions(McpActions actions) {
@@ -276,9 +286,9 @@ final class SettingsAiPages {
         refreshMcpStatus();
     }
 
-    /** Running at which endpoint, or off; the buttons only while it runs. */
+    /** Running at which endpoint, or off; the connect command always, the HTTP command and New Token only while it runs. */
     private void refreshMcpStatus() {
-        if (mcpStatusLabel == null || mcpCopyButton == null || mcpNewTokenButton == null) { // built together
+        if (mcpStatusLabel == null || mcpCopyHttpButton == null || mcpNewTokenButton == null) { // built together
             return;
         }
         String endpoint = mcpActions == null ? "" : mcpActions.endpoint().get();
@@ -287,7 +297,7 @@ final class SettingsAiPages {
                 running
                         ? tr("settings.mcp.running", endpoint)
                         : tr(config.getSettings().isMcpSupport() ? "status.mcp.notRunning" : "settings.mcp.off"));
-        mcpCopyButton.setDisable(!running);
+        mcpCopyHttpButton.setDisable(!running);
         mcpNewTokenButton.setDisable(!running);
     }
 

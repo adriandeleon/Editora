@@ -472,6 +472,12 @@ public class App extends Application {
         if (args.length > 0 && com.editora.http.HttpCli.COMMAND.equals(args[0])) {
             System.exit(com.editora.http.HttpCli.main(java.util.List.of(args).subList(1, args.length)));
         }
+        // `editora mcp` serves the MCP tools over standard input and output, relaying to the running editor's
+        // endpoint, so an agent is set up once (`claude mcp add editora -- editora mcp`) and survives restarts.
+        // Like `http`: first argument only, no window, no hand-off, nothing but JSON-RPC on standard output.
+        if (args.length > 0 && com.editora.mcp.McpStdio.COMMAND.equals(args[0])) {
+            System.exit(com.editora.mcp.McpStdio.main(java.util.List.of(args).subList(1, args.length)));
+        }
         com.editora.perf.Startup.mark(com.editora.perf.Startup.MAIN);
         // Capture java.util.logging output + uncaught exceptions in-memory so a packaged build (no
         // visible stderr) can show them via the Debug Log window. Cheap; safe before launch.
@@ -870,6 +876,7 @@ public class App extends Application {
                 Usage: editora [options] [FILE[:LINE[:COLUMN]] ...]
                        editora --diff-ui LEFT RIGHT
                        editora http [options] FILE.http ...   (run requests; see 'editora http --help')
+                       editora mcp [--config-dir <path>] [--dev]   (MCP over stdio for an agent; see 'editora mcp --help')
 
                 Options:
                   --config-dir <path>   Use <path> as the config directory (or set EDITORA_CONFIG_DIR)

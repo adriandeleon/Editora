@@ -3241,14 +3241,27 @@ public class MainController implements com.editora.mcp.McpBridge {
         setStatus(tr("status.toggle.mcp", tr(s.isMcpSupport() ? "common.on" : "common.off")));
     }
 
-    /** Copies a ready-to-paste {@code claude mcp add} command (endpoint URL + bearer token) to the clipboard. */
+    /**
+     * {@code mcp.copyEndpoint}: copies a {@code claude mcp add} command that starts {@code editora mcp}, which finds
+     * the running server by itself — set up once, it outlives restarts and new tokens, and it holds no token. Works
+     * while the server is off too (the status line says to turn it on).
+     */
     void copyMcpEndpoint() {
+        String cmd = com.editora.mcp.McpConnectCommand.stdio(config.getConfigDir());
+        ClipboardContent cc = new ClipboardContent();
+        cc.putString(cmd);
+        javafx.scene.input.Clipboard.getSystemClipboard().setContent(cc);
+        boolean running = mcpServer != null && mcpServer.isRunning();
+        setStatus(tr(running ? "status.mcp.endpointCopied" : "status.mcp.connectCopiedOff"));
+    }
+
+    /** {@code mcp.copyHttpEndpoint}: the direct HTTP endpoint command (URL + bearer token), valid for this run only. */
+    void copyMcpHttpEndpoint() {
         if (mcpServer == null || !mcpServer.isRunning()) {
             setStatus(tr("status.mcp.notRunning"));
             return;
         }
-        String cmd = "claude mcp add --transport http editora " + mcpServer.url() + " --header \"Authorization: Bearer "
-                + mcpServer.token() + "\"";
+        String cmd = com.editora.mcp.McpConnectCommand.http(mcpServer.url(), mcpServer.token());
         ClipboardContent cc = new ClipboardContent();
         cc.putString(cmd);
         javafx.scene.input.Clipboard.getSystemClipboard().setContent(cc);

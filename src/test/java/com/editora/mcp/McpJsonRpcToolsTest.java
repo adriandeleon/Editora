@@ -177,13 +177,14 @@ class McpJsonRpcToolsTest {
         JsonNode response = rpc("initialize", "{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{}}");
 
         JsonNode result = response.get("result");
-        assertEquals(McpTools.PROTOCOL_VERSION, result.get("protocolVersion").asText());
+        assertEquals("2024-11-05", result.get("protocolVersion").asText(), "the revision the client asked for");
         assertEquals("editora", result.get("serverInfo").get("name").asText());
         assertEquals(
                 com.editora.AppInfo.VERSION,
                 result.get("serverInfo").get("version").asText());
         assertTrue(result.get("capabilities").get("tools").isObject(), "tools are offered");
-        assertEquals(1, result.get("capabilities").size(), "and nothing the server does not implement");
+        assertTrue(result.at("/capabilities/resources/subscribe").asBoolean(), "and resources, which can be watched");
+        assertEquals(2, result.get("capabilities").size(), "and nothing the server does not implement");
         assertEquals(List.of(), bridge.calls, "a handshake does not touch the editor");
     }
 
@@ -202,9 +203,9 @@ class McpJsonRpcToolsTest {
 
     @Test
     void anUnknownMethodAndAMissingMethodAreErrorsNotSilence() throws Exception {
-        JsonNode unknown = rpc("resources/list", null);
+        JsonNode unknown = rpc("prompts/list", null); // no prompts are offered
         assertEquals(JsonRpc.METHOD_NOT_FOUND, unknown.get("error").get("code").asInt());
-        assertTrue(unknown.get("error").get("message").asText().contains("resources/list"));
+        assertTrue(unknown.get("error").get("message").asText().contains("prompts/list"));
         assertNull(unknown.get("result"));
 
         JsonNode missing = send("{\"jsonrpc\":\"2.0\",\"id\":2}");

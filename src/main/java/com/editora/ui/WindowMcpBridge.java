@@ -139,6 +139,26 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
     }
 
     @Override
+    public java.util.Map<String, Long> bufferStamps() {
+        return mcpOnFx(() -> {
+            java.util.Map<String, Long> out = new java.util.TreeMap<>();
+            for (Tab tab : host.editorArea().tabs()) {
+                EditorBuffer b = host.bufferOf(tab);
+                if (b == null) {
+                    RestorePlaceholder placeholder = RestorePlaceholder.of(tab);
+                    if (placeholder != null) {
+                        out.put(placeholder.path().toString(), 0L); // not built yet: unchanged since opened
+                    }
+                } else if (b.getPath() != null) {
+                    // An encrypted file's edits are its own business: its stamp never moves (ADR 0017).
+                    out.put(b.getPath().toString(), b.encryption().isEncrypted() ? 0L : b.docVersion());
+                }
+            }
+            return out;
+        });
+    }
+
+    @Override
     public BufferContent readBuffer(@Nullable String path) {
         return mcpOnFx(() -> {
             EditorBuffer b = path == null ? host.activeBuffer() : openBufferForPath(path);

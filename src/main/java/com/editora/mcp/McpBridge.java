@@ -80,6 +80,21 @@ public interface McpBridge {
             int behind,
             List<GitFileState> files) {}
 
+    /**
+     * Each open file's change stamp, by path: a number that changes whenever its text does (a buffer's document
+     * version). Cheap — no text is copied — so the server can poll it while an agent watches resources. Default: the
+     * open files with stamp 0 (a bridge that can't tell changes only reports files opening and closing).
+     */
+    default java.util.Map<String, Long> bufferStamps() {
+        java.util.Map<String, Long> out = new java.util.TreeMap<>();
+        for (OpenFile f : listOpenFiles()) {
+            if (f.path() != null) {
+                out.put(f.path(), 0L);
+            }
+        }
+        return out;
+    }
+
     /** All open buffers, with which one is active. */
     List<OpenFile> listOpenFiles();
 

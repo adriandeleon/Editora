@@ -45,9 +45,12 @@ class McpToolsTest {
         String readPath;
         int reads;
 
+        List<OpenFile> openFiles = List.of();
+        List<Diagnostic> diagnostics = List.of();
+
         @Override
         public List<OpenFile> listOpenFiles() {
-            return List.of();
+            return openFiles;
         }
 
         @Override
@@ -59,7 +62,7 @@ class McpToolsTest {
 
         @Override
         public List<Diagnostic> getDiagnostics(String path) {
-            return List.of();
+            return diagnostics;
         }
 
         @Override

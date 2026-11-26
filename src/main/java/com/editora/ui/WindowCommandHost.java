@@ -540,6 +540,11 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
     }
 
     @Override
+    public void copyMcpHttpEndpoint() {
+        mc.copyMcpHttpEndpoint();
+    }
+
+    @Override
     public void ifLsp(Runnable action) {
         mc.ifLsp(action);
     }
