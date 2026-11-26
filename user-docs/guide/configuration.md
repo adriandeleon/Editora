@@ -60,6 +60,10 @@ every language.
   Updates, Trusted folders and
   [Show Application Log…](/docs/troubleshooting#seeing-errors-in-a-packaged-build)
   are on the Advanced page.
+- The **Language** on the Appearance page sets the interface language:
+  **Automatic (system)**, which follows the system's language and falls back to
+  English, or English, Spanish, French, German, Italian or Portuguese. Every
+  menu, dialog and message is translated in each of them.
 - A few settings apply only when Editora starts: the **Language** on the
   Appearance page, merging the menu bar into the title bar, and turning plugins
   on or off. Once you change one, its row says it applies after a restart, and
@@ -483,6 +487,7 @@ These are the rows under **Settings → Editor → Display**:
 for files in that language; an empty list means that language has no rulers.
 Columns run from 1 to 1000. An `.editorconfig` `max_line_length` replaces the
 first ruler (see [EditorConfig](/docs/editorconfig#rulers-and-max_line_length)).
+In large-file mode the indent guides are off, whatever the setting says.
 
 The palette commands that set them, and how rulers and indent guides are
 drawn, are under
