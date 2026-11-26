@@ -28,6 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * wrapping: in a narrow Split pane the column fits the viewport and only the wide block is scaled down.
  */
 @Tag("fx")
+@Tag("windows-fx")
 class MarkdownWideBlockFxTest {
 
     @BeforeAll

@@ -4,9 +4,11 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -148,6 +150,23 @@ class ReleaseSupplyChainTest {
         assertTrue(lane != null, "full-tests.yml lost its Windows/macOS test lane");
         assertTrue(lane.contains("windows-latest") && lane.contains("macos-15"), "pure-tests must cover both");
         assertTrue(lane.contains("-DexcludedGroups=fx"), "pure-tests runs the pure suite");
+    }
+
+    @Test
+    void windowsRunsTheWindowsFxSliceAndEveryFullTestsJobSharesOneCondition() throws IOException {
+        Map<String, String> jobs = jobs(read(WORKFLOWS.resolve("full-tests.yml")));
+        String lane = jobs.get("windows-fx-tests");
+        assertTrue(lane != null, "full-tests.yml lost its Windows FX lane");
+        assertTrue(lane.contains("runs-on: windows-latest"), "windows-fx-tests must run on Windows");
+        assertTrue(lane.contains("-Dgroups=windows-fx"), "windows-fx-tests runs the classes tagged windows-fx");
+        Pattern condition = Pattern.compile("(?m)^    if: (.+)$");
+        Set<String> conditions = new HashSet<>();
+        for (Map.Entry<String, String> job : jobs.entrySet()) {
+            Matcher m = condition.matcher(job.getValue());
+            assertTrue(m.find(), job.getKey() + " has no job-level if: (it would run on every pull request)");
+            conditions.add(m.group(1));
+        }
+        assertEquals(1, conditions.size(), "full-tests.yml's jobs must share one if: " + conditions);
     }
 
     @Test

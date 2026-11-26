@@ -44,6 +44,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * lint fixes and per-rule switch, and what each command says on a buffer it does not apply to.
  */
 @Tag("fx")
+@Tag("windows-fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class PreviewCommandsFxTest {

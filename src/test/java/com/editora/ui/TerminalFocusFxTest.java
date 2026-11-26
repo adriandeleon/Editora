@@ -26,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * whose window's keys still work.
  */
 @Tag("fx")
+@Tag("windows-fx")
 class TerminalFocusFxTest {
 
     @BeforeAll

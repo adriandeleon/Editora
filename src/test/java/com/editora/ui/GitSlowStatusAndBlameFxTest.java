@@ -26,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * the inline blame, requested after every refresh, is not recomputed for a file and a HEAD that did not change.
  */
 @Tag("fx")
+@Tag("windows-fx")
 class GitSlowStatusAndBlameFxTest {
 
     @BeforeAll

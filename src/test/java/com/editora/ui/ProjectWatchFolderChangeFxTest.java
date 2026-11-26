@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
  * (MarkdownBacklinksFxTest counted two builds there, one on Linux).
  */
 @Tag("fx")
+@Tag("windows-fx")
 class ProjectWatchFolderChangeFxTest {
 
     @Test

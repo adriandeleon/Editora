@@ -52,6 +52,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * shell owns stay with it, and the palette follows the editor theme the scene has applied.
  */
 @Tag("fx")
+@Tag("windows-fx")
 class TerminalPanelFxTest {
 
     private Stage stage;

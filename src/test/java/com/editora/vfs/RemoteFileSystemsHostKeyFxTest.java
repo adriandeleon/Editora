@@ -32,6 +32,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * was accepted in silence and — with password auth — was simply handed the user's password.
  */
 @Tag("fx")
+@Tag("windows-fx")
 class RemoteFileSystemsHostKeyFxTest {
 
     @BeforeAll

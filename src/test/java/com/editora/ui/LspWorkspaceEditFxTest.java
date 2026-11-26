@@ -60,6 +60,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * merely by checking the returned boolean.
  */
 @Tag("fx")
+@Tag("windows-fx")
 @org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class LspWorkspaceEditFxTest {
 

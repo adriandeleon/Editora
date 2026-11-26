@@ -34,6 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * menu row that reads as nothing fails the test, once per place it sits ({@link AccessibleNames}).
  */
 @Tag("fx")
+@Tag("windows-fx")
 @org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class NamedControlsSweepFxTest {
 

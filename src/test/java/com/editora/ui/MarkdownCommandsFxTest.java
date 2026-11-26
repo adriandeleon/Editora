@@ -29,6 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * apply, the table-size picker under the keyboard, and Tab against the bundled snippets.
  */
 @Tag("fx")
+@Tag("windows-fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // the link and TOC lookups answer in place
 class MarkdownCommandsFxTest {

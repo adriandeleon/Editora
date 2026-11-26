@@ -34,6 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * long folder (D3) and the label elision's cache (D5).
  */
 @Tag("fx")
+@Tag("windows-fx")
 class ProjectMapCanvasReview4FxTest {
 
     @TempDir
