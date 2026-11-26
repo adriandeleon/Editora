@@ -18,9 +18,15 @@ reached first: an ordinary file gets all 50, a big one keeps fewer. The budget
 is shared by **all open files together** (64 million characters), and the oldest
 checkpoints go first. Closing a tab releases its checkpoints straight away.
 
-Ordinary undo is bounded the same way: a document keeps up to 300 undo steps,
-and the undo steps of all open documents together hold no more than 64 million
-characters of text. Over that, the document edited least recently gives up its
+Ordinary undo (**Edit: Undo**, `C-/` in the Emacs keymap, `Ctrl+Z` in the
+others, `Cmd+Z` on macOS) takes back a word or a line at a time, not a whole
+burst of typing. An undo step ends after typing that ends in a space or a line
+break, after deleting across a space, and after a pause of 400 milliseconds. A
+paste, a snippet or a format is a step of its own.
+
+Ordinary undo is bounded the same way as the checkpoints: a document keeps up
+to 300 undo steps, and the undo steps of all open documents together hold no
+more than 64 million characters of text. Over that, the document edited least recently gives up its
 oldest steps first, and every document keeps at least its latest step. Closing
 a tab releases its undo steps at once.
 

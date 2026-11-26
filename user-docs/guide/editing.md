@@ -284,6 +284,9 @@ In an INI file such as `setup.cfg`, `tox.ini` or `.flake8`, the comment
 character is the one the file already uses: `#` when most of its comments start
 with `#`, otherwise `;`.
 
+A pip `requirements.txt` file comments with `#`. A file type with no comment
+syntax, such as plain text, is left as it is.
+
 In HTML pages, templates and PHP files the syntax follows where the selection
 is (markup, `<style>`, `<script>`, template code or a PHP block); see
 [HTML comments](/docs/html#comments-and-indentation).
@@ -534,6 +537,15 @@ down five lines, `C-u 3 C-k` kills three, `C-u 40 -` inserts forty dashes. A bar
 `C-u` is 4 and repeating it multiplies by four, digits after it are that number,
 and `C-g` cancels a half-typed argument. `C-u C-SPC` is special-cased to
 pop-mark. Only the Emacs keymap binds `C-u`.
+
+Some of Emacs is left out of the port:
+
+- A `C-u` count repeats the next command. It is not a true numeric argument, so
+  a negative count does not reverse a motion.
+- Registers hold text and positions only: there are no number, rectangle or
+  window-configuration registers.
+- The mark ring is per buffer; there is no global mark ring across buffers.
+- There is no dabbrev. `M-/` opens completion instead, like `C-M-i`.
 
 ## String manipulation
 
