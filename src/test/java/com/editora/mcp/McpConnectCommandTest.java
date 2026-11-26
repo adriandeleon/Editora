@@ -8,22 +8,34 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** {@link McpConnectCommand}: the commands Settings → MCP Server copies. Pure. */
 class McpConnectCommandTest {
+
+    /** An absolute folder on whatever system runs the test (a Windows path has a drive and backslashes). */
+    private static final Path BASE =
+            Path.of(System.getProperty("java.io.tmpdir")).toAbsolutePath();
 
     @Test
     void theConnectCommandStartsThisLauncherOnceForEveryProject() {
         assertEquals(
                 "claude mcp add --scope user editora -- /opt/editora/bin/Editora mcp",
                 McpConnectCommand.stdio(List.of("/opt/editora/bin/Editora"), null, false));
+        Path dev = BASE.resolve(".editora-dev");
         assertEquals(
                 "claude mcp add --scope user editora -- '/Applications/My Editora.app/Contents/MacOS/Editora' mcp"
-                        + " --config-dir /home/me/.editora-dev",
-                McpConnectCommand.stdio(
-                        List.of("/Applications/My Editora.app/Contents/MacOS/Editora"),
-                        Path.of("/home/me/.editora-dev"),
-                        false));
+                        + " --config-dir " + McpConnectCommand.quote(dev.toString(), false),
+                McpConnectCommand.stdio(List.of("/Applications/My Editora.app/Contents/MacOS/Editora"), dev, false));
+    }
+
+    @Test
+    void theCommandForThisEditorNamesItsLauncherAndLeavesTheDefaultFolderOut() {
+        Path home = Path.of(System.getProperty("user.home", "."));
+        String command = McpConnectCommand.stdio(home.resolve(".editora"));
+        assertTrue(command.startsWith("claude mcp add --scope user editora -- "), command);
+        assertTrue(command.endsWith(" mcp"), "the default config folder is found without --config-dir: " + command);
+        assertTrue(McpConnectCommand.stdio(BASE.resolve("other")).contains(" mcp --config-dir "));
     }
 
     @Test
@@ -53,9 +65,9 @@ class McpConnectCommandTest {
 
     @Test
     void theDefaultConfigFolderIsLeftOut() {
-        Path home = Path.of("/home/me/.editora");
-        assertNull(McpConnectCommand.configDirArg(Path.of("/home/me/./.editora"), home));
-        assertEquals(Path.of("/srv/cfg"), McpConnectCommand.configDirArg(Path.of("/srv/cfg"), home));
+        Path home = BASE.resolve(".editora");
+        assertNull(McpConnectCommand.configDirArg(BASE.resolve(".").resolve(".editora"), home));
+        assertEquals(BASE.resolve("cfg"), McpConnectCommand.configDirArg(BASE.resolve("cfg"), home));
     }
 
     @Test
