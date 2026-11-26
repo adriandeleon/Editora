@@ -94,7 +94,6 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * </ul>
  */
 @Tag("fx")
-@Tag("windows-fx")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 @org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class CommandSweepFxTest {
