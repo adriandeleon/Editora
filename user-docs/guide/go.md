@@ -36,8 +36,10 @@ arguments; they are kept for that file and used by every later Run File.
 In a `_test.go` file, **Run Test at Caret** (`test.runAtCaret`) builds the
 package's test binary (`go test -c`) and runs the test function the caret is
 in (`-test.run ^Name$ -test.v`), or every test of the package when the caret
-is outside a test function. Its output goes to the Run window. Run File on a
-`_test.go` file runs the package's tests.
+is outside a test function. A `Benchmark…` function runs alone as a benchmark
+(`-test.run ^$ -test.bench ^Name$`). Its output goes to the Run window.
+**Rerun Last** runs the same test again. Run File on a `_test.go` file runs
+the package's tests.
 
 **Run Tests** (`test.run`) in a Go module runs `go test -json ./...` and fills
 the [Test Results](/docs/build-tools#test-runner) window, where failed tests
