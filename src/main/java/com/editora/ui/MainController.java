@@ -517,6 +517,39 @@ public class MainController implements com.editora.mcp.McpBridge {
         return mcpBridge.todoScan();
     }
 
+    @Override
+    public java.util.Map<String, Long> bufferStamps() {
+        return mcpBridge.bufferStamps(); // the resource watch: without this, the default (every file at 0)
+    }
+
+    @Override
+    public java.util.List<ReviewThreadInfo> listReviews(@Nullable String path, boolean all) {
+        return mcpBridge.listReviews(path, all);
+    }
+
+    @Override
+    public ReviewAdded addReview(
+            String path,
+            int startLine,
+            int endLine,
+            String body,
+            @Nullable String suggestion,
+            @Nullable String severity,
+            @Nullable String category,
+            String agent) {
+        return mcpBridge.addReview(path, startLine, endLine, body, suggestion, severity, category, agent);
+    }
+
+    @Override
+    public @Nullable String replyReview(String threadId, String body, @Nullable String suggestion, String agent) {
+        return mcpBridge.replyReview(threadId, body, suggestion, agent);
+    }
+
+    @Override
+    public @Nullable String resolveReview(String threadId, String note, String agent) {
+        return mcpBridge.resolveReview(threadId, note, agent);
+    }
+
     public void openInitialBuffer() {
         sessions.openInitialBuffer();
     }

@@ -79,6 +79,23 @@ their repository and runs the commands:
 - **Commands.** `review.addComment`, `review.suggestChange`, `review.showThread`, `review.next`,
   `review.previous`; the first two are also in the editor's context menu.
 
+## Agents (MCP)
+
+Four MCP tools and a resource reach the window's review threads through `McpBridge` (`listReviews`, `addReview`,
+`replyReview`, `resolveReview`), implemented in `WindowMcpBridge` and passed through by `MainController`:
+
+- The repository is the one the window's Git follows (`GitCoordinator.repoRoot`). Paths are made canonical and
+  closed files read on the MCP worker; only the threads and open buffers are read on FX. A project file not yet in
+  memory is read on the worker and handed over (`ReviewCoordinator.loaded`).
+- `add_review_comment` keeps to `McpAccess.openRefusal`: a file open in the window or inside its project. Lines
+  are 1-based and must be in the file; the anchor is captured from the buffer's text (unsaved changes included) or
+  the file's. It starts an `AGENT` thread named after the client (`io.modelcontextprotocol/clientInfo` in a modern
+  request's `_meta`, else "Agent"), with an optional severity and category (`ReviewCoordinator.agentStart`).
+- `resolve_review_comment` takes a note, stored as "Resolved by <agent>: <note>"; a thread that is not open is
+  refused.
+- `editora://reviews` lists the open threads as `list_review_comments` does; the resource watch compares its text.
+- The tools write only the review store, never a file; annotated `readOnlyHint: false`, `destructiveHint: false`.
+
 ## Keeping threads in the project
 
 With `Settings.reviewsInProject` (schema 187, Settings → Git) the threads of a repository live in its
@@ -90,4 +107,4 @@ thread in order. Turning the setting on or off does not move threads already wri
 ## Not built yet
 
 - Comments on the base side of a diff (they need its revision), and GitHub pull request threads (backlog item 8).
-- MCP tools for agents (item 9) and the findings view (item 10).
+- The findings view (item 10), and a diff of the change under review for agents (they read it with `git`).

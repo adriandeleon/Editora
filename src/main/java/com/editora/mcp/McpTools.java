@@ -88,6 +88,14 @@ final class McpTools {
         d.put("title", "Diagnostics");
         d.put("description", "Language-server diagnostics of every open file, by path.");
         d.put("mimeType", "application/json");
+        ObjectNode rv = list.addObject();
+        rv.put("uri", REVIEWS_URI);
+        rv.put("name", "reviews");
+        rv.put("title", "Review Comments");
+        rv.put(
+                "description",
+                "The open review threads of the window's repository, as list_review_comments lists them.");
+        rv.put("mimeType", "application/json");
         ObjectNode g = list.addObject();
         g.put("uri", GIT_STATUS_URI);
         g.put("name", "git-status");
@@ -112,6 +120,9 @@ final class McpTools {
         } else if (uri.equals(GIT_STATUS_URI)) {
             mimeType = "application/json";
             text = contentText(gitStatusResult());
+        } else if (uri.equals(REVIEWS_URI)) {
+            mimeType = "application/json";
+            text = reviewsText();
         } else {
             String path = filePath(uri);
             if (path == null) {
@@ -160,6 +171,9 @@ final class McpTools {
         if (uri.equals(GIT_STATUS_URI)) {
             return contentText(gitStatusResult());
         }
+        if (uri.equals(REVIEWS_URI)) {
+            return reviewsText();
+        }
         String path = filePath(uri);
         Long stamp = path == null ? null : bufferStamps.get(path);
         return stamp == null ? null : Long.toString(stamp);
@@ -170,6 +184,7 @@ final class McpTools {
         java.util.Set<String> uris = new java.util.TreeSet<>();
         bufferStamps.keySet().forEach(p -> uris.add(fileUri(p)));
         uris.add(DIAGNOSTICS_URI);
+        uris.add(REVIEWS_URI);
         uris.add(GIT_STATUS_URI);
         return uris;
     }
@@ -212,8 +227,116 @@ final class McpTools {
         }
     }
 
+    /** The window's open review threads as JSON; an empty list when it has no repository. */
+    private String reviewsText() {
+        try {
+            return pretty(reviewsJson(bridge.listReviews(null, false)));
+        } catch (IllegalStateException e) {
+            return "[]";
+        }
+    }
+
     private static String contentText(ObjectNode toolResult) {
         return toolResult.path("content").path(0).path("text").asText();
+    }
+
+    // --- review comments --------------------------------------------------------------------------
+
+    /** The reviews' JSON resource. */
+    static final String REVIEWS_URI = "editora://reviews";
+
+    /** A review tool's result, or a tool error with the reason the bridge gave (no repository, a refused file). */
+    private ObjectNode reviewTool(java.util.function.Supplier<ObjectNode> call) {
+        try {
+            return call.get();
+        } catch (IllegalStateException e) {
+            return errorResult(String.valueOf(e.getMessage()));
+        }
+    }
+
+    /** A required argument's text; a missing or blank one is a tool error (thrown to {@link #reviewTool}). */
+    private static String req(@Nullable JsonNode args, String field) {
+        String v = text(args, field);
+        if (v == null || v.isBlank()) {
+            throw new IllegalStateException(field + " is required.");
+        }
+        return v;
+    }
+
+    private ObjectNode done(@Nullable String error) {
+        return error == null ? textResult(m.createObjectNode().put("done", true)) : errorResult(error);
+    }
+
+    /**
+     * Who is calling, for the comments it writes: the client's name a modern request carries in {@code _meta}
+     * ({@code io.modelcontextprotocol/clientInfo}), else "Agent".
+     */
+    static String agentName(@Nullable JsonNode params) {
+        JsonNode info = params == null ? null : params.path("_meta").path("io.modelcontextprotocol/clientInfo");
+        String name =
+                info == null ? "" : info.path("title").asText(info.path("name").asText(""));
+        name = name.strip();
+        return name.isEmpty() ? "Agent" : name.length() > 64 ? name.substring(0, 64) : name;
+    }
+
+    private ObjectNode reviewsResult(@Nullable JsonNode args) {
+        boolean all = "all".equalsIgnoreCase(String.valueOf(text(args, "state")));
+        return textResult(reviewsJson(bridge.listReviews(text(args, "path"), all)));
+    }
+
+    private ArrayNode reviewsJson(List<McpBridge.ReviewThreadInfo> threads) {
+        ArrayNode arr = m.createArrayNode();
+        for (McpBridge.ReviewThreadInfo t : threads) {
+            ObjectNode o = arr.addObject();
+            o.put("id", t.id());
+            o.put("path", t.path());
+            o.put("start_line", t.startLine());
+            o.put("end_line", t.endLine());
+            o.put("outdated", t.outdated());
+            o.put("state", t.state());
+            if (t.stateNote() != null) {
+                o.put("state_note", t.stateNote());
+            }
+            if (t.severity() != null) {
+                o.put("severity", t.severity());
+            }
+            if (t.category() != null) {
+                o.put("category", t.category());
+            }
+            ArrayNode comments = o.putArray("comments");
+            for (McpBridge.ReviewCommentInfo c : t.comments()) {
+                ObjectNode co = comments.addObject();
+                co.put("id", c.id());
+                co.put("author_kind", c.authorKind());
+                co.put("author", c.authorKind().equals("user") ? "user" : c.author());
+                co.put("body", c.body());
+                if (c.suggestion() != null) {
+                    co.put("suggestion", c.suggestion());
+                }
+                co.put("created", java.time.Instant.ofEpochMilli(c.createdAt()).toString());
+            }
+        }
+        return arr;
+    }
+
+    private ObjectNode addReviewResult(@Nullable JsonNode args, String agent) {
+        McpBridge.ReviewAdded added = bridge.addReview(
+                req(args, "path"),
+                intArg(args, "start_line"),
+                intArg(args, "end_line"),
+                req(args, "body"),
+                text(args, "suggestion"),
+                text(args, "severity"),
+                text(args, "category"),
+                agent);
+        if (added.id() == null) {
+            return errorResult(added.error() == null ? "Not added." : added.error());
+        }
+        ObjectNode o = m.createObjectNode();
+        o.put("id", added.id());
+        o.put("start_line", added.startLine());
+        o.put("end_line", added.endLine());
+        return textResult(o);
     }
 
     // --- tools/call -------------------------------------------------------------------------------
@@ -244,6 +367,14 @@ final class McpTools {
             case "git_status" -> gitStatusResult();
             case "list_tabs" -> tabsResult();
             case "todo_scan" -> todoScanResult();
+            case "list_review_comments" -> reviewTool(() -> reviewsResult(args));
+            case "add_review_comment" -> reviewTool(() -> addReviewResult(args, agentName(params)));
+            case "reply_to_review_comment" ->
+                reviewTool(() -> done(bridge.replyReview(
+                        req(args, "thread_id"), req(args, "body"), text(args, "suggestion"), agentName(params))));
+            case "resolve_review_comment" ->
+                reviewTool(
+                        () -> done(bridge.resolveReview(req(args, "thread_id"), req(args, "note"), agentName(params))));
             default -> errorResult("Unknown tool: " + name);
         };
     }
@@ -599,7 +730,7 @@ final class McpTools {
         return r;
     }
 
-    private static @Nullable String text(JsonNode args, String field) {
+    private static @Nullable String text(@Nullable JsonNode args, String field) {
 
         if (args == null || !args.hasNonNull(field)) {
             return null;
@@ -608,12 +739,12 @@ final class McpTools {
         return v.isEmpty() ? null : v;
     }
 
-    private static boolean bool(JsonNode args, String field) {
+    private static boolean bool(@Nullable JsonNode args, String field) {
         return args != null && args.hasNonNull(field) && args.get(field).asBoolean(false);
     }
 
     /** Reads an optional integer argument; 0 when absent (callers treat {@code <= 0} as "not given"). */
-    private static int intArg(JsonNode args, String field) {
+    private static int intArg(@Nullable JsonNode args, String field) {
         return args != null && args.hasNonNull(field) ? args.get(field).asInt(0) : 0;
     }
 }

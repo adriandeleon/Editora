@@ -81,6 +81,15 @@ active file's repository, by file. Type to filter by path, text or author.
 a thread at its lines with its card, **Delete** deletes it, and each row's
 menu has **Open**, **Resolve** or **Reopen**, and **Delete**.
 
+## Agents
+
+An agent connected over [MCP](/docs/mcp#review-comments), such as Claude Code,
+can read the threads, add its own on lines it reviewed, reply, and resolve a
+thread once it has done what the thread asks, with a note that says so. Its
+comments carry its name; a finding it marks with a severity shows that first,
+`◆ IMPORTANT · Off by one`, and its card says the category. You answer, resolve
+or dismiss them as any other thread.
+
 ## Keeping threads in the project
 
 Threads are kept in `reviews.json` in Editora's

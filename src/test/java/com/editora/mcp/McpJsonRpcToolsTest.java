@@ -145,6 +145,38 @@ class McpJsonRpcToolsTest {
             record("todoScan");
             return todos;
         }
+
+        @Override
+        public List<ReviewThreadInfo> listReviews(String path, boolean all) {
+            record("listReviews " + path + " " + all);
+            return List.of();
+        }
+
+        @Override
+        public ReviewAdded addReview(
+                String path,
+                int startLine,
+                int endLine,
+                String body,
+                String suggestion,
+                String severity,
+                String category,
+                String agent) {
+            record("addReview " + path + ":" + startLine + "-" + endLine + " " + body + " by " + agent);
+            return new ReviewAdded("t1", null, startLine, endLine <= 0 ? startLine : endLine);
+        }
+
+        @Override
+        public String replyReview(String threadId, String body, String suggestion, String agent) {
+            record("replyReview " + threadId + " " + body);
+            return null;
+        }
+
+        @Override
+        public String resolveReview(String threadId, String note, String agent) {
+            record("resolveReview " + threadId + " " + note);
+            return null;
+        }
     }
 
     @TempDir
@@ -302,7 +334,11 @@ class McpJsonRpcToolsTest {
                         "document_symbols",
                         "git_status",
                         "list_tabs",
-                        "todo_scan"),
+                        "todo_scan",
+                        "list_review_comments",
+                        "add_review_comment",
+                        "reply_to_review_comment",
+                        "resolve_review_comment"),
                 names);
 
         for (JsonNode tool : tools) {
@@ -310,7 +346,15 @@ class McpJsonRpcToolsTest {
             // The least a client can send: every required argument, as a string.
             com.fasterxml.jackson.databind.node.ObjectNode arguments = mapper.createObjectNode();
             if (tool.get("inputSchema").has("required")) {
-                tool.get("inputSchema").get("required").forEach(required -> arguments.put(required.asText(), "x"));
+                JsonNode props = tool.get("inputSchema").get("properties");
+                tool.get("inputSchema").get("required").forEach(required -> {
+                    String arg = required.asText();
+                    if ("integer".equals(props.path(arg).path("type").asText())) {
+                        arguments.put(arg, 1);
+                    } else {
+                        arguments.put(arg, "x");
+                    }
+                });
             }
             if (arguments.has("path")) {
                 arguments.put("path", "/tmp/x");

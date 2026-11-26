@@ -66,6 +66,9 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
 
         /** The editor's configuration directory, which no MCP write may land in. */
         Path configDirectory();
+
+        /** The window's review threads. */
+        ReviewCoordinator reviewCoordinator();
     }
 
     private final Host host;
@@ -665,5 +668,159 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
             }
         }
         return null;
+    }
+
+    // --- review comments --------------------------------------------------------------------------
+    // The window's repository is the one its Git follows (the active file's, or the project's). Paths are made
+    // canonical, and files read, here on the MCP worker; only the threads and the open buffers are read on FX.
+
+    /** The window's repository as a review place for {@code file} (its path in it), or for the repository alone. */
+    private ReviewCoordinator.Place reviewPlace(@Nullable Path file) {
+        Path root = mcpOnFx(() -> host.git().isEnabled() ? host.git().repoRoot() : null);
+        if (root == null) {
+            throw new IllegalStateException(
+                    "The window has no Git repository: review comments are kept per repository.");
+        }
+        String rel = "";
+        if (file != null) {
+            String r = com.editora.review.ReviewKeys.relativePath(root, file);
+            if (r == null) {
+                throw new IllegalStateException("Not a file of the window's repository (" + root + "): " + file);
+            }
+            rel = r;
+        }
+        ReviewCoordinator.Place place =
+                new ReviewCoordinator.Place(root, com.editora.review.ReviewKeys.repoKey(root), rel);
+        ReviewCoordinator reviews = host.reviewCoordinator();
+        if (!mcpOnFx(() -> reviews.isLoaded(place))) {
+            java.util.List<com.editora.config.ReviewThread> read = com.editora.config.ProjectReviewFile.read(root);
+            mcpOnFx(() -> {
+                reviews.loaded(place, read);
+                return null;
+            });
+        }
+        return place;
+    }
+
+    /** {@code file}'s text as the editor has it (an open buffer, unsaved changes included), else as on disk. */
+    private @Nullable String reviewText(Path file) {
+        record Open(boolean open, @Nullable String text) {}
+        Open open = mcpOnFx(() -> {
+            EditorBuffer b = openBufferForPath(file.toString());
+            if (b == null) {
+                return new Open(false, null);
+            }
+            if (b.encryption().isEncrypted()) {
+                throw new IllegalStateException(ENCRYPTED);
+            }
+            return new Open(true, b.getContent());
+        });
+        if (open.open()) {
+            return open.text();
+        }
+        try {
+            return java.nio.file.Files.readString(file);
+        } catch (java.io.IOException | java.io.UncheckedIOException e) {
+            return null;
+        }
+    }
+
+    @Override
+    public java.util.List<ReviewThreadInfo> listReviews(@Nullable String path, boolean all) {
+        Path file = path == null ? null : Path.of(path);
+        ReviewCoordinator.Place place = reviewPlace(file);
+        String only = file == null ? null : place.path();
+        java.util.List<com.editora.config.ReviewThread> threads =
+                mcpOnFx(() -> host.reviewCoordinator().threadsOf(place.repoKey()));
+        java.util.Map<String, String> texts = new java.util.HashMap<>();
+        java.util.List<ReviewThreadInfo> out = new java.util.ArrayList<>();
+        for (com.editora.config.ReviewThread t : threads) {
+            if ((only != null && !only.equals(t.path())) || (!all && !t.open())) {
+                continue;
+            }
+            Path abs = com.editora.review.ReviewKeys.resolve(place.root(), t.path());
+            String text = texts.computeIfAbsent(t.path(), k -> {
+                String read = reviewText(abs);
+                return read == null ? "" : read;
+            });
+            var at = com.editora.review.ReviewAnchors.locate(t, text);
+            java.util.List<ReviewCommentInfo> comments = new java.util.ArrayList<>();
+            for (com.editora.config.ReviewComment c : t.comments()) {
+                comments.add(new ReviewCommentInfo(
+                        c.id(),
+                        c.author().kind().name().toLowerCase(java.util.Locale.ROOT),
+                        c.author().name(),
+                        c.body(),
+                        c.suggestion(),
+                        c.createdAt()));
+            }
+            out.add(new ReviewThreadInfo(
+                    t.id(),
+                    abs.toString(),
+                    at.startLine() + 1,
+                    at.endLine() + 1,
+                    at.outdated(),
+                    t.state().name().toLowerCase(java.util.Locale.ROOT),
+                    t.stateNote(),
+                    t.severity() == null ? null : t.severity().name().toLowerCase(java.util.Locale.ROOT),
+                    t.category(),
+                    comments));
+        }
+        return out;
+    }
+
+    @Override
+    public ReviewAdded addReview(
+            String path,
+            int startLine,
+            int endLine,
+            String body,
+            @Nullable String suggestion,
+            @Nullable String severity,
+            @Nullable String category,
+            String agent) {
+        Path file = Path.of(path);
+        record Scope(@Nullable Path root, boolean alreadyOpen) {}
+        Scope scope = mcpOnFx(() -> new Scope(host.projectRoot(), tabShowing(file)));
+        String refusal = McpAccess.openRefusal(scope.root(), file, scope.alreadyOpen());
+        if (refusal != null) {
+            return new ReviewAdded(null, refusal, 0, 0);
+        }
+        com.editora.config.ReviewThread.Severity level = null;
+        if (severity != null) {
+            try {
+                level = com.editora.config.ReviewThread.Severity.valueOf(severity.toUpperCase(java.util.Locale.ROOT));
+            } catch (IllegalArgumentException e) {
+                return new ReviewAdded(null, "severity must be one of blocker, important, minor, nit.", 0, 0);
+            }
+        }
+        ReviewCoordinator.Place place = reviewPlace(file);
+        String text = reviewText(file);
+        if (text == null) {
+            return new ReviewAdded(null, "Cannot read " + path, 0, 0);
+        }
+        int lines = text.split("\n", -1).length;
+        int last = endLine <= 0 ? startLine : endLine;
+        if (startLine < 1 || last < startLine || last > lines) {
+            return new ReviewAdded(
+                    null, "Lines " + startLine + "-" + last + " are not in the file (it has " + lines + ").", 0, 0);
+        }
+        com.editora.config.TextAnchor anchor = com.editora.review.ReviewAnchors.capture(text, startLine - 1, last - 1);
+        com.editora.config.ReviewThread.Severity sev = level;
+        String id = mcpOnFx(
+                () -> host.reviewCoordinator().agentStart(place, anchor, body, suggestion, sev, category, agent));
+        return new ReviewAdded(id, null, startLine, last);
+    }
+
+    @Override
+    public @Nullable String replyReview(String threadId, String body, @Nullable String suggestion, String agent) {
+        ReviewCoordinator.Place place = reviewPlace(null);
+        return mcpOnFx(() -> host.reviewCoordinator().agentReply(place, threadId, body, suggestion, agent));
+    }
+
+    @Override
+    public @Nullable String resolveReview(String threadId, String note, String agent) {
+        ReviewCoordinator.Place place = reviewPlace(null);
+        return mcpOnFx(() -> host.reviewCoordinator().agentResolve(place, threadId, note, agent));
     }
 }

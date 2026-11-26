@@ -468,14 +468,17 @@ final class ReviewCoordinator {
 
     /** Opens thread {@code threadId}'s card under its lines in {@code buffer}, scrolling them into view first. */
     void showThread(EditorBuffer buffer, String threadId) {
-        showThread(buffer, threadId, true);
+        showThread(buffer, threadId, SCROLL_PULSES);
     }
 
+    /** How many pulses a scrolled-to thread's lines get to be laid out before the card gives up. */
+    private static final int SCROLL_PULSES = 5;
+
     /**
-     * As {@link #showThread(EditorBuffer, String)}; with {@code scroll}, lines that are not on screen are scrolled to
-     * and the card opens once they are laid out (one pulse later). Without it, a thread still off screen says so.
+     * As {@link #showThread(EditorBuffer, String)}: lines that are not on screen are scrolled to, and the card opens
+     * once they are laid out, looked for again on each of the next {@code pulses} pulses. After that, it says so.
      */
-    private void showThread(EditorBuffer buffer, String threadId, boolean scroll) {
+    private void showThread(EditorBuffer buffer, String threadId, int pulses) {
         Place place = places.get(buffer);
         ReviewThread t = place == null ? null : find(place.repoKey(), threadId);
         if (place == null || t == null) {
@@ -485,15 +488,17 @@ final class ReviewCoordinator {
         CodeArea area = buffer.getFocusedArea();
         double[] anchor = anchor(area, at.startLine(), at.endLine());
         if (anchor == null) {
-            if (!scroll) {
+            if (pulses <= 0) {
                 host.setStatus(tr("status.review.scrolledTo"));
                 return;
             }
-            buffer.getFoldManager().unfoldContaining(at.startLine());
-            area.moveTo(at.startLine(), 0);
-            buffer.jumps().reveal(area, at.startLine(), false);
+            if (pulses == SCROLL_PULSES) {
+                buffer.getFoldManager().unfoldContaining(at.startLine());
+                area.moveTo(at.startLine(), 0);
+                buffer.jumps().reveal(area, at.startLine(), false);
+            }
             area.layout();
-            javafx.application.Platform.runLater(() -> showThread(buffer, threadId, false));
+            javafx.application.Platform.runLater(() -> showThread(buffer, threadId, pulses - 1));
             return;
         }
         if (card == null) {
@@ -691,6 +696,75 @@ final class ReviewCoordinator {
         if (Confirm.ask(host.window(), deleteQuestion())) {
             change(place, threads.delete(storage.threads(place.repoKey()), t.id()));
         }
+    }
+
+    // --- agents (MCP) --------------------------------------------------------------------------------
+
+    /** Whether {@code place}'s threads are in memory (a project file is read by the caller, off the FX thread). */
+    boolean isLoaded(Place place) {
+        return storage.isLoaded(place.repoKey());
+    }
+
+    /** {@code place}'s project file as the caller read it off the FX thread. */
+    void loaded(Place place, List<ReviewThread> read) {
+        storage.loaded(place.repoKey(), place.root(), read);
+    }
+
+    /** Whether threads are kept in the project (the caller reads a project file before {@link #loaded}). */
+    boolean keptInProject() {
+        return storage.inProject();
+    }
+
+    /** A thread an agent starts: the open buffers of its file show it at once. Returns the new thread's id. */
+    String agentStart(
+            Place place,
+            TextAnchor anchor,
+            String body,
+            @Nullable String suggestion,
+            ReviewThread.@Nullable Severity severity,
+            @Nullable String category,
+            String agent) {
+        ReviewThreads.Start what =
+                new ReviewThreads.Start(place.path(), ReviewThread.Side.NEW, null, anchor, severity, category);
+        List<ReviewThread> next =
+                threads.start(storage.threads(place.repoKey()), what, ReviewAuthor.agent(agent), body, suggestion);
+        Path file = ReviewKeys.resolve(place.root(), place.path());
+        host.forEachBuffer(b -> {
+            if (file.equals(b.getPath())) {
+                places.putIfAbsent(b, place);
+            }
+        });
+        change(place, next);
+        host.setStatus(tr("status.review.agentAdded", agent));
+        return next.get(next.size() - 1).id();
+    }
+
+    /** An agent's reply to thread {@code threadId}; null when done, else why not. */
+    @Nullable
+    String agentReply(Place place, String threadId, String body, @Nullable String suggestion, String agent) {
+        if (find(place.repoKey(), threadId) == null) {
+            return "No review thread " + threadId + " in this repository.";
+        }
+        change(
+                place,
+                threads.reply(storage.threads(place.repoKey()), threadId, ReviewAuthor.agent(agent), body, suggestion));
+        return null;
+    }
+
+    /** An agent resolves thread {@code threadId}; the note says who and what fixed it. Null when done. */
+    @Nullable
+    String agentResolve(Place place, String threadId, String note, String agent) {
+        ReviewThread t = find(place.repoKey(), threadId);
+        if (t == null) {
+            return "No review thread " + threadId + " in this repository.";
+        }
+        if (!t.open()) {
+            return "Review thread " + threadId + " is not open.";
+        }
+        String stateNote = tr("review.note.resolvedBy", agent, note.strip());
+        change(place, threads.resolve(storage.threads(place.repoKey()), threadId, stateNote));
+        host.setStatus(tr("status.review.agentResolved", agent));
+        return null;
     }
 
     // --- helpers -----------------------------------------------------------------------------------

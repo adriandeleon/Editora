@@ -198,6 +198,14 @@ class ReviewCoordinatorFxTest {
         return shared.reviewThreads(repoKey());
     }
 
+    private boolean onFxShowing() {
+        try {
+            return FxTestSupport.callOnFx(overlay::isShowing);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     private Node card() {
         assertTrue(overlay.isShowing(), "a card is showing");
         StackPane overlayRoot = FxTestSupport.field(overlay, "overlayRoot");
@@ -301,7 +309,8 @@ class ReviewCoordinatorFxTest {
         answer("Rename a.", tr("review.dialog.save"));
         fx(() -> b.getArea().layout());
         fx(() -> coordinator.showThread(b, stored().get(0).id()));
-        FxTestSupport.drainFx(); // a line not laid out yet: scrolled to, and the card opens a pulse later
+        // A line not laid out yet: scrolled to, and the card opens once it is (a few pulses at most).
+        com.editora.testkit.Await.until(() -> onFxShowing(), "the card opened");
         assertTrue(FxTestSupport.callOnFx(overlay::isShowing), "the card opened at the line: " + events);
         assertTrue(FxTestSupport.callOnFx(() -> card().lookupAll(".label").stream()
                 .anyMatch(n -> n instanceof javafx.scene.control.Label l && "Rename a.".equals(l.getText()))));
@@ -310,7 +319,7 @@ class ReviewCoordinatorFxTest {
         assertEquals(List.of("💬 2 · Rename a."), labelsOn(b, 1));
 
         fx(() -> coordinator.showThread(b, stored().get(0).id()));
-        FxTestSupport.drainFx();
+        com.editora.testkit.Await.until(() -> onFxShowing(), "the card opened");
         fx(() -> button(tr("review.card.resolve")).fire());
         assertEquals(ReviewThread.State.RESOLVED, stored().get(0).state());
     }
@@ -322,7 +331,7 @@ class ReviewCoordinatorFxTest {
         answer("Nit: spacing.", tr("review.dialog.save"));
         fx(() -> b.getArea().layout());
         fx(() -> coordinator.showThread(b, stored().get(0).id()));
-        FxTestSupport.drainFx();
+        com.editora.testkit.Await.until(() -> onFxShowing(), "the card opened");
         promptAnswer = "house style";
         fx(() -> button(tr("review.card.dismiss")).fire());
         assertEquals(ReviewThread.State.DISMISSED, stored().get(0).state());

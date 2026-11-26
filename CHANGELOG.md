@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Agents take part in code review.** Over MCP, an agent lists a repository's review threads, adds its own on
+  lines (with a suggestion, and for a finding a severity and a category), replies, and resolves a thread with a note
+  of what it did (`list_review_comments`, `add_review_comment`, `reply_to_review_comment`,
+  `resolve_review_comment`, and the `editora://reviews` resource). Its comments show in the editor like yours,
+  under its name.
 - **Code review comments.** Comment on lines of a repository's files with **Add Review Comment**, or propose new
   text with **Suggest Change** (a ```` ```suggestion ```` block, as on GitHub). A thread shows as a marker after its
   last line and opens a card to reply, resolve, dismiss with a reason, apply the suggestion as one undoable edit, edit
@@ -54,6 +59,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **MCP resource updates for edited files.** The window did not pass each buffer's change stamp to the MCP server,
+  so an agent watching an open file never heard that it changed.
 - **Maximizing the window no longer blows up the tool windows.** A docked tool window (Project, Structure, the
   bottom consoles) keeps its size when the main window grows or shrinks, and the editor takes the difference; before,
   the panel scaled with the window, so maximizing on a wide screen turned a narrow Project tree into a third of it.

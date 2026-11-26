@@ -32,7 +32,7 @@ class McpResourcesTest {
                 new McpBridge.OpenFile(null, "Untitled-1", "plain", true, true),
                 new McpBridge.OpenFile(path, "a.md", "markdown", true, false));
         JsonNode list = tools.listResourcesResult().get("resources");
-        assertEquals(3, list.size(), "the file, the diagnostics, the Git status: " + list);
+        assertEquals(4, list.size(), "the file, the diagnostics, the reviews, the Git status: " + list);
         JsonNode file = list.get(0);
         assertEquals(McpTools.fileUri(path), file.get("uri").asText());
         assertEquals("text/markdown", file.get("mimeType").asText());
@@ -56,7 +56,11 @@ class McpResourcesTest {
         assertNull(tools.resourceStamp(McpTools.fileUri(path + ".gone"), stamps), "a file no longer open");
         assertTrue(tools.resourceStamp(McpTools.GIT_STATUS_URI, stamps).contains("repo"));
         assertEquals(
-                java.util.Set.of(McpTools.fileUri(path), McpTools.DIAGNOSTICS_URI, McpTools.GIT_STATUS_URI),
+                java.util.Set.of(
+                        McpTools.fileUri(path),
+                        McpTools.DIAGNOSTICS_URI,
+                        McpTools.REVIEWS_URI,
+                        McpTools.GIT_STATUS_URI),
                 tools.resourceUris(stamps));
     }
 
