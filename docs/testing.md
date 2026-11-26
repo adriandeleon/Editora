@@ -398,7 +398,8 @@ ten minutes, but with five macOS runners for the account and several pull reques
 The whole FX suite takes about two hours on a 2-vCPU Windows machine, so CI runs only a slice of it there: the
 classes tagged `@Tag("windows-fx")` beside `@Tag("fx")` (`FxTestTagsTest` checks that every one has both), the
 ones that touch paths, Git, processes, sessions and the terminal, chosen from the 55 that failed on Windows before
-#1815. Tag a new FX class `windows-fx` when what it tests behaves differently on Windows, and keep the job under
+#1815 (without the command and named-controls sweeps, 11 minutes there, which run every day on Linux and
+macOS). Tag a new FX class `windows-fx` when what it tests behaves differently on Windows, and keep the job under
 about 25 minutes. To run the slice or the whole FX suite on a Windows machine: `mvn test -Djacoco.skip=true
 -Dgroups=windows-fx` (or `-Dgroups=fx`). The FX suite on Windows fails for reasons Linux never shows. A test that ends right after a save or an open used to
 fail to delete its `@TempDir`: the `git` the editor starts to ask about the folder runs *in* it, and Windows cannot
