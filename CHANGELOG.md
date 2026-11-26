@@ -49,7 +49,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The column ruler no longer flashes black when a tab is first shown.** Its line was drawn once in the default
   black before the theme colour reached it (each tab, the first time you switched to it).
-
 - **Maximizing the window no longer blows up the tool windows.** A docked tool window (Project, Structure, the
   bottom consoles) keeps its size when the main window grows or shrinks, and the editor takes the difference; before,
   the panel scaled with the window, so maximizing on a wide screen turned a narrow Project tree into a third of it.
