@@ -16,9 +16,6 @@ import org.jspecify.annotations.Nullable;
  */
 final class McpTools {
 
-    /** The MCP protocol revision this server implements. */
-    static final String PROTOCOL_VERSION = "2024-11-05";
-
     private final McpBridge bridge;
     private final ObjectMapper m;
 
@@ -37,125 +34,192 @@ final class McpTools {
         }
     }
 
-    // --- initialize -------------------------------------------------------------------------------
+    // --- initialize + tools/list (the catalog: no bridge needed) --------------------------------
 
-    ObjectNode initializeResult() {
+    ObjectNode initializeResult(@Nullable String requested) {
+        return new McpToolCatalog(m).initializeResult(requested);
+    }
+
+    ObjectNode discoverResult() {
+        return new McpToolCatalog(m).discoverResult();
+    }
+
+    ObjectNode listToolsResult() {
+        return new McpToolCatalog(m).listToolsResult();
+    }
+
+    // --- resources ------------------------------------------------------------------------------
+
+    /** The diagnostics of every open file, as one JSON resource. */
+    static final String DIAGNOSTICS_URI = "editora://diagnostics";
+
+    /** The window's Git status, as one JSON resource. */
+    static final String GIT_STATUS_URI = "editora://git/status";
+
+    /** A resource that is not there, or not one this client may read; the dispatcher picks the era's code. */
+    static final class ResourceNotFound extends RuntimeException {
+        ResourceNotFound(String message) {
+            super(message);
+        }
+    }
+
+    /** Each open file's change stamp, by path (see {@link McpBridge#bufferStamps}). */
+    java.util.Map<String, Long> bufferStamps() {
+        return bridge.bufferStamps();
+    }
+
+    /** {@code resources/list}: each open file that has a path (its live text), the diagnostics, the Git status. */
+    ObjectNode listResourcesResult() {
+        ArrayNode list = m.createArrayNode();
+        for (McpBridge.OpenFile f : bridge.listOpenFiles()) {
+            if (f.path() == null) {
+                continue; // an untitled buffer has no URI; read_buffer still reaches it
+            }
+            ObjectNode r = list.addObject();
+            r.put("uri", fileUri(f.path()));
+            r.put("name", f.title());
+            r.put("title", f.title());
+            r.put("description", "The live text of this open file" + (f.dirty() ? ", with unsaved changes" : ""));
+            r.put("mimeType", mimeType(f.language()));
+        }
+        ObjectNode d = list.addObject();
+        d.put("uri", DIAGNOSTICS_URI);
+        d.put("name", "diagnostics");
+        d.put("title", "Diagnostics");
+        d.put("description", "Language-server diagnostics of every open file, by path.");
+        d.put("mimeType", "application/json");
+        ObjectNode g = list.addObject();
+        g.put("uri", GIT_STATUS_URI);
+        g.put("name", "git-status");
+        g.put("title", "Git Status");
+        g.put("description", "Branch, upstream, ahead/behind and changed files of the window's repository.");
+        g.put("mimeType", "application/json");
         ObjectNode r = m.createObjectNode();
-        r.put("protocolVersion", PROTOCOL_VERSION);
-        ObjectNode caps = m.createObjectNode();
-        caps.set("tools", m.createObjectNode()); // we offer tools; no list-changed notifications
-        r.set("capabilities", caps);
-        ObjectNode info = m.createObjectNode();
-        info.put("name", "editora");
-        info.put("version", com.editora.AppInfo.VERSION);
-        r.set("serverInfo", info);
+        r.set("resources", list);
         return r;
     }
 
-    // --- tools/list -------------------------------------------------------------------------------
-
-    ObjectNode listToolsResult() {
-        ArrayNode tools = m.createArrayNode();
-        tools.add(tool("list_open_files", "List the editor's open files (path, language, dirty, active).", obj()));
-        tools.add(tool(
-                "read_buffer",
-                "Read a buffer's live (possibly unsaved) text. Omit 'path' for the active buffer.",
-                obj().set("path", strProp("Absolute path of an open file; omit for the active buffer."))));
-        tools.add(tool(
-                "get_diagnostics",
-                "Get LSP diagnostics for a file. Omit 'path' for the active buffer's file.",
-                obj().set("path", strProp("Absolute path of an open file; omit for the active buffer."))));
-        ObjectNode findProps = obj();
-        findProps.set("query", strProp("Text or regex to search for."));
-        findProps.set("caseSensitive", boolProp("Match case (default false)."));
-        findProps.set("regex", boolProp("Treat the query as a regular expression (default false)."));
-        findProps.set("wholeWord", boolProp("Match whole words only (default false)."));
-        tools.add(toolReq(
-                "find_in_files",
-                "Search the active project (and open buffers' unsaved text) for a query.",
-                findProps,
-                "query"));
-        tools.add(tool("list_commands", "List every command that execute_command can run.", obj()));
-        tools.add(toolReq(
-                "execute_command",
-                "Run a registered command by id (edits go through the undo stack). See list_commands."
-                        + " The result says only that the command was run, not what it achieved: to save a"
-                        + " buffer and learn whether it reached the disk, use save_buffer.",
-                obj().set("id", strProp("The command id, e.g. \"file.save\".")),
-                "id"));
-        ObjectNode openProps = obj();
-        openProps.set(
-                "path",
-                strProp("Absolute path of the file to open: inside the window's project folder, or already"
-                        + " open in the editor."));
-        openProps.set("line", intProp("Optional 1-based line to move the caret to."));
-        openProps.set("col", intProp("Optional 1-based column (used only with 'line')."));
-        tools.add(toolReq(
-                "open_file",
-                "Open a file of the window's project in the editor (or select one that is already open),"
-                        + " optionally moving the caret to a line/column. A file outside the project folder is"
-                        + " refused; the user has to open it.",
-                openProps,
-                "path"));
-        ObjectNode editProps = obj();
-        editProps.set("path", strProp("Absolute path of an open file; omit for the active buffer."));
-        editProps.set(
-                "old_text",
-                strProp("Exact text to replace. It must occur exactly once in the buffer's whole text unless"
-                        + " replace_all is true. Required, and not empty, unless replace_whole_buffer is true."));
-        editProps.set("new_text", strProp("Replacement text (\"\" deletes old_text)."));
-        editProps.set("replace_all", boolProp("Replace every occurrence of old_text (default false)."));
-        editProps.set(
-                "replace_whole_buffer",
-                boolProp("Set true to replace the buffer's entire text with new_text; old_text and replace_all"
-                        + " must then be omitted. Refused when the buffer changed since your last read_buffer of"
-                        + " it (read it again and retry). Default false."));
-        tools.add(toolReq(
-                "edit_buffer",
-                "Edit an open buffer through the editor's undo history; nothing is written to disk until"
-                        + " save_buffer. Replaces old_text with new_text. To replace the buffer's entire text,"
-                        + " pass replace_whole_buffer: true instead of old_text — an edit without old_text is"
-                        + " rejected, never widened to the whole buffer. Omit 'path' for the active buffer.",
-                editProps,
-                "new_text"));
-        tools.add(tool(
-                "save_buffer",
-                "Save an open buffer to its file on disk and wait for the write: the result is 'saved' only"
-                        + " when the bytes are on disk, and an error when the save was refused, failed or is"
-                        + " still pending. Omit 'path' for the active buffer.",
-                obj().set("path", strProp("Absolute path of an open file; omit for the active buffer."))));
-        tools.add(tool(
-                "get_selection",
-                "Get the active buffer's caret position and current selection (1-based lines/columns).",
-                obj()));
-        tools.add(tool(
-                "document_symbols",
-                "Get a file's symbol outline (classes/methods/fields) from its language server."
-                        + " Omit 'path' for the active buffer's file. Empty when no server serves the file.",
-                obj().set("path", strProp("Absolute path of an open file; omit for the active buffer."))));
-        tools.add(tool(
-                "git_status",
-                "Get the Git status for the editor's context: branch, upstream, ahead/behind, changed files.",
-                obj()));
-        tools.add(tool(
-                "list_tabs",
-                "List every open tab, including non-editor tabs (Welcome, image, hex, diff), with each tab's"
-                        + " type and which one is active.",
-                obj()));
-        tools.add(tool(
-                "todo_scan",
-                "Scan the active project (and open buffers' unsaved text) for TODO/FIXME-style highlight"
-                        + " patterns; returns each match's file, line/col, keyword, tag, priority, and line text.",
-                obj()));
+    /** {@code resources/read}: an open file's live text, or one of the JSON resources. */
+    ObjectNode readResourceResult(@Nullable String uri) {
+        if (uri == null || uri.isEmpty()) {
+            throw new ResourceNotFound("Missing resource uri.");
+        }
+        String mimeType;
+        String text;
+        if (uri.equals(DIAGNOSTICS_URI)) {
+            mimeType = "application/json";
+            text = pretty(allDiagnostics());
+        } else if (uri.equals(GIT_STATUS_URI)) {
+            mimeType = "application/json";
+            text = contentText(gitStatusResult());
+        } else {
+            String path = filePath(uri);
+            if (path == null) {
+                throw new ResourceNotFound("Unknown resource: " + uri);
+            }
+            McpBridge.BufferContent b = bridge.readBuffer(path);
+            if (b == null) {
+                throw new ResourceNotFound("Not an open file: " + uri + ". Only files open in Editora are resources.");
+            }
+            mimeType = mimeType(b.language());
+            text = b.text();
+        }
+        ObjectNode c = m.createObjectNode();
+        c.put("uri", uri);
+        c.put("mimeType", mimeType);
+        c.put("text", text);
         ObjectNode r = m.createObjectNode();
-        r.set("tools", tools);
+        r.putArray("contents").add(c);
         return r;
+    }
+
+    private ObjectNode allDiagnostics() {
+        ObjectNode byPath = m.createObjectNode();
+        for (McpBridge.OpenFile f : bridge.listOpenFiles()) {
+            if (f.path() != null) {
+                ArrayNode arr = byPath.putArray(f.path());
+                for (McpBridge.Diagnostic d : bridge.getDiagnostics(f.path())) {
+                    ObjectNode o = arr.addObject();
+                    o.put("line", d.line());
+                    o.put("col", d.col());
+                    o.put("severity", d.severity());
+                    o.put("message", d.message());
+                    o.put("origin", d.origin());
+                }
+            }
+        }
+        return byPath;
+    }
+
+    /** A digest of what {@code uri} reads now, cheap for an open file (its change stamp, not its text). */
+    @Nullable
+    String resourceStamp(String uri, java.util.Map<String, Long> bufferStamps) {
+        if (uri.equals(DIAGNOSTICS_URI)) {
+            return pretty(allDiagnostics());
+        }
+        if (uri.equals(GIT_STATUS_URI)) {
+            return contentText(gitStatusResult());
+        }
+        String path = filePath(uri);
+        Long stamp = path == null ? null : bufferStamps.get(path);
+        return stamp == null ? null : Long.toString(stamp);
+    }
+
+    /** The open files' URIs, as {@code resources/list} lists them (for telling when the list changed). */
+    java.util.Set<String> resourceUris(java.util.Map<String, Long> bufferStamps) {
+        java.util.Set<String> uris = new java.util.TreeSet<>();
+        bufferStamps.keySet().forEach(p -> uris.add(fileUri(p)));
+        uris.add(DIAGNOSTICS_URI);
+        uris.add(GIT_STATUS_URI);
+        return uris;
+    }
+
+    static String fileUri(String path) {
+        return java.nio.file.Path.of(path).toUri().toString();
+    }
+
+    /** The absolute path a {@code file:} URI names, or null for any other URI. */
+    static @Nullable String filePath(String uri) {
+        try {
+            java.net.URI u = java.net.URI.create(uri);
+            if (!"file".equalsIgnoreCase(u.getScheme())) {
+                return null;
+            }
+            return java.nio.file.Path.of(u).toString();
+        } catch (IllegalArgumentException | java.nio.file.FileSystemNotFoundException e) {
+            return null;
+        }
+    }
+
+    static String mimeType(String language) {
+        return switch (language) {
+            case "markdown" -> "text/markdown";
+            case "json" -> "application/json";
+            case "html" -> "text/html";
+            case "xml" -> "application/xml";
+            case "css" -> "text/css";
+            case "javascript" -> "text/javascript";
+            case "yaml" -> "application/yaml";
+            default -> "text/plain";
+        };
+    }
+
+    private String pretty(JsonNode node) {
+        try {
+            return m.writerWithDefaultPrettyPrinter().writeValueAsString(node);
+        } catch (Exception e) {
+            return node.toString();
+        }
+    }
+
+    private static String contentText(ObjectNode toolResult) {
+        return toolResult.path("content").path(0).path("text").asText();
     }
 
     // --- tools/call -------------------------------------------------------------------------------
 
     /** Dispatches {@code tools/call} params {@code {name, arguments}} → an MCP tool result node. */
-    ObjectNode callTool(JsonNode params) {
+    ObjectNode callTool(@Nullable JsonNode params) {
         if (params == null || !params.hasNonNull("name")) {
             return errorResult("Missing tool name.");
         }
@@ -533,44 +597,6 @@ final class McpTools {
         r.set("content", content);
         r.put("isError", true);
         return r;
-    }
-
-    private ObjectNode tool(String name, String description, ObjectNode properties) {
-        return toolReq(name, description, properties);
-    }
-
-    private ObjectNode toolReq(String name, String description, ObjectNode properties, String... required) {
-        ObjectNode t = m.createObjectNode();
-        t.put("name", name);
-        t.put("description", description);
-        ObjectNode schema = m.createObjectNode();
-        schema.put("type", "object");
-        schema.set("properties", properties);
-        if (required.length > 0) {
-            ArrayNode req = m.createArrayNode();
-            for (String s : required) {
-                req.add(s);
-            }
-            schema.set("required", req);
-        }
-        t.set("inputSchema", schema);
-        return t;
-    }
-
-    private ObjectNode obj() {
-        return m.createObjectNode();
-    }
-
-    private ObjectNode strProp(String description) {
-        return m.createObjectNode().put("type", "string").put("description", description);
-    }
-
-    private ObjectNode boolProp(String description) {
-        return m.createObjectNode().put("type", "boolean").put("description", description);
-    }
-
-    private ObjectNode intProp(String description) {
-        return m.createObjectNode().put("type", "integer").put("description", description);
     }
 
     private static @Nullable String text(JsonNode args, String field) {

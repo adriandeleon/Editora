@@ -26,6 +26,13 @@ class McpServerTest {
     static final class FakeBridge implements McpBridge {
         volatile String lastExecuted;
         volatile String lastEdit;
+        /** The open file's change stamp: a test bumps it to "edit" the buffer. */
+        final java.util.concurrent.atomic.AtomicLong stamp = new java.util.concurrent.atomic.AtomicLong();
+
+        @Override
+        public java.util.Map<String, Long> bufferStamps() {
+            return java.util.Map.of("/tmp/a.java", stamp.get());
+        }
 
         @Override
         public List<OpenFile> listOpenFiles() {

@@ -3417,7 +3417,11 @@ public class SettingsWindow {
     }
 
     /** The MCP page's link to the app-wide server: its endpoint ({@code ""} when not running), and two actions. */
-    record McpActions(java.util.function.Supplier<String> endpoint, Runnable copyCommand, Runnable newToken) {}
+    record McpActions(
+            java.util.function.Supplier<String> endpoint,
+            Runnable copyCommand,
+            Runnable copyHttpCommand,
+            Runnable newToken) {}
 
     /**
      * The plugin picker is an overlay in the main window, which this window would cover: hidden when the picker

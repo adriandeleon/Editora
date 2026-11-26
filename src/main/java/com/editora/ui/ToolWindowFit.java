@@ -38,4 +38,30 @@ final class ToolWindowFit {
         double fraction = width / totalPx;
         return leftSide ? fraction : 1 - fraction;
     }
+
+    /** The narrowest a remembered pixel size may leave the editor, as a share of the split. */
+    static final double MIN_EDITOR_SHARE = 0.1;
+
+    /**
+     * How many pixels a side's panel takes when its divider sits at {@code position}.
+     *
+     * @param leadingSide true for a left-docked panel, whose size grows with the position (a right or
+     *     bottom one grows as the position shrinks)
+     */
+    static double pixels(double position, double totalPx, boolean leadingSide) {
+        return (leadingSide ? position : 1 - position) * totalPx;
+    }
+
+    /**
+     * The divider position that gives a side's panel {@code px} pixels of a split {@code totalPx} long, or
+     * {@link #NO_CHANGE} when either is unknown. Capped so the editor keeps {@link #MIN_EDITOR_SHARE}: a
+     * size remembered on a wide monitor must not swallow the editor on a narrow one.
+     */
+    static double positionFor(double px, double totalPx, boolean leadingSide) {
+        if (!(px > 0) || !(totalPx > 0)) {
+            return NO_CHANGE;
+        }
+        double share = Math.min(px / totalPx, 1 - MIN_EDITOR_SHARE);
+        return leadingSide ? share : 1 - share;
+    }
 }

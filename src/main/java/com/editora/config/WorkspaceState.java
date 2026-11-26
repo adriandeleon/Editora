@@ -120,7 +120,7 @@ public class WorkspaceState {
      * <p>v36 → v37 added {@code logViews} (per file: shown as a log or not, and its level floor and filter).
      * Additive; absent means a file is shown as its name or first lines decide, unfiltered.
      */
-    public static final int SCHEMA_VERSION = 37;
+    public static final int SCHEMA_VERSION = 38;
 
     /** {@link #getProjectViewMode()} values. */
     public static final String PROJECT_VIEW_TREE = "TREE";
@@ -177,6 +177,13 @@ public class WorkspaceState {
      * for the first time still inherits a sensible width rather than a hardcoded default.
      */
     private Map<String, Double> toolWindowSizes = new LinkedHashMap<>();
+    /**
+     * Per-tool-window size in pixels across the split: id -> width (or height, along the bottom). Additive in
+     * schema v38. A docked panel keeps its pixel size when the window grows or shrinks — the editor takes the
+     * difference — so this, not the fraction above, is what a reopen restores; the fraction stays the
+     * fallback for a window sized before v38, and for an older build reading this file.
+     */
+    private Map<String, Double> toolWindowPixelSizes = new LinkedHashMap<>();
     /** Per-tool-window side preference: id -> "LEFT"|"RIGHT"|"BOTTOM". Overrides the default side. */
     private Map<String, String> toolWindowSides = new LinkedHashMap<>();
     /** Per-tool-window visibility: id -> true/false. Missing = visible. */
@@ -540,6 +547,14 @@ public class WorkspaceState {
 
     public void setToolWindowSizes(Map<String, Double> toolWindowSizes) {
         this.toolWindowSizes = toolWindowSizes == null ? new LinkedHashMap<>() : toolWindowSizes;
+    }
+
+    public Map<String, Double> getToolWindowPixelSizes() {
+        return toolWindowPixelSizes;
+    }
+
+    public void setToolWindowPixelSizes(Map<String, Double> toolWindowPixelSizes) {
+        this.toolWindowPixelSizes = toolWindowPixelSizes == null ? new LinkedHashMap<>() : toolWindowPixelSizes;
     }
 
     public double getLeftDividerPosition() {

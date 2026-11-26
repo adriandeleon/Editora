@@ -58,7 +58,8 @@ class ToolWindowSizeFxTest {
         shared.load();
         ConfigManager config = new ConfigManager(shared);
         BorderPane workspace = new BorderPane();
-        ToolWindowManager m = new ToolWindowManager(workspace, new Label("editor"), config, new KeymapManager());
+        ToolWindowManager m = new ToolWindowManager(
+                workspace, new javafx.scene.layout.StackPane(new Label("editor")), config, new KeymapManager());
         ToolWindow a = window("alpha", contentA);
         ToolWindow b = window("beta", contentB);
         m.register(a);
@@ -141,6 +142,72 @@ class ToolWindowSizeFxTest {
             assertTrue(overflows(overflowing), "content far wider than the panel should show a scrollbar");
             assertFalse(overflows(fitting), "content that fits must not be widened");
         });
+    }
+
+    /**
+     * Growing the window — maximizing it, say — must widen the editor, not the docked panel.
+     *
+     * <p>The panel used to scale with the window, so a Project tree sized to a sensible 250 px came back at
+     * a third of a wide screen after a maximize.
+     */
+    @Test
+    void aDockedPanelKeepsItsWidthWhenTheWindowGrows() throws Exception {
+        Rig r = rig(new Label("a"), new Label("b"));
+        FxTestSupport.runOnFx(() -> r.manager().open(r.a()));
+        FxTestSupport.runOnFx(
+                () -> { // after open's deferred divider set
+                    SplitPane split = FxTestSupport.field(r.manager(), "hSplit");
+                    split.setDividerPosition(0, 0.8);
+                    r.layout();
+                    Region panel = panelOf(r, r.a());
+                    double before = panel.getWidth();
+                    assertEquals(240, before, 15, "the panel should start at a fifth of the 1200 px split ");
+
+                    Region root = (Region) r.scene().getRoot();
+                    root.resize(2000, 800);
+                    root.layout();
+                    assertEquals(before, panel.getWidth(), 1, "the editor, not the panel, should take the new room");
+
+                    root.resize(1000, 800);
+                    root.layout();
+                    assertEquals(
+                            before, panel.getWidth(), 1, "nor should a smaller window shrink a panel that still fits");
+                });
+    }
+
+    /** A reopen restores the pixel size the window was left at, even when the split has since grown. */
+    @Test
+    void aReopenRestoresThePixelSizeNotTheFraction() throws Exception {
+        Rig r = rig(new Label("a"), new Label("b"));
+        FxTestSupport.runOnFx(() -> r.manager().open(r.a()));
+        FxTestSupport.runOnFx(() -> {
+            SplitPane split = FxTestSupport.field(r.manager(), "hSplit");
+            split.setDividerPosition(0, 0.8);
+            r.layout();
+            r.manager().close(r.a());
+            assertEquals(
+                    240,
+                    r.config().getWorkspaceState().getToolWindowPixelSizes().get("alpha"),
+                    15,
+                    "closing should remember the panel's width in pixels");
+
+            Region root = (Region) r.scene().getRoot();
+            root.resize(2400, 800);
+            root.layout();
+            r.manager().open(r.a());
+        });
+        FxTestSupport.runOnFx(() -> {
+            r.layout();
+            Region root = (Region) r.scene().getRoot();
+            root.resize(2400, 800);
+            root.layout();
+            assertEquals(240, panelOf(r, r.a()).getWidth(), 15, "a doubled split must not double the panel");
+        });
+    }
+
+    private static Region panelOf(Rig r, ToolWindow tw) {
+        return FxTestSupport.<java.util.Map<ToolWindow, Region>>field(r.manager(), "panels")
+                .get(tw);
     }
 
     private static boolean overflows(Rig r) {

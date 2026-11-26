@@ -78,6 +78,11 @@ all history), and an option to clone submodules. The destination can start with
 `~` or be relative; missing parent folders are created, and an existing empty
 folder is accepted.
 
+**Git: Initialize Repository…** (`git.init`) creates a repository in a folder you
+pick. A folder that is already inside a Git repository is refused, and the
+status bar names the repository it belongs to, so a repository is never created
+inside another one by accident.
+
 Branch switch, pull, and push reload unmodified open buffers whose files changed
 on disk. Branch switches, discard, and stash never silently replace a dirty open
 copy; deleted and edited buffers remain available for recovery. Rolling back or

@@ -118,6 +118,22 @@ read or an environment no env file defines. A status such as 404 alone is not a
 failure; an `# @assert` says what is expected. On Windows, run it as
 `editora-cli http …`.
 
+## Connecting an agent over MCP
+
+`editora mcp` serves Editora's [MCP tools](/docs/mcp) over standard input and
+output, for an agent that starts its MCP servers as programs. It finds the
+running editor by itself, so it is set up once:
+
+```bash
+claude mcp add --scope user editora -- editora mcp
+```
+
+**Copy Connect Command** on Settings → MCP Server copies that line with your
+install's launcher in place of `editora`. The command opens no window; Editora
+has to be running with its MCP server on for the tools to work. Pass
+`--config-dir <path>` or `--dev` to reach an Editora started with them. On
+Windows, use `editora-cli mcp`.
+
 ## Opening files
 
 Pass one or more file targets, each optionally with a line and column:

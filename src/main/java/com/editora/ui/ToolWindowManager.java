@@ -1307,6 +1307,10 @@ public class ToolWindowManager {
         if (next == null) {
             sideContainers.remove(side);
         } else {
+            // A side keeps its pixel size when the window grows or shrinks; the editor takes the difference.
+            // Left resizable, maximizing the window scaled the Project tree up with it, to a third of a wide
+            // screen.
+            SplitPane.setResizableWithParent(next, false);
             sideContainers.put(side, next);
         }
     }
@@ -1337,11 +1341,15 @@ public class ToolWindowManager {
     /** Sets the outer divider for a side that just went from empty to holding its first window. */
     private void applyOuterDivider(ToolWindow.Side side, ToolWindow tw, @Nullable Region panel) {
         boolean firstOpen = !config.getWorkspaceState().getToolWindowSizes().containsKey(tw.getId());
-        double pos = dividerFor(tw, side);
+        double fraction = dividerFor(tw, side);
         SplitPane outer = outerSplitFor(side);
         int dividerIdx = side == ToolWindow.Side.LEFT ? 0 : outer.getItems().size() - 2;
         Platform.runLater(() -> {
-            outer.setDividerPosition(dividerIdx, pos);
+            // Its remembered pixel size, measured against the split as it is NOW: the panel then keeps that
+            // size through any later window resize, a start-up maximize included.
+            double pos =
+                    ToolWindowFit.positionFor(rememberedPixels(tw), splitExtent(side), side == ToolWindow.Side.LEFT);
+            outer.setDividerPosition(dividerIdx, pos == ToolWindowFit.NO_CHANGE ? fraction : pos);
             // A pulse later, so the fit sees the panel at its remembered width rather than the previous
             // layout's — a SplitPane only settles a position on a layout pass.
             if (firstOpen && side != ToolWindow.Side.BOTTOM) {
@@ -1912,10 +1920,26 @@ public class ToolWindowManager {
         };
     }
 
+    /** The pixel size this window was last left at, or 0 when it has none (sized before schema v38). */
+    private double rememberedPixels(ToolWindow tw) {
+        Double px = config.getWorkspaceState().getToolWindowPixelSizes().get(tw.getId());
+        return px == null ? 0 : px;
+    }
+
+    /** The length of the split a side divides: the width beside the editor, the height under it. */
+    private double splitExtent(ToolWindow.Side side) {
+        return side == ToolWindow.Side.BOTTOM ? vSplit.getHeight() : hSplit.getWidth();
+    }
+
     /** Records a window's size against its own id, and as its side's default for the next new window. */
     private void rememberDivider(ToolWindow tw, ToolWindow.Side side, double pos) {
         WorkspaceState s = config.getWorkspaceState();
         s.getToolWindowSizes().put(tw.getId(), pos);
+        double extent = splitExtent(side);
+        if (extent > 0) {
+            s.getToolWindowPixelSizes()
+                    .put(tw.getId(), ToolWindowFit.pixels(pos, extent, side == ToolWindow.Side.LEFT));
+        }
         switch (side) {
             case LEFT -> s.setLeftDividerPosition(pos);
             case RIGHT -> s.setRightDividerPosition(pos);
