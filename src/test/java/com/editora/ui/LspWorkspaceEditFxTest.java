@@ -502,7 +502,9 @@ class LspWorkspaceEditFxTest {
                 List.of(),
                 List.of());
 
-        assertTrue(FxTestSupport.callOnFx(() -> coordinator.applyWorkspaceEdits(mapped)));
+        assertTrue(
+                FxTestSupport.callOnFx(() -> coordinator.applyWorkspaceEdits(mapped)),
+                () -> "refused: " + host.status + " / " + host.error);
 
         assertEquals("class HttpClient {}\n", FxTestSupport.callOnFx(b::getContent));
         try (var files = Files.list(root)) {

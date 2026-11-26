@@ -198,6 +198,8 @@ class GitRollbackLocalHistoryFxTest {
         git(repo, "init", "-q", "-b", "main");
         git(repo, "config", "user.email", "editora-test@example.invalid");
         git(repo, "config", "user.name", "Editora Test");
+        // Git for Windows converts LF to CRLF on checkout by default; these tests compare bytes.
+        git(repo, "config", "core.autocrlf", "false");
         return repo;
     }
 

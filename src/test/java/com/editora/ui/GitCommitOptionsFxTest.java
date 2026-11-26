@@ -579,7 +579,10 @@ class GitCommitOptionsFxTest {
                             .text()
                             .strip(),
                     "a shallow clone: one commit of history");
-            assertEquals("topic two\n", Files.readString(destination.resolve("story.txt")));
+            assertEquals(
+                    "topic two\n",
+                    Files.readString(destination.resolve("story.txt")).replace("\r\n", "\n"),
+                    "(a new clone follows the user's core.autocrlf, which Git for Windows sets)");
         }
     }
 

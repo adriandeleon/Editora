@@ -325,7 +325,8 @@ class MapDependencyCardFxTest {
         ProjectMapDependencyCard card = FxTestSupport.callOnFx(() -> {
             ProjectMapDependencyCard made = new ProjectMapDependencyCard();
             made.setOnReveal(path -> revealed.add(project.relativize(path).toString()));
-            made.setOnOpen((path, line) -> opened.add(project.relativize(path) + ":" + line));
+            made.setOnOpen((path, line) -> opened.add(
+                    project.relativize(path).toString().replace(java.io.File.separatorChar, '/') + ":" + line));
             javafx.scene.layout.Pane host = new javafx.scene.layout.Pane(made);
             Scene scene = new Scene(host, 1000, 800);
             scene.getStylesheets()

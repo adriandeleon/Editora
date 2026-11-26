@@ -219,7 +219,10 @@ class HttpSecretGateFxTest {
         assertEquals(1, hits.size(), hits.toString());
         assertEquals(List.of(List.of("$env PATH")), ops.askedReads);
         assertTrue(
-                java.net.URLDecoder.decode(hits.get(0), StandardCharsets.UTF_8).contains(SECRET), "the value went out");
+                // A raw "+" is a plus here (Windows' PATH has 25.0.5+8-temurin), not the form encoding's space.
+                java.net.URLDecoder.decode(hits.get(0).replace("+", "%2B"), StandardCharsets.UTF_8)
+                        .contains(SECRET),
+                "the value went out: " + hits.get(0) + " / " + SECRET);
     }
 
     @Test

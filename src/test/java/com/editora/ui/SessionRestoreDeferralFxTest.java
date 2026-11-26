@@ -142,12 +142,14 @@ class SessionRestoreDeferralFxTest {
             if (!open.isEmpty()) {
                 open.append(',');
             }
-            open.append("{\"path\":\"").append(f.toAbsolutePath()).append("\"}");
+            open.append("{\"path\":\"")
+                    .append(FxTestSupport.json(f.toAbsolutePath()))
+                    .append("\"}");
         }
         Files.writeString(
                 dir.resolve("workspace-state.json"),
-                "{\"schemaVersion\":1,\"openFiles\":[" + open + "],\"activeFile\":\"" + files[0].toAbsolutePath()
-                        + "\"}");
+                "{\"schemaVersion\":1,\"openFiles\":[" + open + "],\"activeFile\":\""
+                        + FxTestSupport.json(files[0].toAbsolutePath()) + "\"}");
     }
 
     /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */

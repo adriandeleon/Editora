@@ -30,7 +30,8 @@ public final class FakeAcpAgent {
     /** The command line that runs this class in a child JVM with the test classpath. */
     public static List<String> command(String scenario) {
         return List.of(
-                Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                Path.of(System.getProperty("java.home"), "bin", com.editora.Os.isWindows() ? "java.exe" : "java")
+                        .toString(),
                 "-cp",
                 System.getProperty("java.class.path"),
                 FakeAcpAgent.class.getName(),
@@ -51,6 +52,9 @@ public final class FakeAcpAgent {
 
     public static void main(String[] args) throws Exception {
         String scenario = args.length > 0 ? args[0] : "ok";
+        // An agent speaks UTF-8 JSON; the JVM's own stdout charset is the console's (windows-1252 on Windows).
+        System.setOut(new java.io.PrintStream(
+                new java.io.FileOutputStream(java.io.FileDescriptor.out), true, StandardCharsets.UTF_8));
         if (scenario.equals("exit")) {
             System.exit(3);
         }

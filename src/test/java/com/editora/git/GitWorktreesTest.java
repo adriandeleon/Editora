@@ -21,7 +21,18 @@ class GitWorktreesTest {
                 List.of(
                         new Worktree("/home/me/repo", HASH, "main", true, false, false, false, false),
                         new Worktree("/home/me/repo-topic", HASH, "feature/topic", false, false, false, false, false)),
-                GitWorktrees.parse(porcelain));
+                GitWorktrees.parse(porcelain, '/'));
+    }
+
+    @Test
+    void aWindowsWorktreeIsShownWithBackslashes() {
+        // Git for Windows writes forward slashes; the dialog showed C:/Users/… beside C:\Users\… elsewhere.
+        String porcelain = "worktree C:/Users/me/repo\nHEAD " + HASH + "\nbranch refs/heads/main\n\n";
+        assertEquals(
+                "C:\\Users\\me\\repo",
+                GitWorktrees.parse(porcelain, '\\').get(0).path());
+        assertEquals(
+                "C:/Users/me/repo", GitWorktrees.parse(porcelain, '/').get(0).path());
     }
 
     @Test
@@ -31,7 +42,7 @@ class GitWorktreesTest {
                 + "worktree /r-locked\nHEAD " + HASH + "\nbranch refs/heads/a\nlocked on a usb stick\n\n"
                 + "worktree /r-gone\nHEAD " + HASH
                 + "\nbranch refs/heads/b\nprunable gitdir file points to non-existent location\n";
-        List<Worktree> trees = GitWorktrees.parse(porcelain);
+        List<Worktree> trees = GitWorktrees.parse(porcelain, '/');
         assertEquals(4, trees.size(), "the last stanza needs no closing blank line");
         assertTrue(trees.get(1).detached());
         assertEquals("", trees.get(1).branch());
@@ -44,7 +55,7 @@ class GitWorktreesTest {
     @Test
     void parsesABareMainEntry() {
         List<Worktree> trees = GitWorktrees.parse(
-                "worktree /srv/repo.git\nbare\n\nworktree /srv/wt\nHEAD " + HASH + "\nbranch refs/heads/main\n\n");
+                "worktree /srv/repo.git\nbare\n\nworktree /srv/wt\nHEAD " + HASH + "\nbranch refs/heads/main\n\n", '/');
         assertEquals(new Worktree("/srv/repo.git", "", "", true, true, false, false, false), trees.get(0));
         assertEquals("main", trees.get(1).branch());
     }
@@ -52,7 +63,7 @@ class GitWorktreesTest {
     @Test
     void aPathWithSpacesAndWindowsLineEndingsSurvive() {
         List<Worktree> trees = GitWorktrees.parse(
-                "worktree C:/Users/me/my repo\r\nHEAD " + HASH + "\r\nbranch refs/heads/main\r\n\r\n");
+                "worktree C:/Users/me/my repo\r\nHEAD " + HASH + "\r\nbranch refs/heads/main\r\n\r\n", '/');
         assertEquals(
                 List.of(new Worktree("C:/Users/me/my repo", HASH, "main", true, false, false, false, false)), trees);
     }

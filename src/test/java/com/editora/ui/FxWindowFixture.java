@@ -494,6 +494,21 @@ final class FxWindowFixture implements AutoCloseable {
         }
     }
 
+    /** Deletes {@code path}; on Windows a read-only file (git's objects are) loses the flag first. */
+    private static void deleteEvenIfReadOnly(Path path) throws IOException {
+        try {
+            Files.deleteIfExists(path);
+        } catch (java.nio.file.AccessDeniedException e) {
+            java.nio.file.attribute.DosFileAttributeView dos =
+                    Files.getFileAttributeView(path, java.nio.file.attribute.DosFileAttributeView.class);
+            if (dos == null || !com.editora.Os.isWindows()) {
+                throw e;
+            }
+            dos.setReadOnly(false);
+            Files.deleteIfExists(path);
+        }
+    }
+
     /** One pass over the tree, deepest first; the failure that stopped it, or null. */
     private static IOException deletePass(Path root) {
         if (!Files.exists(root)) {
@@ -501,7 +516,7 @@ final class FxWindowFixture implements AutoCloseable {
         }
         try (Stream<Path> paths = Files.walk(root)) {
             for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) {
-                Files.deleteIfExists(path);
+                deleteEvenIfReadOnly(path);
             }
             return null;
         } catch (IOException e) {

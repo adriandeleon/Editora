@@ -679,6 +679,8 @@ class DoctorCatalogFxTest {
     }
 
     @Test
+    @org.junit.jupiter.api.condition.DisabledOnOs(
+            org.junit.jupiter.api.condition.OS.WINDOWS) // runs a sh script as bin/java
     void theSelectedJdkIsJudgedByTheVersionItReports(@TempDir Path dir) throws Exception {
         Host host = new Host();
         Path current = dir.resolve("jdk-current");
@@ -985,7 +987,9 @@ class DoctorCatalogFxTest {
         host.config = dir.resolve("config");
         Ops ops = new Ops();
         ops.servers = List.of("xml");
-        String javaExe = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+        String javaExe = Path.of(
+                        System.getProperty("java.home"), "bin", com.editora.Os.isWindows() ? "java.exe" : "java")
+                .toString();
         Path copy = Files.createDirectories(dir.resolve("copy"));
         Files.writeString(copy.resolve("lemminx-maven-0.12.0.jar"), "");
         ops.configured = Set.of("xml");

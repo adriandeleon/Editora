@@ -62,7 +62,8 @@ class StaggeredWindowRestoreFxTest {
     }
 
     private static String session(Path file) {
-        return "{\"schemaVersion\":1,\"openFiles\":[{\"path\":\"" + file + "\"}],\"activeFile\":\"" + file + "\"}";
+        return "{\"schemaVersion\":1,\"openFiles\":[{\"path\":\"" + FxTestSupport.json(file) + "\"}],\"activeFile\":\""
+                + FxTestSupport.json(file) + "\"}";
     }
 
     /** A launched window manager whose restore queue only advances when {@link #step} is called. */

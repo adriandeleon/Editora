@@ -883,6 +883,11 @@ class AgentCoordinatorSessionFxTest {
         private final BlockingQueue<Boolean> idle = new LinkedBlockingQueue<>();
         private final BlockingQueue<String> lines = new LinkedBlockingQueue<>();
         private final List<EditorBuffer> buffers = new ArrayList<>();
+        /** The programs already running when the rig was made: none of them is its agent. */
+        private final java.util.Set<Long> before = ProcessHandle.current()
+                .descendants()
+                .map(ProcessHandle::pid)
+                .collect(java.util.stream.Collectors.toSet());
 
         Rig(Path root, String scenario) throws Exception {
             ops = new Ops(root);
@@ -1084,6 +1089,25 @@ class AgentCoordinatorSessionFxTest {
                 }
             });
             FxTestSupport.drainFx();
+            assertAgentsEnded();
+        }
+
+        /**
+         * Every agent the rig's coordinator started has ended once it is shut down. One whose session/new or
+         * session/resume failed used to be left running, past shutdown.
+         */
+        private void assertAgentsEnded() throws Exception {
+            for (ProcessHandle agent : ProcessHandle.current()
+                    .descendants()
+                    .filter(p -> !before.contains(p.pid()))
+                    .toList()) {
+                try {
+                    agent.onExit().get(10, TimeUnit.SECONDS);
+                } catch (java.util.concurrent.TimeoutException stillRunning) {
+                    agent.destroyForcibly();
+                    throw new AssertionError("the agent " + agent.pid() + " was left running after shutdown");
+                }
+            }
         }
     }
 

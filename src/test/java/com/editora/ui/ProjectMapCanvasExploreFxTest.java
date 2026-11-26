@@ -352,7 +352,9 @@ class ProjectMapCanvasExploreFxTest {
     void pngIsTheViewAtTwiceItsSizeAndSvgHoldsEveryNameAsText() throws Exception {
         Path project = project();
         Path src = Files.createDirectory(project.resolve("src"));
-        Path main = Files.writeString(src.resolve("Main & <Co>.java"), "class Main {}");
+        // Markup characters in a name, escaped in the SVG; Windows forbids < and > in a file name.
+        String name = com.editora.Os.isWindows() ? "Main & 'Co'.java" : "Main & <Co>.java";
+        Path main = Files.writeString(src.resolve(name), "class Main {}");
         Files.writeString(project.resolve("README.md"), "# r");
         Path png = temp.resolve("out/map.png");
         Path svg = temp.resolve("out/map.svg");
@@ -390,7 +392,7 @@ class ProjectMapCanvasExploreFxTest {
             for (int i = 0; i < texts.getLength(); i++) {
                 words.add(texts.item(i).getTextContent());
             }
-            assertTrue(words.contains("Main & <Co>.java"), words.toString());
+            assertTrue(words.contains(name), words.toString());
             assertTrue(words.contains("README.md"), words.toString());
             assertTrue(words.contains("src"), words.toString());
             assertTrue(text.contains("<path d=\"M"), "the connectors are drawn");

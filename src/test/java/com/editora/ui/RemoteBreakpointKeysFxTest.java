@@ -48,7 +48,10 @@ class RemoteBreakpointKeysFxTest {
         String key = DebugCoordinator.key(remote);
 
         assertTrue(key.startsWith("sftp://"), key);
-        assertEquals("/tmp/x.py", DebugCoordinator.key(Path.of("/tmp/x.py")), "a local key is unchanged");
+        assertEquals(
+                Path.of("/tmp/x.py").toString(),
+                DebugCoordinator.key(Path.of("/tmp/x.py")),
+                "a local key is unchanged");
 
         sftp.disconnect();
         Path again = sftp.reconnect().resolve("main.py");

@@ -219,7 +219,13 @@ class HttpHistoryRound2FxTest {
         assertTrue(put.contains("--data-binary '@" + work.resolve("big.bin").toAbsolutePath()), put);
         assertTrue(put.contains("--http1.1"), put);
         assertFalse(put.contains("(body from"), "never the summary as the body: " + put);
-        assertTrue(form.contains("-F 'f=@\"" + work.resolve("pic.bin").toAbsolutePath()), form);
+        assertTrue(
+                form.contains("-F 'f=@\""
+                        + work.resolve("pic.bin")
+                                .toAbsolutePath()
+                                .toString()
+                                .replace("\\", "\\\\")), // as curl reads it in quotes
+                form);
         assertFalse(form.contains("--data-raw"), form);
     }
 

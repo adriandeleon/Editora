@@ -2719,12 +2719,10 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                     String name = ctx instanceof Path p ? p.getFileName().toString() : "";
                     names.add(name);
                     if (watchedDir != null && ctx instanceof Path child && !isEditoraTempName(name)) {
-                        FsKind kind = ev.kind() == java.nio.file.StandardWatchEventKinds.ENTRY_CREATE
-                                ? FsKind.CREATED
-                                : ev.kind() == java.nio.file.StandardWatchEventKinds.ENTRY_DELETE
-                                        ? FsKind.DELETED
-                                        : FsKind.CHANGED;
-                        changes.add(new FsChange(watchedDir.resolve(child), kind));
+                        FsChange change = fsChange(watchedDir.resolve(child), ev.kind());
+                        if (change != null) {
+                            changes.add(change);
+                        }
                     }
                 }
                 var sink = fsChangeSink;
@@ -3491,6 +3489,25 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     /** One filesystem watcher event: what happened to which path (#677). */
     public record FsChange(Path path, FsKind kind) {}
+
+    /**
+     * What one watch event tells the change sinks, or null when it tells them nothing. Windows reports a folder as
+     * modified whenever an entry inside it changes (a save in {@code .editora/}, in a collapsed folder): that is
+     * not a change of the folder, and the indexes took it for a new folder whose contents nobody had reported, so
+     * every such save rebuilt them from a walk of the whole project. A new folder still counts.
+     */
+    static @Nullable FsChange fsChange(Path path, java.nio.file.WatchEvent.Kind<?> kind) {
+        if (kind == java.nio.file.StandardWatchEventKinds.ENTRY_CREATE) {
+            return new FsChange(path, FsKind.CREATED);
+        }
+        if (kind == java.nio.file.StandardWatchEventKinds.ENTRY_DELETE) {
+            return new FsChange(path, FsKind.DELETED);
+        }
+        if (Files.isDirectory(path, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+            return null; // the folder's own "modified": its entries are reported where they are watched
+        }
+        return new FsChange(path, FsKind.CHANGED);
+    }
 
     /** The watcher event kinds forwarded to the sink. */
     public enum FsKind {

@@ -107,6 +107,7 @@ final class JkitSettingsDialog {
                 editor = field;
                 chosen = field::getText;
             }
+            name.setLabelFor(editor); // the key names the box for a screen reader (ACC-01, Pauta 6.2.0)
             editor.setDisable(fromEnv);
             Label about = new Label(
                     fromEnv

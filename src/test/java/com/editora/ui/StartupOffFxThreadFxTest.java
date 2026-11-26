@@ -134,8 +134,8 @@ class StartupOffFxThreadFxTest {
         Path windows = Files.createDirectories(dir.resolve("windows"));
         Files.writeString(
                 windows.resolve("aaaa1111.json"),
-                "{\"schemaVersion\":1,\"openFiles\":[{\"path\":\"" + inUntitled + "\"}],\"activeFile\":\"" + inUntitled
-                        + "\"}");
+                "{\"schemaVersion\":1,\"openFiles\":[{\"path\":\"" + FxTestSupport.json(inUntitled)
+                        + "\"}],\"activeFile\":\"" + FxTestSupport.json(inUntitled) + "\"}");
         Files.createDirectories(dir.resolve("themes"));
         Files.writeString(
                 dir.resolve("themes/my-dusk.css"), ".root { -color-bg-default: #101010; -color-fg-default: #eeeeee; }");

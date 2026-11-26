@@ -61,9 +61,23 @@ class MarkdownCommandsFxTest {
         Path file = Files.writeString(dir.resolve("doc" + counter++ + ".md"), text);
         FxTestSupport.runOnFx(() -> FxTestSupport.call(
                 FxTestSupport.field(fx.controller, "fileWorkflows"), "openPath", new Class[] {Path.class}, file));
-        FxTestSupport.drainFx();
-        EditorBuffer b = FxTestSupport.callOnFx(
-                () -> (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class[] {}));
+        // The file is read off the FX thread: wait for its text, not a fixed number of pulses (on a slow
+        // Windows machine the caret was moved in a still-empty buffer).
+        EditorBuffer b = com.editora.testkit.Await.value(
+                () -> {
+                    try {
+                        return FxTestSupport.callOnFx(() -> {
+                            EditorBuffer active =
+                                    (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class[] {});
+                            return active != null && file.equals(active.getPath()) && !active.isLoading()
+                                    ? active
+                                    : null;
+                        });
+                    } catch (Exception e) {
+                        throw new IllegalStateException(e);
+                    }
+                },
+                "opened: " + file);
         FxTestSupport.runOnFx(() -> {
             b.getFocusedArea().requestFocus();
             b.getFocusedArea().moveTo(caret);

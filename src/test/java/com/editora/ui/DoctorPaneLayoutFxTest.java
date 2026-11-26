@@ -132,7 +132,9 @@ class DoctorPaneLayoutFxTest {
         assertTrue(commands.isEmpty(), "'jdtls' beside '~/…/bin/jdtls' adds nothing and should be dropped");
         assertEquals(1, details.size());
         Label detail = (Label) details.iterator().next();
-        assertTrue(detail.getText().startsWith("~/"), "the home prefix should collapse: " + detail.getText());
+        assertTrue(
+                detail.getText().startsWith("~" + java.io.File.separator),
+                "the home prefix should collapse: " + detail.getText());
         assertNotNull(ControlNames.tipText(detail), "a long path needs the full text on hover");
     }
 }

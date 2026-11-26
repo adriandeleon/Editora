@@ -2,7 +2,6 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.PosixFilePermissions;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -127,6 +126,24 @@ class LocalHistoryRecordRestoreFxTest {
         return List.copyOf(list.getItems());
     }
 
+    /**
+     * Whether a file or a folder can still be made in {@code dir}: root on Linux, or on Windows a session with the
+     * backup and restore privileges (an administrator's SSH logon), passes over the lock. Files.isWritable does not
+     * look at a deny ACL.
+     */
+    private static boolean canAddTo(Path dir) {
+        for (boolean folder : new boolean[] {false, true}) {
+            try {
+                Files.delete(
+                        folder ? Files.createTempDirectory(dir, "probe") : Files.createTempFile(dir, "probe", ".tmp"));
+                return true;
+            } catch (java.io.IOException refused) {
+                // locked for this kind
+            }
+        }
+        return false;
+    }
+
     /** Makes every write to the revision store fail, until the returned action is run. */
     private static Runnable breakStore(AsyncTestScope async, Window win) throws Exception {
         // A collection of unreferenced bodies resets the store's permissions as it goes
@@ -147,19 +164,9 @@ class LocalHistoryRecordRestoreFxTest {
         try (var walk = Files.walk(blobs)) {
             dirs = walk.filter(Files::isDirectory).toList();
         }
-        for (Path dir : dirs) {
-            Files.setPosixFilePermissions(dir, PosixFilePermissions.fromString("r-xr-xr-x"));
-        }
-        Assumptions.assumeFalse(Files.isWritable(blobs), "running with rights that ignore permissions");
-        return () -> {
-            for (Path dir : dirs) {
-                try {
-                    Files.setPosixFilePermissions(dir, PosixFilePermissions.fromString("rwxr-xr-x"));
-                } catch (java.io.IOException e) {
-                    throw new java.io.UncheckedIOException(e);
-                }
-            }
-        };
+        Runnable unlock = com.editora.testkit.UnwritableDirs.lock(dirs);
+        Assumptions.assumeFalse(canAddTo(blobs), "running with rights that ignore permissions");
+        return unlock;
     }
 
     // --- B1 ---------------------------------------------------------------------------------------------
@@ -551,9 +558,9 @@ class LocalHistoryRecordRestoreFxTest {
             HistoryRevision recorded =
                     FxTestSupport.callOnFx(() -> revisions(win, file).get(0));
 
-            Files.setPosixFilePermissions(locked, PosixFilePermissions.fromString("r-xr-xr-x"));
+            Runnable unlock = com.editora.testkit.UnwritableDirs.lock(locked);
             try {
-                Assumptions.assumeFalse(Files.isWritable(locked), "running with rights that ignore permissions");
+                Assumptions.assumeFalse(canAddTo(locked), "running with rights that ignore permissions");
                 assertEquals(
                         HistoryCoordinator.RestoreResult.WRITE_FAILED,
                         async.await(FxTestSupport.callOnFx(() -> win.history().restoreRevisionToDisk(deleted))));
@@ -561,7 +568,7 @@ class LocalHistoryRecordRestoreFxTest {
                         tr("status.history.restoreWriteFailed", "gone.txt"),
                         win.w().status());
             } finally {
-                Files.setPosixFilePermissions(locked, PosixFilePermissions.fromString("rwxr-xr-x"));
+                unlock.run();
             }
 
             // Switched off, the restore still keeps what it replaces: it is this feature's own overwrite.

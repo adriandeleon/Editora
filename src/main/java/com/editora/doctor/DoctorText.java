@@ -19,6 +19,10 @@ public final class DoctorText {
         if (text.startsWith("/") || text.startsWith("~/") || text.startsWith("./")) {
             return true;
         }
+        // Windows: a home path collapsed to ~ keeps its backslash, and so does a relative or UNC one.
+        if (text.startsWith("~\\") || text.startsWith(".\\") || text.startsWith("\\\\")) {
+            return true;
+        }
         return text.length() > 2
                 && Character.isLetter(text.charAt(0))
                 && text.charAt(1) == ':'

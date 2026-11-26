@@ -394,6 +394,19 @@ server or a debug adapter. Until 19 October 2026 every pull request ran all of i
 ten minutes, but with five macOS runners for the account and several pull requests open at once a run took
 13 to 35 minutes, and every merge waited for the slowest macOS shard.
 
+The FX suite on Windows (run by hand on a Windows machine, `mvn test -Djacoco.skip=true`; CI's Windows lane runs
+only the pure suite) fails for reasons Linux never shows. A test that ends right after a save or an open used to
+fail to delete its `@TempDir`: the `git` the editor starts to ask about the folder runs *in* it, and Windows cannot
+delete a process's working folder. Every `@TempDir` is now deleted by `testkit/PatientTempDirDeletion` (the
+default in `junit-platform.properties`), which tries again for ten seconds; a folder still held after that is a real
+leak. A terminal shell left in a folder holds it the same way, for good: close it first. Git for Windows checks files
+out with CRLF (`core.autocrlf=true` system-wide): a test repository that compares bytes sets `core.autocrlf
+false`. Paths in expected strings are built with `Path.of(…).toString()` or `File.separator`, a session file a
+test writes escapes them (`FxTestSupport.json`), `<`, `>`, `"`, `:` and newlines are not allowed in a Windows file
+name, `java` is `java.exe`, and a folder made unwritable for a test needs `testkit/UnwritableDirs` (a deny ACL;
+Windows ignores a folder's read-only flag). A test that needs `/bin/sh` runs a JVM instead where it can
+(`OutputPumpContractFxTest`), and is `@DisabledOnOs(WINDOWS)` only when the feature itself is POSIX-only.
+
 A Map FX test that fails only on macOS is often font metrics: the Map measures its columns in the UI font CSS gives
 it, so a column, and everything placed from it, is a few pixels narrower on macOS than on Linux. Reproduce it on
 Linux by giving the test's `ProjectMapView` a narrower installed family, e.g. `view.setStyle("-fx-font-family:

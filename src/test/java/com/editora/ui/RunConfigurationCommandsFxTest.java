@@ -55,6 +55,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Tag("fx")
 class RunConfigurationCommandsFxTest {
 
+    /** How the shared file of {@code dir/proj} is named in messages: from the home folder, with this system's separator. */
+    private static final String SHARED_FILE_SHOWN =
+            String.join(java.io.File.separator, "~", "proj", SharedRunConfigs.DIR, SharedRunConfigs.FILE);
+
     @BeforeAll
     static void boot() throws Exception {
         FxTestSupport.bootToolkit();
@@ -721,9 +725,7 @@ class RunConfigurationCommandsFxTest {
                         tr("status.run.configsNeedProject"),
                         tr("status.run.configsNeedProject"),
                         tr("status.run.noConfigs"),
-                        tr(
-                                "status.run.noSharedConfigs",
-                                "~/proj/" + SharedRunConfigs.DIR + "/" + SharedRunConfigs.FILE)),
+                        tr("status.run.noSharedConfigs", SHARED_FILE_SHOWN)),
                 statuses);
         assertFalse(Files.exists(SharedRunConfigs.fileFor(projectRoot)));
     }
@@ -735,12 +737,7 @@ class RunConfigurationCommandsFxTest {
 
         FxTestSupport.runOnFx(coordinator::exportRunConfigs);
         assertTrue(Files.isRegularFile(SharedRunConfigs.fileFor(projectRoot)));
-        assertEquals(
-                List.of(tr(
-                        "status.run.configsExported",
-                        2,
-                        "~/proj/" + SharedRunConfigs.DIR + "/" + SharedRunConfigs.FILE)),
-                statuses);
+        assertEquals(List.of(tr("status.run.configsExported", 2, SHARED_FILE_SHOWN)), statuses);
 
         // A colleague's window: one configuration of its own, and an older "Report". The import would overwrite
         // that one, so it asks first and says how many: Cancel imports nothing.
@@ -903,8 +900,8 @@ class RunConfigurationCommandsFxTest {
                     List.of(new Confirm.Question(
                             "Export Run Configurations",
                             null,
-                            "Replace the shared file of the project, ~/proj/" + SharedRunConfigs.DIR + "/"
-                                    + SharedRunConfigs.FILE + "? It holds other run configurations than this window"
+                            "Replace the shared file of the project, " + SHARED_FILE_SHOWN
+                                    + "? It holds other run configurations than this window"
                                     + " has, and everyone who works on the project gets it. This cannot be undone.",
                             "Replace")),
                     questions.asked());
@@ -920,11 +917,6 @@ class RunConfigurationCommandsFxTest {
                 SharedRunConfigs.load(new com.fasterxml.jackson.databind.ObjectMapper(), projectRoot).stream()
                         .map(RunConfiguration::name)
                         .toList());
-        assertEquals(
-                List.of(tr(
-                        "status.run.configsExported",
-                        1,
-                        "~/proj/" + SharedRunConfigs.DIR + "/" + SharedRunConfigs.FILE)),
-                statuses);
+        assertEquals(List.of(tr("status.run.configsExported", 1, SHARED_FILE_SHOWN)), statuses);
     }
 }

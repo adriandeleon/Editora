@@ -955,14 +955,20 @@ final class ToolchainCommands {
         alert.initOwner(host.window());
         alert.setTitle(title);
         alert.setHeaderText(header);
+        alert.getDialogPane().setContent(reportArea(header, text));
+        alert.setResizable(true);
+        Dialogs.show(alert);
+    }
+
+    /** The selectable text of a {@link #report}, named by its header for a screen reader (ACC-01, Pauta 6.2.0). */
+    static javafx.scene.control.TextArea reportArea(String header, String text) {
         javafx.scene.control.TextArea area = new javafx.scene.control.TextArea(text);
         area.setEditable(false);
+        area.setAccessibleText(header);
         area.setWrapText(true);
         area.setPrefRowCount(Math.min(20, Math.max(6, (int) text.lines().count() + 1)));
         area.setPrefColumnCount(70);
-        alert.getDialogPane().setContent(area);
-        alert.setResizable(true);
-        Dialogs.show(alert);
+        return area;
     }
 
     private void pickJkitInstall(String title, Consumer<ToolInstall> onChoose) {

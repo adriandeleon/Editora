@@ -490,7 +490,7 @@ class HttpEngineIntegrationTest {
         assertEquals("big.bin", blob.filename());
         assertTrue(
                 CurlExport.toCurl(ex)
-                        .contains("blob=@\"" + dir.resolve("big.bin").toAbsolutePath() + "\""),
+                        .contains("blob=@\"" + curlQuoted(dir.resolve("big.bin").toAbsolutePath()) + "\""),
                 CurlExport.toCurl(ex));
     }
 
@@ -599,5 +599,10 @@ class HttpEngineIntegrationTest {
         } finally {
             quick.shutdown();
         }
+    }
+
+    /** A path as curl's -F reads it inside double quotes: backslashes (a Windows path's) escaped. */
+    static String curlQuoted(Path path) {
+        return path.toString().replace("\\", "\\\\");
     }
 }

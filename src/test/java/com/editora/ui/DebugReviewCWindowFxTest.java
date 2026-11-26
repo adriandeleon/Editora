@@ -1171,9 +1171,10 @@ class DebugReviewCWindowFxTest {
             double zoom = com.editora.editor.UiZoom.factor();
             assertTrue(width > 0 && width < 700 * zoom, "the card is " + width + " px wide at zoom " + zoom);
             double height = card.getLayoutBounds().getHeight();
-            // A hint left on one line made the card ~600 px tall; six rows of fields and a wrapped hint are ~405.
+            // A hint left on one line made the card ~600 px tall; six rows of fields and a wrapped hint are ~405
+            // on Linux and ~455 on Windows, whose text renderer sets the same font a little taller.
             assertTrue(
-                    height < 450 * zoom,
+                    height < 520 * zoom,
                     "the card is " + height + " px tall at zoom " + zoom + ": the hint wraps where it is laid out");
             assertLabelsWhole(card);
             // The filters, folded away until their link opens them: then their labels are whole too.

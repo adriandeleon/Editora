@@ -39,7 +39,7 @@ class TerminalFocusFxTest {
             CommandRegistry registry = FxTestSupport.field(fx.controller, "registry");
             ToolWindowManager toolWindows = FxTestSupport.field(fx.controller, "toolWindows");
             ToolWindow window = fx.controller.terminalToolWindow;
-            fx.controller.config.getSettings().setTerminalShell("/bin/sh");
+            fx.controller.config.getSettings().setTerminalShell(SHELL);
             FxTestSupport.runOnFx(() -> fx.controller.terminalCoordinator.applySettings());
 
             FxTestSupport.runOnFx(() -> registry.run("tool.terminal"));
@@ -63,7 +63,7 @@ class TerminalFocusFxTest {
             ToolWindowManager toolWindows = FxTestSupport.field(fx.controller, "toolWindows");
             ToolWindow window = fx.controller.terminalToolWindow;
             TerminalCoordinator terminals = fx.controller.terminalCoordinator;
-            fx.controller.config.getSettings().setTerminalShell("/bin/sh");
+            fx.controller.config.getSettings().setTerminalShell(SHELL);
             FxTestSupport.runOnFx(terminals::applySettings);
             assertTrue(FxTestSupport.callOnFx(() -> terminals.panel() instanceof ToolWindowContent));
 
@@ -72,7 +72,7 @@ class TerminalFocusFxTest {
             await(() -> focusOwner(fx) instanceof TerminalView, "the shell has the keyboard, not the panel");
 
             FxTestSupport.runOnFx(
-                    () -> terminals.panel().activeView().getSession().sendString("exit\n"));
+                    () -> terminals.panel().activeView().getSession().sendString("exit" + ENTER));
             await(() -> call(() -> terminals.panel().terminalCount() == 0), "the shell's exit");
             await(() -> call(() -> !toolWindows.isOpen(window)), "the window hiding with its last shell");
             await(
@@ -89,7 +89,7 @@ class TerminalFocusFxTest {
             ToolWindowManager toolWindows = FxTestSupport.field(fx.controller, "toolWindows");
             ToolWindow window = fx.controller.terminalToolWindow;
             TerminalCoordinator terminals = fx.controller.terminalCoordinator;
-            fx.controller.config.getSettings().setTerminalShell("/bin/sh");
+            fx.controller.config.getSettings().setTerminalShell(SHELL);
             FxTestSupport.runOnFx(terminals::applySettings);
             FxTestSupport.runOnFx(() -> keymap.applyOverrides(Map.of("C-S-f11", "tool.terminal")));
 
@@ -116,20 +116,20 @@ class TerminalFocusFxTest {
     void closingTheWindowAsksWhenATerminalIsRunningAProgram() throws Exception {
         try (WindowRig w = new WindowRig()) {
             TerminalCoordinator terminals = w.controller.terminalCoordinator;
-            w.controller.config.getSettings().setTerminalShell("/bin/sh");
+            w.controller.config.getSettings().setTerminalShell(SHELL);
             FxTestSupport.runOnFx(terminals::applySettings);
             FxTestSupport.runOnFx(() -> w.registry.run("tool.terminal"));
             await(() -> call(() -> terminals.panel().activeView() != null), "a shell");
             long shell = FxTestSupport.callOnFx(
                     () -> terminals.panel().activeView().getSession().pid());
             FxTestSupport.runOnFx(
-                    () -> terminals.panel().activeView().getSession().sendString("sleep 30\n"));
-            await(() -> com.editora.terminal.RunningProgram.in(shell).contains("sleep"), "sleep running");
+                    () -> terminals.panel().activeView().getSession().sendString(LONG_PROGRAM + ENTER));
+            await(() -> com.editora.terminal.RunningProgram.in(shell).contains(LONG_PROGRAM_NAME), "sleep running");
             // The close question asks the shell's watcher, which reads /proc off the FX thread (PERF-01).
             await(
                     () -> call(() -> {
                         var seen = terminals.panel().activeView().runningPrograms();
-                        return seen != null && seen.contains("sleep");
+                        return seen != null && seen.contains(LONG_PROGRAM_NAME);
                     }),
                     "the watcher saw it");
 
@@ -139,9 +139,16 @@ class TerminalFocusFxTest {
                     w.stage(), new javafx.stage.WindowEvent(w.stage(), javafx.stage.WindowEvent.WINDOW_CLOSE_REQUEST)));
             w.async.await(cancel, "the busy-terminal question");
             assertTrue(FxTestSupport.callOnFx(() -> w.stage().isShowing()), "Cancel keeps the window");
-            assertTrue(com.editora.terminal.RunningProgram.in(shell).contains("sleep"), "and the program");
+            assertTrue(com.editora.terminal.RunningProgram.in(shell).contains(LONG_PROGRAM_NAME), "and the program");
         }
     }
+
+    // The shell, the key that ends a line in it, and a program that runs for a while, on this system.
+    private static final boolean WINDOWS = com.editora.Os.isWindows();
+    private static final String SHELL = WINDOWS ? "cmd.exe" : "/bin/sh";
+    private static final String ENTER = WINDOWS ? "\r" : "\n";
+    private static final String LONG_PROGRAM = WINDOWS ? "ping -n 31 127.0.0.1 > NUL" : "sleep 30";
+    private static final String LONG_PROGRAM_NAME = WINDOWS ? "PING.EXE" : "sleep";
 
     private static Node focusOwner(FxWindowFixture fx) {
         try {

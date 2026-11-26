@@ -15,6 +15,10 @@ class DoctorTextTest {
         assertTrue(DoctorText.isPathLike("./gradlew"));
         assertTrue(DoctorText.isPathLike("C:\\Program Files\\nodejs\\node.exe"));
         assertTrue(DoctorText.isPathLike("D:/tools/rg.exe"));
+        // Windows paths as rows show them: home collapsed to ~ before a backslash, relative, UNC.
+        assertTrue(DoctorText.isPathLike("~\\.editora\\plugins\\lsp\\java\\bin\\jdtls"));
+        assertTrue(DoctorText.isPathLike(".\\gradlew.bat"));
+        assertTrue(DoctorText.isPathLike("\\\\server\\share\\tool.exe"));
 
         assertFalse(DoctorText.isPathLike("git version 2.47.3"));
         assertFalse(DoctorText.isPathLike("npx -y @probelabs/maid"));
@@ -39,6 +43,8 @@ class DoctorTextTest {
         assertTrue(DoctorText.commandRepeatsDetail("jdtls", "~/.editora/plugins/lsp/java/bin/jdtls"));
         assertTrue(DoctorText.commandRepeatsDetail("rust-analyzer", "/home/adl/.cargo/bin/rust-analyzer"));
         assertTrue(DoctorText.commandRepeatsDetail("node.exe", "C:\\Program Files\\nodejs\\node.exe"));
+        // Windows, after the row collapsed the home folder: ~\… is still a path (it was not, so both showed).
+        assertTrue(DoctorText.commandRepeatsDetail("jdtls", "~\\.editora\\plugins\\lsp\\java\\bin\\jdtls"));
 
         // A command carrying arguments still says something the path doesn't.
         assertFalse(DoctorText.commandRepeatsDetail("pyright-langserver --stdio", "~/bin/pyright-langserver"));
