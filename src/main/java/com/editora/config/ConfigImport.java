@@ -358,6 +358,7 @@ public final class ConfigImport {
             }
             case ConfigManager.BOOKMARKS_FILE_NAME,
                     ConfigManager.NOTES_FILE_NAME,
+                    ConfigManager.REVIEWS_FILE_NAME,
                     ConfigManager.BREAKPOINTS_FILE_NAME -> {
                 return Part.BOOKMARKS_NOTES;
             }

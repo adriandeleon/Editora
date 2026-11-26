@@ -110,6 +110,9 @@ public class SharedConfig {
     private BookmarkStore bookmarkStore = new BookmarkStore();
     /** Personal Notes (all files/projects), stored in {@code notes.json} — see {@link NoteStore}. */
     private NoteStore noteStore = new NoteStore();
+
+    /** Local code-review threads, per repository, stored in {@code reviews.json} — see {@link ReviewStore}. */
+    private ReviewStore reviewStore = new ReviewStore();
     /** Breakpoints (all files/projects), stored in {@code breakpoints.json} — see {@link BreakpointStore}. */
     private BreakpointStore breakpointStore = new BreakpointStore();
     /** Local File History index (all files/projects), in {@code history/index.json} — see {@link HistoryStore}. */
@@ -388,6 +391,7 @@ public class SharedConfig {
         loadBreakpoints();
         loadHistory();
         loadNotes();
+        loadReviews();
         loadConnections();
         loadPlugins();
         loadTrust();
@@ -1203,6 +1207,10 @@ public class SharedConfig {
         return configDir.resolve(ConfigManager.NOTES_FILE_NAME);
     }
 
+    public Path getReviewsFile() {
+        return configDir.resolve(ConfigManager.REVIEWS_FILE_NAME);
+    }
+
     public Path getBreakpointsFile() {
         return configDir.resolve(ConfigManager.BREAKPOINTS_FILE_NAME);
     }
@@ -1570,6 +1578,22 @@ public class SharedConfig {
 
     public Map<String, List<PersonalNote>> notesBucket(String key) {
         return noteStore.bucket(key);
+    }
+
+    /** The review threads of the repository {@code repoKey} (see {@code com.editora.review.ReviewKeys}). */
+    public List<ReviewThread> reviewThreads(String repoKey) {
+        return reviewStore.threads(repoKey);
+    }
+
+    /** Replaces the review threads of {@code repoKey} and writes {@code reviews.json}. */
+    public void setReviewThreads(String repoKey, List<ReviewThread> threads) {
+        reviewStore.setThreads(repoKey, threads);
+        saveReviews();
+    }
+
+    /** Every repository's review threads, by repository key. */
+    public Map<String, List<ReviewThread>> allReviewThreads() {
+        return java.util.Collections.unmodifiableMap(reviewStore.getByRepo());
     }
 
     public void deleteNotesForProject(String projectKey) {
@@ -2294,5 +2318,15 @@ public class SharedConfig {
     /** Writes the global Personal Notes to {@code notes.json}, independently of a session save. */
     public void saveNotes() {
         writeStore(getNotesFile(), noteStore, ConfigSchema.NOTES);
+    }
+
+    /** Loads {@code reviews.json} (versioned, per-repository). Missing/malformed ⇒ an empty store. */
+    private void loadReviews() {
+        reviewStore = read(getReviewsFile(), new ReviewStore(), ConfigSchema.REVIEWS);
+    }
+
+    /** Writes the review threads to {@code reviews.json}. */
+    public void saveReviews() {
+        writeStore(getReviewsFile(), reviewStore, ConfigSchema.REVIEWS);
     }
 }

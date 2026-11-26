@@ -28,6 +28,7 @@ Two serialization formats, chosen per file:
 | `recent-files.json` | JSON | `RecentFiles.Stored` | Was a bare array (v0). One shared instance; remote entries kept. |
 | `bookmarks.json` | JSON | `BookmarkStore` | Per-project buckets. |
 | `notes.json` | JSON | `NoteStore` | Per-project buckets. |
+| `reviews.json` | JSON | `ReviewStore` | Local [code review](code-review.md) threads, per repository (its canonical root); paths relative to it. |
 | `breakpoints.json` | JSON | `BreakpointStore` | Per-project buckets: line breakpoints per file, and the method breakpoints and field watchpoints (`memberBreakpoints`, schema 4). |
 | `history/index.json` + `history/index.json.recent.bak` + `history/blobs/` | JSON | `HistoryStore`, `HistoryDelta` | Local History; blobs gzip'd. The user's files, not configuration; left out of the export. The `.recent.bak` is part of the index (below), not a backup. |
 | `connections.json` | JSON | `ConnectionStore` | SFTP connection metadata, no secrets. |

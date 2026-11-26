@@ -56,6 +56,7 @@ class StoreShapeGuardTest {
         ROOTS.put(ConfigSchema.PROJECTS, ProjectManager.Index.class);
         ROOTS.put(ConfigSchema.RECENT, RecentFiles.Stored.class);
         ROOTS.put(ConfigSchema.NOTES, NoteStore.class);
+        ROOTS.put(ConfigSchema.REVIEWS, ReviewStore.class);
         ROOTS.put(ConfigSchema.CONNECTIONS, ConnectionStore.class);
         ROOTS.put(ConfigSchema.PLUGINS, PluginStore.class);
         ROOTS.put(ConfigSchema.HISTORY, HistoryStore.class);
@@ -73,6 +74,7 @@ class StoreShapeGuardTest {
         PINNED.put(ConfigSchema.PROJECTS, "2:a373bb1579a65406");
         PINNED.put(ConfigSchema.RECENT, "1:d784f4ce61c5c2a8");
         PINNED.put(ConfigSchema.NOTES, "2:f89de7207bb41420");
+        PINNED.put(ConfigSchema.REVIEWS, "1:9a11dae186f03777");
         PINNED.put(ConfigSchema.CONNECTIONS, "2:ce8f958024ef9829");
         PINNED.put(ConfigSchema.PLUGINS, "2:5a0d8ea1a54352ef");
         PINNED.put(ConfigSchema.HISTORY, "4:808e4a3b0917d64e");
