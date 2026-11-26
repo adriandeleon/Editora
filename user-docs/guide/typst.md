@@ -1,8 +1,8 @@
 ---
 title: Typst
 description: A live 3-mode preview for .typ files, a tinymist language server, Markdown-style editing, and export to PDF, PNG, or SVG.
-category: Editing
-order: 7
+category: Languages
+order: 21
 ---
 
 Standalone `.typ` ([Typst](https://typst.app)) files get the same 3-mode view
@@ -28,6 +28,11 @@ Typst files get Markdown-style ergonomics:
   `typst.insertImage`, `typst.outline`).
 - Bundled snippets cover figures, tables, and more.
 
+Editing actions are grouped under a single **Typst** submenu in the editor's
+right-click menu. Run and Debug stay at the top level of the menu.
+
+## Language server
+
 Code intelligence comes from the **tinymist** language server. Editora can
 install it for you: click **Install** on the banner that appears when you open a
 `.typ` file without it, use **Install…** beside it in **Settings → LSP**, or run
@@ -36,9 +41,6 @@ install it for you: click **Install** on the banner that appears when you open a
 `brew install tinymist` or a binary from
 [tinymist's releases](https://github.com/Myriad-Dreamin/tinymist/releases) on
 your `PATH`.
-
-Editing actions are grouped under a single **Typst** submenu in the editor's
-right-click menu. Run and Debug stay at the top level of the menu.
 
 ## Structure and folding
 

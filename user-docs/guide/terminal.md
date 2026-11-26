@@ -1,8 +1,8 @@
 ---
 title: Terminal
-description: Shells in a Terminal tool window, on this machine, a remote host, a container or WSL, with shell integration, find in the scrollback, clickable links, type-ahead over slow connections, the kitty keyboard protocol, desktop notifications, and Run and Debug in a terminal tab.
+description: Shells on this machine, a remote host, a container or WSL, with shell integration, scrollback search, clickable links, and programs run or debugged in a tab.
 category: Workspace
-order: 8
+order: 9
 ---
 
 The **Terminal** tool window runs shells inside Editora, one per tab, at the

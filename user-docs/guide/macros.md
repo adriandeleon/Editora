@@ -23,8 +23,10 @@ auto-close and auto-indent assists as live typing.
 
 The other keymaps bind a smaller set by default: **Ctrl+Shift+R** starts or
 stops a recording in the CUA keymap, and **Ctrl+Shift+Q** replays the last macro
-in the Sublime Text keymap. Every macro command is in the **Tools → Macros**
-submenu and the command palette, and can be given a key in
+in the Sublime Text keymap. **Start Recording**, **Stop Recording** and
+**Replay Last** are in the **Tools** menu itself; **Cancel Recording**, **Replay
+Last N Times** and the saved-macro commands are in its **Macros** submenu. Every
+macro command is in the command palette and can be given a key in
 [Settings → Keymaps](/docs/keymaps).
 
 While you record, the status bar shows **● REC**; click it to stop. **Esc** (or

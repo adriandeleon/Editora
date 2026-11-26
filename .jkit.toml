@@ -1,0 +1,6 @@
+# Versions jkit (jkit-project.dev) uses for Editora: run `jkit sync` here to install and switch to them.
+# JDK 25, not newer: Palantir Java Format (Spotless) breaks on JDK 27 (JDK-8372948).
+# Keep in step with .sdkmanrc (SDKMAN) and .mvn/wrapper/maven-wrapper.properties (./mvnw).
+[tools]
+jdk = { version = "25", vendor = "temurin" }
+maven = "3.10"

@@ -295,27 +295,32 @@ again removes it. A multi-line selection of markup is wrapped in one
 
 ## Small operations
 
-| Operation | Command | Default key |
-| --- | --- | --- |
-| Transpose characters | `edit.transposeChars` | `C-t` |
-| Transpose words | `edit.transposeWords` | `M-t` |
-| Transpose lines | `edit.transposeLines` | `C-x C-t` |
-| Duplicate line | `edit.duplicateLine` | (keymap-specific) |
-| Move line up / down | `edit.moveLineUp` / `Down` | (keymap-specific) |
-| Insert line below / above | `edit.insertLineBelow` / `Above` | (keymap-specific) |
-| Complete statement | `edit.completeStatement` | (keymap-specific) |
-| Delete line | `edit.deleteLine` | (keymap-specific) |
-| Select line | `edit.selectLine` | (keymap-specific) |
-| Indent / outdent lines | `edit.indentLines` / `edit.outdentLines` | (keymap-specific) |
-| Select all | `edit.selectAll` | `C-x h` |
-| Fill paragraph | `edit.fillParagraph` | `M-q` |
-| Set fill column | `edit.setFillColumn` | (palette) |
-| Forward / backward subword | `nav.subwordForward` / `Backward` | (palette) |
-| Delete subword forward / backward | `edit.deleteSubword…` | (palette) |
-| Convert indentation to spaces / tabs | `edit.indentationTo…` | (palette) |
-| Tabify / untabify region | `edit.tabify` / `edit.untabify` | (palette) |
-| Align regexp | `edit.alignRegexp` | (palette) |
-| Copy with syntax highlighting | `edit.copyWithHighlighting` | (palette) |
+| Operation | Command | Emacs key | Other keymaps |
+| --- | --- | --- | --- |
+| Transpose characters | `edit.transposeChars` | `C-t` | — |
+| Transpose words | `edit.transposeWords` | `M-t` | — |
+| Transpose lines | `edit.transposeLines` | `C-x C-t` | — |
+| Duplicate line | `edit.duplicateLine` | (palette) | CUA, Sublime Text: Ctrl+Shift+D; VS Code: Alt+Shift+Down; IntelliJ: Ctrl+D |
+| Move line up / down | `edit.moveLineUp` / `Down` | (palette) | CUA, Sublime Text, VS Code: Alt+Up / Alt+Down; IntelliJ: Alt+Shift+Up / Alt+Shift+Down |
+| Insert line below / above | `edit.insertLineBelow` / `Above` | (palette) | CUA, Sublime Text, VS Code: Ctrl+Enter / Ctrl+Shift+Enter; IntelliJ: Shift+Enter / Ctrl+Alt+Enter |
+| Complete statement | `edit.completeStatement` | (palette) | IntelliJ: Ctrl+Shift+Enter |
+| Delete line | `edit.deleteLine` | (palette) | CUA, Sublime Text, VS Code: Ctrl+Shift+K; IntelliJ: Ctrl+Y |
+| Select line | `edit.selectLine` | (palette) | Sublime Text, VS Code: Ctrl+L |
+| Indent / outdent lines | `edit.indentLines` / `edit.outdentLines` | (palette) | Sublime Text, VS Code: Ctrl+] / Ctrl+[ |
+| Select all | `edit.selectAll` | `C-x h` | CUA, Sublime Text, VS Code, IntelliJ: Ctrl+A |
+| Fill paragraph | `edit.fillParagraph` | `M-q` | — |
+| Set fill column | `edit.setFillColumn` | (palette) | — |
+| Forward / backward subword | `nav.subwordForward` / `Backward` | (palette) | — |
+| Delete subword forward / backward | `edit.deleteSubword…` | (palette) | — |
+| Convert indentation to spaces / tabs | `edit.indentationTo…` | (palette) | — |
+| Tabify / untabify region | `edit.tabify` / `edit.untabify` | (palette) | — |
+| Align regexp | `edit.alignRegexp` | (palette) | — |
+| Copy with syntax highlighting | `edit.copyWithHighlighting` | (palette) | — |
+
+The **Emacs key** column is the default Emacs keymap; **Other keymaps** gives
+the chords the CUA, Sublime Text, VS Code and IntelliJ IDEA keymaps bind (— where
+none does). On macOS those mostly use ⌘ for Ctrl; the
+[keybindings reference](/keybindings) lists every keymap.
 
 Fill re-wraps a paragraph to the fill column (70 by default), repeating any
 comment or quote prefix on each wrapped line. **Auto Fill mode**

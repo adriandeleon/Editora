@@ -1,8 +1,8 @@
 ---
 title: HTML
 description: Tag auto-close and rename, comments and indentation inside style and script, links you can follow, markup checks, templates, the HTML language server, and a live preview in your browser.
-category: Editing
-order: 3.5
+category: Languages
+order: 8
 ---
 
 Files ending in `.html`, `.htm` and `.xhtml` open as HTML. Most of what this

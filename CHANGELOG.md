@@ -37,7 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Doctor's Settings… opens the row's own language.** On a language server or debugger row (PowerShell, Go, …),
-  Settings… opened Language Servers or Debugging on whichever language the page's Language picker last held; it now
+  Settings… opened LSP or Debugging on whichever language the page's Language picker last held; it now
   picks the row's language. ESLint, Prettier and Biome open the TypeScript card, Flutter the Dart card.
 - **Attaching to a Python on another machine.** Debug: Attach (and a launch.json `debugpy` attach with a `connect`
   host) to a Python under `debugpy --listen` on another machine or in a container connected to this machine whatever
@@ -178,7 +178,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Dart and Flutter.** Editora now knows Dart: syntax colouring, comments, indenting and folding, the
   Structure panel and Go to Symbol, snippets, a New File template and its file icon. With the Dart SDK (or
   Flutter's) installed, Dart's own analysis server gives errors, completion, navigation, rename and formatting
-  (Settings ▸ Language Servers ▸ Dart); in a folder you haven't trusted it waits when the package names analyzer
+  (Settings ▸ LSP ▸ Dart); in a folder you haven't trusted it waits when the package names analyzer
   plugins, which run its code. Run File on a Dart file with a `main` runs `dart run` in its package's folder; on a
   Flutter app's file it runs `flutter run` on this computer's desktop, or on the device named in Settings ▸
   Debugging ▸ Dart. F5 debugs either on the SDK's own debugger (`dart debug_adapter`, `flutter debug_adapter`):
@@ -248,10 +248,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Settings shows one language at a time on Language Servers and Debugging.** Each page has a **Language** picker and
+- **Settings shows one language at a time on LSP and Debugging.** Each page has a **Language** picker and
   shows only that language's cards, instead of a wall of 27 servers and 9 adapters. A search ignores the pick and
   shows every language with a hit. Go's Goroutines card now sits with Go, and Build Tools' "pom.xml editing" link opens
-  Language Servers with Maven picked.
+  LSP with Maven picked.
 - **Run File says why a Java file does not run on its own.** On a `.java` that is neither a single-file program nor a
   compact source file (a library class, a class of a Maven or Gradle project), Run File now says what runs as one
   file and that a project class's `main` runs from its ▶. Its other "Not a runnable file" message no longer lists a

@@ -2,7 +2,7 @@
 title: "Shell & Bash"
 description: "The Bash language server, ShellCheck and shfmt, running shell scripts, and debugging Bash."
 category: Languages
-order: 6
+order: 20
 ---
 
 Shell scripts get code intelligence from `bash-language-server` with ShellCheck and shfmt, run from the gutter, and Bash scripts debug with bashdb. What every language shares is on the [language servers](/docs/lsp), [running](/docs/run-debug) and [debugging](/docs/debugging) pages.
@@ -228,7 +228,8 @@ script of another shell, such as zsh or fish, can't be; use
 
 A Bash script is debugged with bashdb, through Bash Debug (vscode-bash-debug),
 the adapter of VS Code's Bash Debug extension. **Debug: Start / Continue**
-(`debug.start`, F5) or **Debug File** runs the script under the bashdb that
+(`debug.start`: `C-c C-d d` in the Emacs keymap, F5 in the VS Code, CUA and
+Sublime Text keymaps) or **Debug File** runs the script under the bashdb that
 Bash Debug ships, in the script's folder, with the arguments set by **File: Run
 with Arguments…**, and runs to your first breakpoint. Step Over, Step Into and
 Step Out go line by line, and the script's output reaches the Debug console.

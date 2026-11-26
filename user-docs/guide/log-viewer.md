@@ -1,8 +1,8 @@
 ---
 title: Server log viewer
-description: Log files get severity highlighting, a tail -f Follow button that survives rotation, open-at-the-tail for huge logs, and live level, show and hide filtering by record.
+description: Log files with severity colors, a Follow button that survives rotation, huge logs opened at the tail, and live filters by level and text.
 category: Workspace
-order: 5
+order: 6
 ---
 
 Open a log file and Editora switches into a dedicated log mode built for
@@ -295,5 +295,5 @@ The keys are F8 and Shift+F8, F2 and Shift+F2 in the IntelliJ keymaps, and
 | Summarize the log (levels, over time, repeated messages, silences) | `log.summarize` | |
 | Merge several logs into one, by time | `log.mergeLogs` | |
 | Next / previous line at warning level or higher (**Log: Next Warning or Error**, **Log: Previous Warning or Error**) | `log.nextError` / `log.previousError` | Next / Previous Problem |
-| Show the file as a log, or stop (toggle) | `log.viewAsLog` |
-| Enable/disable the feature | `view.toggleLogViewer` |
+| Show the file as a log, or stop (toggle) | `log.viewAsLog` | |
+| Enable/disable the feature | `view.toggleLogViewer` | |

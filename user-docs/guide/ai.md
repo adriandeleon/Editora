@@ -1,8 +1,8 @@
 ---
 title: AI assistance
 description: One-shot AI actions and an embedded coding agent, using the Anthropic API or a local OpenAI-compatible model. Off by default.
-category: Customization
-order: 7
+category: Integrations
+order: 1
 beta: true
 ---
 

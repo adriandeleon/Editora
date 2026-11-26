@@ -93,7 +93,7 @@ A single-line selection seeds the query, the same way the find bar and Find in
 Files do.
 
 **File results** come from the same list of the project's files as the
-[Project Map](/docs/workspace#project-map)'s search and the
+[Project Map](/docs/project-map#searching-the-map)'s search and the
 [Project tree's filter](/docs/workspace#projects), kept current as you work,
 and they rank the same way: the name as you typed it first, then the project's
 own source, then vendored code, then tests. So all three find the same file
@@ -101,7 +101,7 @@ first. Deep and very large projects are searched completely, and a path such as
 `core/v1/types.go` narrows a common name.
 
 **Show in Map** selects the highlighted file, or a symbol's file, on the
-[Project Map](/docs/workspace#project-map), opening the Map window if needed.
+[Project Map](/docs/project-map), opening the Map window if needed.
 Its key is `Alt-Enter` where the keymap leaves it free, else `Shift-Enter` or
 `Alt-M`; the hint line names it.
 
@@ -170,15 +170,20 @@ under a filter is harder to read.
 Each of these opens an in-scene picker with a footer legend of its keys. Type to
 filter; Enter opens.
 
-| Jump to | Command | Default key |
-| --- | --- | --- |
-| Recent files | `recent.jump` | `C-x C-r` |
-| Symbols / file structure | `structure.jump` | `M-g i` |
-| Open tabs | `buffer.jump` | `C-x b` |
-| Tool windows | `tool.jump` | `M-g t` |
-| Bookmarks (cross-file) | `bookmarks.jump` | `M-g b` |
-| Notes (cross-file) | `notes.jump` | `M-g n` |
-| Markdown headings, project-wide ([more](/docs/markdown#completion-and-navigation)) | `project.gotoMarkdownHeading` | (palette) |
+| Jump to | Command | Emacs key | Other keymaps |
+| --- | --- | --- | --- |
+| Recent files | `recent.jump` | `C-x C-r` | VS Code: Ctrl+R; IntelliJ: Ctrl+E |
+| Symbols / file structure | `structure.jump` | `M-g i` | Sublime Text: Ctrl+R; VS Code: Ctrl+Shift+O; IntelliJ: Ctrl+F12 |
+| Open tabs | `buffer.jump` | `C-x b` | — |
+| Tool windows | `tool.jump` | `M-g t` | — |
+| Bookmarks (cross-file) | `bookmarks.jump` | `M-g b` | — |
+| Notes (cross-file) | `notes.jump` | `M-g n` | — |
+| Markdown headings, project-wide ([more](/docs/markdown#completion-and-navigation)) | `project.gotoMarkdownHeading` | (palette) | — |
+
+The **Emacs key** column is the default Emacs keymap; **Other keymaps** gives
+the chords the CUA, Sublime Text, VS Code and IntelliJ IDEA keymaps bind (— where
+none does). On macOS those mostly use ⌘ for Ctrl; the
+[keybindings reference](/keybindings) lists every keymap.
 
 The pickers share styling and dirty-file markers, so an unsaved buffer shows the
 same dot you see on its tab. A picker with nothing to list says so ("No
@@ -284,7 +289,8 @@ terminal, too, pressing Find while its bar is open goes to the next match; see
 
 ## Occur
 
-**Edit: Occur…** (`M-s o`) lists every line in the current buffer matching a
+**Edit: Occur…** (`edit.occur`; `M-s o` in the Emacs keymap) is **Find ▸ List
+Matching Lines…** in the menu bar. It lists every line in the current buffer matching a
 regular expression in a keyboard picker, and picking one jumps to it. It is the
 buffer-scoped counterpart to Find in Files, and the picker's own filter narrows
 the list further as you type.
@@ -340,21 +346,21 @@ machine has ripgrep does not matter there.
 The gutter carries a fold chevron beside every foldable region. Beyond clicking
 it:
 
-| Action | Command | Default key |
-| --- | --- | --- |
-| Fold at the caret | `view.fold` | `C-c C-f` |
-| Unfold at the caret | `view.unfold` | `C-c C-u` |
-| Toggle the fold at the caret | `view.toggleFold` | `C-c C-t` |
-| Fold all | `view.foldAll` | `C-c f` |
-| Unfold all | `view.unfoldAll` | `C-c u` |
-| Fold by nesting level (1 to 7) | `view.foldLevel1` … `7` | (palette) |
-| Fold / unfold recursively | `view.foldRecursively` / `view.unfoldRecursively` | (palette) |
-| Go to parent / next / previous fold | `view.gotoParentFold` … | (palette) |
-| Fold the selection | `view.createFoldFromSelection` | (palette) |
-| Remove your manual folds | `view.removeManualFolds` | (palette) |
-| Fold all block comments | `view.foldAllBlockComments` | (palette) |
-| Fold / unfold all `#region` markers | `view.foldAllMarkerRegions` | (palette) |
-| Fold / unfold all except the caret | `view.foldAllExcept` / `view.unfoldAllExcept` | (palette) |
+| Action | Command | Emacs key | Other keymaps |
+| --- | --- | --- | --- |
+| Fold at the caret | `view.fold` | `C-c C-f` | Sublime Text: Ctrl+Shift+[ |
+| Unfold at the caret | `view.unfold` | `C-c C-u` | Sublime Text: Ctrl+Shift+] |
+| Toggle the fold at the caret | `view.toggleFold` | `C-c C-t` | — |
+| Fold all | `view.foldAll` | `C-c f` | IntelliJ: Ctrl+Shift+- |
+| Unfold all | `view.unfoldAll` | `C-c u` | Sublime Text: Ctrl+K, Ctrl+0; IntelliJ: Ctrl+Shift+= |
+| Fold by nesting level (1 to 7) | `view.foldLevel1` … `7` | (palette) | — |
+| Fold / unfold recursively | `view.foldRecursively` / `view.unfoldRecursively` | (palette) | — |
+| Go to parent / next / previous fold | `view.gotoParentFold` … | (palette) | — |
+| Fold the selection | `view.createFoldFromSelection` | (palette) | — |
+| Remove your manual folds | `view.removeManualFolds` | (palette) | — |
+| Fold all block comments | `view.foldAllBlockComments` | (palette) | — |
+| Fold / unfold all `#region` markers | `view.foldAllMarkerRegions` | (palette) | — |
+| Fold / unfold all except the caret | `view.foldAllExcept` / `view.unfoldAllExcept` | (palette) | — |
 
 ![Shelf.java after Fold All: every method and the javadoc comments folded to one line each, with a fold chevron in the gutter beside each region](/screenshots/docs/fold-all.png "Fold All collapses every region; the chevrons in the gutter open them one at a time.")
 

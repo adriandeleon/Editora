@@ -27,7 +27,7 @@ Type a trigger and press **Tab**, or pick from the **Snippet: Insert…** list
 
 Bodies use the standard syntax: `$1`, `${1:default}`, mirrors (a repeated
 number), `${1|a,b|}` choices, and [variables](#snippet-variables). Snippets ship
-for 32 languages, plus a global set that applies to every file. The TypeScript
+for 35 languages, plus a global set that applies to every file. The TypeScript
 set also applies to JSX and TSX files.
 
 ![The Insert Snippet picker over a Java file: each trigger (main, psvm, cmain, class, interface, record, enum, sealed, package, import, ctor, method) with its description and a preview of its body](/screenshots/docs/snippet-picker.png "Snippet: Insert… lists the snippets for the file's language, each with its trigger and a preview.")
@@ -259,6 +259,11 @@ renames the snippet. **Remove** asks before it deletes one of your snippets. A
 trigger cannot contain a space, because Tab could never expand it: the
 **Triggers** field turns red and says why, and nothing is saved until you fix
 it.
+
+A change on the Snippets page rewrites the whole language file as plain JSON,
+so any comments in it are lost. When the file has comments, Editora asks before
+the first change; **No** writes nothing and leaves the file as it was. To keep
+your comments, edit the file with **Snippet: Edit User Snippets…** instead.
 
 The format is the VS Code snippet JSON, and the reader is lenient about
 real-world files. A snippet can have several triggers: an array `prefix` in the

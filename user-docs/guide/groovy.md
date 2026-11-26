@@ -1,8 +1,8 @@
 ---
 title: "Groovy"
-description: "The Groovy language server, running Groovy scripts, and debugging Groovy."
+description: "The Groovy language server, running Groovy scripts, Groovy and Spock tests, and debugging Groovy."
 category: Languages
-order: 8
+order: 7
 ---
 
 Groovy gets code intelligence from `gls`, runs scripts and classes from the gutter, and debugs on the Java debugger.
@@ -33,6 +33,24 @@ then SDKMAN. When none of them has it, Run says Groovy is not installed instead
 of starting anything. A Gradle build script (`build.gradle`) and a
 `Jenkinsfile` are Groovy too, but they get no ▶: nobody runs those as a
 program.
+
+## Tests
+
+In a Maven or Gradle project, a Groovy test file gets a ▶ in the gutter on each
+test and on its class, and **Run Test at Caret** (`test.runAtCaret`) runs the
+test the caret is in, or the whole class when the caret is between tests:
+
+- **JUnit** tests: a `void` or `def` method marked `@Test` (or
+  `@ParameterizedTest`, `@RepeatedTest`, `@TestFactory`, `@TestTemplate`).
+- **Spock** specifications: a class that extends `Specification`. Each feature
+  method, such as `def "adds a book"()`, is a test, with no annotation.
+
+Run Test at Caret and Debug Test at Caret need a Maven or Gradle project, as
+the gutter's ▶ icons do. The test runs through the build's test task (Maven's
+`-Dtest=`, Gradle's `--tests`), and its results fill
+[Test Results](/docs/build-tools#test-runner). **Debug Test at Caret**
+(`test.debugAtCaret`) starts the test JVM suspended and attaches the debugger
+to it, as for a [Java test](/docs/build-tools#test-runner).
 
 ## Debugging
 

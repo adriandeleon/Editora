@@ -2,7 +2,7 @@
 title: Diagrams as code
 description: A live 3-mode preview for Graphviz DOT and PlantUML files, with export to SVG, PNG, or PDF.
 category: Editing
-order: 8
+order: 7
 ---
 
 Standalone **Graphviz DOT** (`.dot` / `.gv`) and **PlantUML** (`.puml` /

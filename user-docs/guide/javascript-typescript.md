@@ -1,11 +1,11 @@
 ---
 title: "JavaScript & TypeScript"
-description: "The TypeScript server, ESLint and formatting, running Node.js scripts, and debugging Node.js and browser code."
+description: "The TypeScript server, ESLint and formatting, running Node.js and Deno scripts, Jest, Vitest, Deno and node:test tests, and debugging Node.js, Deno and browser code."
 category: Languages
-order: 3
+order: 11
 ---
 
-JavaScript and TypeScript get code intelligence from `typescript-language-server`, run under Node.js from the gutter, and debug with VS Code's js-debug, in Node.js or in a browser. What every language shares is on the [language servers](/docs/lsp), [running](/docs/run-debug) and [debugging](/docs/debugging) pages; this page is what is particular to JavaScript and TypeScript.
+JavaScript and TypeScript get code intelligence from `typescript-language-server`, run under Node.js (or Deno) from the gutter, run tests with Jest, Vitest, Deno or `node --test`, and debug with VS Code's js-debug, in Node.js or in a browser. What every language shares is on the [language servers](/docs/lsp), [running](/docs/run-debug) and [debugging](/docs/debugging) pages; this page is what is particular to JavaScript and TypeScript.
 
 ## Language server
 
@@ -281,20 +281,57 @@ or `ts-node` runs with that program, as written.
 
 A TypeScript test file's ▶ takes the same route.
 
-**Test files.** The ▶ of a test file runs `node --test` and shows the results
-in [Test Results](/docs/build-tools#test-runner). A test file is a
-`*.test.*` or `*.spec.*` file, or any script under a `test/`, `tests/` or
-`__tests__/` folder. The Run console shows node's own readable report, while
-Test Results reads a TAP report of the same run. A test file that fails to
-load, for example on a missing module, is a failed row named after the file,
-with the error and its stack. A skipped or todo test shows as skipped under its
-own name, with or without a reason. **Rerun Failed** and **Rerun This Test**
-work on these results; Rerun Failed on a file that failed to load runs the
-whole file again.
+**Test files.** The ▶ of a test file runs its tests, under Jest, Vitest, Deno
+or `node --test`; see [Tests](#tests).
+
+**Deno projects.** A file whose nearest project file above it is a `deno.json`
+or `deno.jsonc` (before any `package.json`) runs under Deno, as
+`deno run --allow-all`, from the folder of that `deno.json`. Every permission
+is allowed because the Run console can't answer Deno's permission prompts. A
+shebang that names a program, or a Node.js set in a run configuration, still
+wins. Editora finds `deno` on your `PATH`, else in `$DENO_INSTALL/bin`, else in
+`~/.deno/bin`; without it, Run says the file is in a Deno project and to
+install Deno from deno.com.
 
 While the program runs, the Run window names its runtime, such as
 **Node.js 24.18.1** (see
 [Which runtime a program runs under](/docs/run-debug#which-runtime-a-program-runs-under)).
+
+## Tests
+
+A test file is a `*.test.*` or `*.spec.*` file, or any script under a `test/`,
+`tests/` or `__tests__/` folder. Its ▶ and Run File run its tests with the
+package's own runner, and **Run Test at Caret** (`test.runAtCaret`) runs only
+the test or `describe` block the caret is in. The test at the caret is found
+from the `describe`, `context`, `suite`, `it` and `test` calls around it (with
+`.only`, `.skip`, `.each` and the like); when a name on the way isn't a plain
+string, such as a template with `${…}`, the whole file runs. The results fill
+[Test Results](/docs/build-tools#test-runner), and **Rerun Failed** and
+**Rerun This Test** run them again with the runner's own filter.
+
+**Jest and Vitest.** A package uses Vitest when it has a `vitest.config.*`
+file or lists `vitest` in its dependencies, else Jest when it has a
+`jest.config.*` file, a `jest` or `jest-cli` dependency, or a `"jest"` key in
+its `package.json`. The runner must be installed in `node_modules` (in the
+package or a folder above it, as in a workspace); before `npm install`, the
+file runs under `node --test`. Editora runs the runner's own script under the
+Node.js chosen [as for Run](#running-nodejs-scripts), from the package folder:
+Jest with `--runInBand`, Vitest with `vitest run`, which runs once rather than
+watching. A test at the caret is passed by name (`-t`).
+
+**Deno.** A test file in a [Deno project](#running-nodejs-scripts) (`test.ts`,
+`*_test.ts`, `*.test.ts` and the like) runs under `deno test --allow-all`; a
+test at the caret runs alone with `--filter`. A top-level `Deno.test(…)` or
+`describe`, `it` or `test` call is the test at the caret, since Deno's filter
+matches only top-level tests.
+
+**node:test.** Without either runner, a test file runs under `node --test`.
+The Run console shows node's own readable report, while Test Results reads a
+TAP report of the same run. A test file that fails to load, for example on a
+missing module, is a failed row named after the file, with the error and its
+stack. A skipped or todo test shows as skipped under its own name, with or
+without a reason. Rerun Failed on a file that failed to load runs the whole
+file again.
 
 ## Debugging
 
@@ -342,13 +379,18 @@ Node.js v24.18.1)*.
 - Child processes and worker threads show all their threads. The status line
   names the file a thread stopped in, such as *Suspended in worker.js —
   parent.js*.
-- **Debug Test at Caret** (`test.debugAtCaret`) on a `node:test` test runs that
-  test under `node --test` and stops at its breakpoints.
+- **Debug Test at Caret** (`test.debugAtCaret`) runs the test at the caret
+  under the package's runner (see [Tests](#tests)) and stops at its
+  breakpoints: Jest in one process (`--runInBand`), Vitest with its workers
+  attached as they start, or `node --test` with a name pattern.
+- **Deno.** Debug on a file of a [Deno project](#running-nodejs-scripts) runs it under
+  `deno run` (`deno test` for a test, or Debug Test at Caret) with
+  `--inspect-wait`, and vscode-js-debug attaches to it.
 - **Node.js script** and **npm script** [run configurations](/docs/run-debug#run-configurations)
   can be debugged, started the way Run starts them.
 
 **Electron apps.** In a package whose dependencies name `electron`, with
-Electron installed in `node_modules`, F5 on the app's main file (the
+Electron installed in `node_modules`, Debug on the app's main file (the
 package's `main`) or on any file that loads `electron` (a window module, a
 preload script) debugs the whole app, as VS Code's *Electron: Main* and
 *Electron: Renderer* configurations do together: the main process under the
@@ -390,7 +432,7 @@ your TypeScript or framework source stops too. The list offers the HTML file in
 the editor (*This page: …*), the pages you debugged before, and **Another
 page…**, which asks for a URL, such as your dev server's `localhost:5173`.
 
-**Debug: Start / Continue** (F5) on an HTML file serves its folder the way the
+**Debug: Start / Continue** (`debug.start`) on an HTML file serves its folder the way the
 [live preview](/docs/html#live-preview) does and opens the page in the
 browser. An HTML file takes breakpoints in its inline scripts.
 
@@ -419,7 +461,8 @@ bar says so. Safari can't be debugged this way.
 else in VS Code's extension, and its **Install…** downloads version 2.15.0.
 Firefox runs with a profile of Editora's own too, kept between sessions. A
 `debugger;` statement stops in Firefox as it does in Chrome; its exception
-breakpoints are *All Exceptions* and *Uncaught Exceptions*.
+breakpoints are *All Exceptions*, *Uncaught Exceptions* and *Debugger
+Statements*, the last on by default.
 
 The browser has 30 seconds to start; a launch.json configuration's own
 `timeout` sets another limit. When the debugger gives up on the browser, or the

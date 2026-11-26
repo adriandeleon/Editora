@@ -2,7 +2,7 @@
 title: External tools
 description: Define your own CLI commands and run them on the current file or buffer, with macros, stdin piping, and flexible output.
 category: Customization
-order: 6
+order: 3
 ---
 
 Define your own command-line tools in **Settings → External Tools** and run them

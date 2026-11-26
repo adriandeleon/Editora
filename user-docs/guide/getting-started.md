@@ -60,6 +60,24 @@ previous defaults are put back when you uninstall the package. See the
 [command-line reference](/docs/cli) for where the launcher lives in each
 package.
 
+### Package managers
+
+On an Apple Silicon Mac, Editora is also in Homebrew, as a cask in its own tap.
+Intel Macs use the `macos-x64` `.dmg` above.
+
+```bash
+brew install --cask adriandeleon/tap/editora   # install
+brew upgrade --cask editora                    # update to the latest release
+brew uninstall --cask editora                  # remove it
+```
+
+The cask installs the same signed and notarized app as the `.dmg` into
+Applications. Editora's own update check only tells you a newer version exists,
+so Homebrew does the updating.
+
+A winget package for Windows is on its way but not available yet; until it is,
+use the `.msi`.
+
 ### First launch
 
 The macOS app is signed with a Developer ID certificate and notarized by Apple.
@@ -245,8 +263,9 @@ bar is the system's, and a row there is only disabled.)
 ## Make it yours
 
 - **Themes & fonts**: open Settings and go to Appearance. Editora Light and Dark
-  are the default pair, with 26 more themes and five bundled fonts. See
-  [Themes & fonts](/docs/themes-fonts).
+  are the default pair. **System** follows your system's light or dark
+  setting, a High Contrast pair reads at 7:1 or better, and more themes and
+  five bundled fonts are in the pickers. See [Themes & fonts](/docs/themes-fonts).
 - **Keymap**: switch keymaps live in **Settings → Keymaps**, or rebind
   individual commands. See [Keymaps & keybindings](/docs/keymaps).
 - **Projects**: on by default. *Project: Open Folder…* (`C-x C-p` in the Emacs
@@ -262,11 +281,12 @@ network. Enable the ones you want in Settings:
 - **[Plugins](/docs/plugins)**.
 - **[AI assistance](/docs/ai)** and the **[MCP server](/docs/mcp)**.
 - **[Settings sync](/docs/settings-sync)**, to share snippets, abbreviations,
-  templates, and your dictionary between computers.
+  templates, your dictionary, and the shortcuts you changed between computers
+  (which keymap you use is not synced).
 
 **On, but dormant until their tool is installed** is the larger group:
 **[Git](/docs/git)**, **[GitHub](/docs/github)**,
-**[language servers](/docs/lsp)**, **[debugging](/docs/run-debug)**,
+**[language servers](/docs/lsp)**, **[debugging](/docs/debugging)**,
 **[Mermaid](/docs/markdown#mermaid-diagrams)**,
 **[diagrams](/docs/diagrams)**, and **[Typst](/docs/typst)** are enabled by
 default, and their buttons and panels appear once Editora finds the command they
