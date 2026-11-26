@@ -76,8 +76,8 @@ running, tests and debugging: [Java](/docs/java), [Kotlin](/docs/kotlin),
 [Go](/docs/go), [Rust](/docs/rust), [C & C++](/docs/c-cpp), [C#](/docs/csharp),
 [Ruby](/docs/ruby), [PHP](/docs/php), [Elixir](/docs/elixir),
 [Dart](/docs/dart), [Lua](/docs/lua), [Shell & Bash](/docs/shell),
-[PowerShell](/docs/powershell), [HTML, CSS & JSON](/docs/html-css-json),
-[XML & pom.xml](/docs/xml), [HTML](/docs/html), [Markdown](/docs/markdown) and
+[PowerShell](/docs/powershell), [HTML](/docs/html), [CSS & JSON](/docs/html-css-json),
+[XML & pom.xml](/docs/xml), [Markdown](/docs/markdown) and
 [Typst](/docs/typst). YAML, TOML, Dockerfile, SQL, Terraform and Astro have a
 language server too, described under
 [Servers without a page of their own](/docs/lsp#servers-without-a-page-of-their-own).

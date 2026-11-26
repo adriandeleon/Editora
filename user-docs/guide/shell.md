@@ -58,7 +58,7 @@ Document** changes nothing. Editora shows whether each one is there:
 - The **Bash / Shell** card in **Settings → LSP** has a command field and a
   Detected line for each, for example *ShellCheck: found (/usr/bin/shellcheck)*
   or *shfmt: not found*.
-- [Doctor](/docs/troubleshooting#doctor) has a **ShellCheck** and an **shfmt**
+- [Doctor](/docs/doctor) has a **ShellCheck** and an **shfmt**
   row under the Bash / Shell server.
 - Opening a script when the server is installed but ShellCheck or shfmt is not
   shows a banner that says what is lost (*ShellCheck and shfmt aren't
@@ -182,9 +182,9 @@ path. Put shared settings in the root
 `# shellcheck` directives) in the script itself for anything that applies to
 one folder or file.
 
-## Running scripts
+## Running
 
-A shell script runs under the interpreter its **shebang** names, as `./script`
+<a id="running-scripts"></a>A shell script runs under the interpreter its **shebang** names, as `./script`
 would in a terminal, with the shebang's options:
 
 | First line | Runs |
@@ -229,7 +229,7 @@ script of another shell, such as zsh or fish, can't be; use
 A Bash script is debugged with bashdb, through Bash Debug (vscode-bash-debug),
 the adapter of VS Code's Bash Debug extension. **Debug: Start / Continue**
 (`debug.start`: `C-c C-d d` in the Emacs keymap, F5 in the VS Code, CUA and
-Sublime Text keymaps) or **Debug File** runs the script under the bashdb that
+Sublime Text keymaps, Shift+F9 (⌃D on macOS) in the IntelliJ IDEA keymap) or **Debug File** runs the script under the bashdb that
 Bash Debug ships, in the script's folder, with the arguments set by **File: Run
 with Arguments…**, and runs to your first breakpoint. Step Over, Step Into and
 Step Out go line by line, and the script's output reaches the Debug console.

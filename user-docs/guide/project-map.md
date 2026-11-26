@@ -337,7 +337,7 @@ each and do not count toward the eight.
 The Map window has its own search field, **Search the map…**, at the top (the
 Project tool window's field filters the tree only). `Ctrl+F` (`⌘F` on macOS,
 `C-s` in Emacs) in the Map window jumps to it. The search covers **the whole
-project**, however large or deep, and answers as you type.
+project**, up to 200,000 files and 64 levels deep, and answers as you type.
 
 - Type a **name** to find files and folders. A folder match is selected and
   opened.
@@ -612,8 +612,8 @@ does; each follows its editor setting.
   to the declaration before or after it. Next Problem and Previous Problem
   (`lsp.nextProblem`, `lsp.previousProblem`) go through the card's problems.
   When the caret rests on a name, its other uses in the card are highlighted.
-- **Copying.** Your keymap's Copy and Select All keys (`M-w` in Emacs, or a key
-  of your own) work in a card. **Copy** in the card's menu copies the
+- **Copying.** Your keymap's Copy and Select All keys (`M-w` and `C-x h` in
+  Emacs, Ctrl+C and Ctrl+A (⌘C, ⌘A) in the others) work in a card. **Copy** in the card's menu copies the
   selection, or the whole text (**Copy All**) when nothing is selected.
 
 **The card's right-click menu** has, in order:

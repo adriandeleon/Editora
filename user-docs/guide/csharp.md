@@ -33,7 +33,7 @@ window. Debugging a test is described under [Debugging](#debugging).
 
 C# is debugged with [netcoredbg](https://github.com/Samsung/netcoredbg), the
 open-source .NET debugger. **Debug: Start / Continue** (`debug.start`: `C-c C-d d` in the Emacs
-keymap, F5 in the VS Code, CUA and Sublime Text keymaps) or
+keymap, F5 in the VS Code, CUA and Sublime Text keymaps, Shift+F9 (⌃D on macOS) in the IntelliJ IDEA keymap) or
 **Debug File** in the editor's right-click menu builds the program with
 `dotnet build` in the Debug console, after Editora saves the project's edited
 C# files, then debugs it:

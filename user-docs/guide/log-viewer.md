@@ -1,8 +1,8 @@
 ---
 title: Server log viewer
 description: Log files with severity colors, a Follow button that survives rotation, huge logs opened at the tail, and live filters by level and text.
-category: Workspace
-order: 6
+category: Tools
+order: 2
 ---
 
 Open a log file and Editora switches into a dedicated log mode built for

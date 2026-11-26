@@ -1,31 +1,35 @@
 ---
-title: "HTML, CSS & JSON"
-description: "The HTML, CSS and JSON language servers from vscode-langservers-extracted."
+title: "CSS & JSON"
+description: "The CSS and JSON language servers from vscode-langservers-extracted, installed with the HTML server."
 category: Languages
 order: 9
 ---
 
-HTML, CSS and JSON share one set of language servers. Editing HTML itself (tag completion, the preview, Emmet) is on the [HTML](/docs/html) page.
+CSS and JSON files get code intelligence from the CSS and JSON language
+servers. HTML, its language server and its live preview are on the
+[HTML](/docs/html) page.
 
 ## Language servers
 
-HTML, CSS and JSON files use **vscode-html-language-server**,
-**vscode-css-language-server** and **vscode-json-language-server**, the servers
-taken out of VS Code and published together in the npm package
+CSS and JSON files use **vscode-css-language-server** and
+**vscode-json-language-server**, two of the servers taken out of VS Code and
+published together, with the HTML server, in the npm package
 **vscode-langservers-extracted**. They are Node.js programs, so they need
-**Node.js**. If language servers are off, the first HTML or CSS file a window
-opens asks **Turn on HTML code intelligence?** (or CSS), with **Turn on** and
-**Not now**, like the [Python offer](/docs/python#language-server).
+**Node.js**. If language servers are off, the first CSS file a window opens
+asks **Turn on CSS code intelligence?**, with **Turn on** and **Not now**, like
+the [Python offer](/docs/python#language-server).
 
-One install gives all three servers. **Install** on the banner, **Install…**
-on any of the three cards in Settings → LSP, Doctor's **Install…** or
-**Install: Language Server…** puts vscode-langservers-extracted **4.10.0** into
-Editora's own folder; where it goes, which npm and Node.js it uses, and how an
-older copy is updated are under
+One install gives the CSS, JSON and HTML servers. **Install** on the banner,
+**Install…** on the CSS, JSON or HTML card in Settings → LSP, Doctor's
+**Install…** or **Install: Language Server…** puts vscode-langservers-extracted
+**4.10.0** into Editora's own folder; where it goes, which npm and Node.js it
+uses, and how an older copy is updated are under
 [Installing it](/docs/html#installing-it) on the HTML page. The CSS and JSON
 servers run on the same Node.js as the HTML server: the one chosen on the
 **Node.js** card under **Settings → Build Tools**, else `node` on your `PATH`,
 never a project's `.nvmrc`.
+
+The CSS server draws a small swatch before each colour.
 
 **JSON with comments.** These files allow comments and trailing commas:
 `tsconfig.json` and `jsconfig.json` (and their `tsconfig.*.json` variants),
@@ -40,12 +44,3 @@ or `"scripts"` that is not an object, and completes and explains the keys and
 values inside `compilerOptions`. The tsconfig schema covers `tsconfig.json`,
 `tsconfig.*.json`, `tsconfig-*.json`, `jsconfig.json` and `jsconfig.*.json`.
 Unknown top-level keys in `package.json` are allowed, since tools add their own.
-
-What the HTML server adds, its settings on the HTML card (wrap column,
-attribute wrapping, content kept as written, checking embedded scripts and
-styles), the `html` object a project can commit, and what
-it does not do (markup validation, Emmet) are on the
-[HTML](/docs/html#the-html-language-server) page. The quotes an attribute gets
-after its `=` are chosen in Settings → Editor, not on the card (see
-[Attribute quotes](/docs/html#editing-tags)). The HTML and CSS servers also
-draw a small swatch before each colour.

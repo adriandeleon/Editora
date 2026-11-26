@@ -1,8 +1,8 @@
 ---
 title: Print & PDF export
 description: Print or export any file, a selection, a rendered preview, a CSV table, an image, or the Project Map, with a print preview and page settings.
-category: Workspace
-order: 8
+category: Tools
+order: 4
 ---
 
 Editora prints and exports to PDF in two forms: the **text** of a file, as you
@@ -29,8 +29,6 @@ The **Emacs key** column is the default Emacs keymap; **Other keymaps** gives
 the chords the CUA, Sublime Text, VS Code and IntelliJ IDEA keymaps bind (— where
 none does). On macOS those mostly use ⌘ for Ctrl; the
 [keybindings reference](/keybindings) lists every keymap.
-
-The CUA keymap binds **Print…** to `Ctrl+P`.
 
 **Print…** for the current file is in the **File** menu, and **Export to PDF…**
 under **File ▸ Export** with the preview's export formats (Simple UI mode keeps

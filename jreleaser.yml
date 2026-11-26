@@ -8,7 +8,8 @@ project:
     - Adrian De Leon
   license: MIT
   links:
-    homepage: https://github.com/adriandeleon/Editora
+    # The Homebrew cask's and the winget manifest's homepage: the website, not the repository.
+    homepage: https://editora-project.dev
   inceptionYear: "2026"
   # Read from the project, not from the packager: tags set under winget: are not picked up.
   tags:
@@ -132,7 +133,8 @@ distributions:
 
 # Attach every other artifact gathered from the build matrix (downloaded under ./artifacts): native installers
 # (the Intel .dmg, .deb, .rpm; the Apple Silicon .dmg and the .msi come from the distributions above), the portable Linux builds (.AppImage single-file + .tar.gz extract-and-install),
-# experimental Native Image archives, and per-platform runnable fat jars. All are named
+# the experimental Native Image archives (only while release.yml's native-experimental job is on; it is
+# disabled, so that glob matches nothing), and per-platform runnable fat jars. All are named
 # per target in CI, so names are unique across OS/arch. Each Linux download has its OpenPGP signature
 # beside it (release.yml, sign-linux), and editora-signing-key.asc, the key that made them, is attached
 # too.

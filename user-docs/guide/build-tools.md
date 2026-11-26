@@ -94,7 +94,7 @@ runs sbt, Mill, Scala CLI and Scala's Run and Debug, the
 [Maven `pom.xml` server](/docs/xml#pomxml-and-the-maven-server).
 A Java file without a build tool (a loose file, or a project folder with no
 `pom.xml` or Gradle build) runs and debugs on it too, and it is the default JDK
-of the [Java language server](/docs/java#the-java-server-and-your-project): the
+of the [Java language server](/docs/java#language-server): the
 JDK it builds those files for, shows JDK sources from, and runs Gradle imports
 on. With **System default**, they use the `java` on your `PATH`. A changed
 Default JDK reaches a running language server at once, with no restart.
@@ -157,7 +157,7 @@ Command Palette under **Java Toolchain**, and in **Tools ▸ Java Toolchain**.
 `PATH`), shows whether it was found, and links to **jkit Settings…** and
 **Check Setup**. jkit's own settings (the default vendors, switching on `cd`)
 live in jkit's `~/.jkit/config.toml`; a value set by an environment variable
-wins there and is shown but cannot be changed. [Doctor](/docs/troubleshooting#doctor)'s
+wins there and is shown but cannot be changed. [Doctor](/docs/doctor)'s
 Build Tools section has a jkit row with the first problem `jkit doctor` finds.
 Editora needs jkit 0.4.0 or newer for its settings and **Update jkit**; an older
 jkit says so.
@@ -188,7 +188,7 @@ the override, or else the tool's own command. For example *mvn: found
 the line shows that it is not found. Below it, **Project** says whether the
 active file's project uses the tool and, for Maven and Gradle, which program a
 build of it really runs: *./mvnw (trusted)*, *./mvnw (not trusted yet)*, *mvn
-on PATH*, or the override. [Doctor](/docs/troubleshooting#doctor)'s Build Tools
+on PATH*, or the override. [Doctor](/docs/doctor)'s Build Tools
 section says the same. The command row is greyed while that tool is turned off.
 
 The same page has **Build before Run and Debug** (on): in a Maven or Gradle
@@ -228,7 +228,7 @@ The three tools run `clojure`, `lein` and `bb` from your `PATH`, or the command
 override in their Settings cards. Their test tasks stream to the Output console;
 the Test Results window does not read Clojure test runners' output. Running and
 debugging a single Clojure file is covered in
-[Clojure files](/docs/clojure#running-clojure-files).
+[Clojure files](/docs/clojure#running).
 
 ## Maven
 
@@ -521,7 +521,7 @@ above the npm card, has the **Node.js** field: the Node.js for Run, npm scripts,
 Debug, the language servers and HTTP scripts. Left blank, Editora uses `node`
 on your `PATH`. A project's `.nvmrc` or `.node-version` wins over the field
 when nvm has that version (see
-[Which Node.js runs](/docs/javascript-typescript#running-nodejs-scripts)). The card can be edited
+[Which Node.js runs](/docs/javascript-typescript#running)). The card can be edited
 while JavaScript debugging is turned off.
 
 The npm card on the same page names the manager
@@ -552,7 +552,7 @@ the colours the script prints and the Node.js it runs under, such as
 configuration, start with the command line that runs, and the status bar names
 the manager that ran, for example *pnpm finished successfully*.
 
-Scripts use the same Node.js as [Run](/docs/javascript-typescript#running-nodejs-scripts): that
+Scripts use the same Node.js as [Run](/docs/javascript-typescript#running): that
 Node.js's folder goes first on the script's `PATH`, and the npm beside it runs.
 So the `node` that a script's own commands call is the same Node.js too. Stop
 first sends Ctrl+C (SIGINT), so the script and its child processes can clean
@@ -700,7 +700,7 @@ project root has a `pyproject.toml`, `setup.py`, `setup.cfg`, `pytest.ini`,
 `tox.ini` or `conftest.py`.
 
 The tests run with the same Python as Run (see
-[Python scripts](/docs/python#running-scripts)), with the project root and its
+[Python scripts](/docs/python#running)), with the project root and its
 `src/` folder on `PYTHONPATH`:
 
 - **With pytest** installed for that Python, Editora runs `python -m pytest`

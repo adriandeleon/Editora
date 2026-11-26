@@ -1,8 +1,8 @@
 ---
 title: CSV & TSV
 description: Rainbow columns, a field readout, and an editable CSV Grid preview with sort, filter, and export, plus align/shrink and Markdown-table interop.
-category: Workspace
-order: 7
+category: Tools
+order: 3
 ---
 
 `.csv` and `.tsv` files open with spreadsheet-style tooling on top of proper
