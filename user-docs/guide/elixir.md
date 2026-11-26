@@ -67,7 +67,9 @@ Mix project (a folder with a `mix.exs`):
 Breakpoints stop in your project's modules and tests, with their variables.
 ElixirLS runs Mix tasks only, so a script outside a Mix project isn't debugged:
 Editora says so, and *Run File* runs it with `elixir`. Debug asks the same
-trust question as Run File.
+trust question as Run File. The first debug run of a project compiles it and
+its dependencies first, which can take a minute or more; the compiler's output
+shows in the Debug console meanwhile.
 
 ## Installing ElixirLS
 

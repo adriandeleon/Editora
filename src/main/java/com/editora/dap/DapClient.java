@@ -966,14 +966,51 @@ public final class DapClient implements IDebugProtocolClient {
         return future.orTimeout(Math.max(1, timeout.toMillis()), TimeUnit.MILLISECONDS);
     }
 
-    /** Sends the {@code launch} request (body from {@link LaunchConfig#launch}). */
+    /** Sends the {@code launch} request (body from {@link LaunchConfig#launch}), waited for {@link #launchWait}. */
     public CompletableFuture<Void> launch(Map<String, Object> args) {
-        return timed(server().launch(launchDecorator.apply(args)));
+        return launchTimed(server().launch(launchDecorator.apply(args)));
     }
 
-    /** Sends the {@code attach} request (body from {@link LaunchConfig#attach}). */
+    /** Sends the {@code attach} request (body from {@link LaunchConfig#attach}), waited for {@link #launchWait}. */
     public CompletableFuture<Void> attach(Map<String, Object> args) {
-        return timed(server().attach(launchDecorator.apply(args)));
+        return launchTimed(server().attach(launchDecorator.apply(args)));
+    }
+
+    /**
+     * How long a {@code launch} or {@code attach} is waited for. Most adapters answer at once; ElixirLS answers only
+     * once it has compiled the project and interpreted its modules, which for a fresh Phoenix app is well past
+     * {@link #REQUEST_TIMEOUT} (see {@link ElixirLaunch#LAUNCH_WAIT}).
+     */
+    private volatile Duration launchWait = REQUEST_TIMEOUT;
+
+    /** Sets {@link #launchWait}. */
+    public void setLaunchWait(@Nullable Duration wait) {
+        this.launchWait = wait == null ? REQUEST_TIMEOUT : wait;
+    }
+
+    /** {@link #launchWait}. */
+    public Duration launchWait() {
+        return launchWait;
+    }
+
+    /** A request not answered within {@code seconds}: for a message that names the wait that ran out. */
+    public static final class NoAnswer extends java.util.concurrent.TimeoutException {
+        private static final long serialVersionUID = 1L;
+
+        /** The wait that ran out, in seconds. */
+        public final long seconds;
+
+        NoAnswer(long seconds) {
+            super("no answer within " + seconds + " s");
+            this.seconds = seconds;
+        }
+    }
+
+    private CompletableFuture<Void> launchTimed(CompletableFuture<Void> future) {
+        Duration wait = launchWait;
+        return withTimeout(future, wait)
+                .exceptionallyCompose(e -> CompletableFuture.failedFuture(
+                        e instanceof java.util.concurrent.TimeoutException ? new NoAnswer(wait.toSeconds()) : e));
     }
 
     /** How long an {@code evaluate} is waited for: past the debugger's own time limit ({@link EvaluationLimits#wait}). */

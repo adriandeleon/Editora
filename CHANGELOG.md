@@ -36,6 +36,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **F5 in an Elixir project that has not been compiled yet no longer fails after 30 s.** ElixirLS compiles the project
+  and its dependencies before it starts the program, and Editora gave up waiting with "The debugger did not answer
+  within 30 s." — on a fresh Phoenix app, every first F5. It now waits up to 10 minutes while the compiler's output
+  scrolls in the Debug console; Stop ends the wait.
 - **An agent that refuses a session is stopped.** When an agent answered a new chat or a resumed one with an error
   (not logged in, an unknown session), its process was left running, even after the window closed.
 - **Windows fixes found by running the whole test suite there.** A terminal's `file:///C:/…` link (OSC 8, `ls
