@@ -249,15 +249,19 @@ jobs:
             **/pom.xml
             .mvn/maven.config
 
-      # As in the pure lane: dump at 23 minutes, stop the step at 26, keep the dump as an artifact.
+      # As in the pure lane, with one more stop below the step's: the dump at 20 minutes, and Surefire ends its
+      # test JVM at 21 (`-Dsurefire.timeout`). On the first run here a hung test JVM outlived the step's
+      # 26-minute limit (the step could not be stopped while it held the output), the job ran into its own and
+      # was cancelled, and GitHub kept no log. Surefire's own timeout fails the build normally instead, with
+      # the class it was in, and the steps below still run.
       - name: Test (windows-fx subset)
         timeout-minutes: 26
         shell: bash
         run: |
-          scripts/dump-stuck-jvms.sh 1380 target-jvm-dumps.txt </dev/null >/dev/null 2>&1 &
+          scripts/dump-stuck-jvms.sh 1200 target-jvm-dumps.txt </dev/null >/dev/null 2>&1 &
           dumper=$!
           trap 'kill "$dumper" 2>/dev/null || true' EXIT
-          ./mvnw -B --no-transfer-progress -Dgroups=windows-fx -Djacoco.skip=true -Dsurefire.rerunFailingTestsCount=2 test
+          ./mvnw -B --no-transfer-progress -Dgroups=windows-fx -Djacoco.skip=true -Dsurefire.rerunFailingTestsCount=2 -Dsurefire.timeout=1260 test
 
       - name: Thread dumps of a hung test run
         if: always()
