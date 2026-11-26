@@ -17,7 +17,7 @@ ElixirLS](#installing-elixirls).
 
 ## Running
 
-*Run File* (`file.run`, `C-c r` in the Emacs keymap) in a Mix project (the
+*Run File* (`file.run`: `C-c r` in the Emacs keymap, Ctrl+Shift+B (⌘⇧B on macOS) in VS Code) in a Mix project (the
 nearest folder with a `mix.exs`) runs, in the project's folder:
 
 - a test file (`…_test.exs`): `mix test` on it;
@@ -43,7 +43,7 @@ described under [Debugging](#debugging).
 Elixir is debugged with ElixirLS (the debugger of VS Code's ElixirLS
 extension), which runs a Mix task with your project's modules under Erlang's
 debugger. **Debug: Start / Continue** (`debug.start`: `C-c C-d d` in the Emacs
-keymap, F5 in the VS Code, CUA and Sublime Text keymaps) or **Debug File** in a
+keymap, F5 in the VS Code, CUA and Sublime Text keymaps, Shift+F9 (⌃D on macOS) in the IntelliJ IDEA keymap) or **Debug File** in a
 Mix project (a folder with a `mix.exs`):
 
 - on a test file (`…_test.exs`) runs `mix test` on it. **Debug Test at Caret**

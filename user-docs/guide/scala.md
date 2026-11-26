@@ -31,11 +31,11 @@ references, rename, the outline and formatting (with a `.scalafmt.conf`). When
 Metals asks for a value or a choice of its own, a text field or a picker opens.
 
 A `build.sbt`, `build.mill`, `build.sc` or `project.scala` at a project's root
-makes [Doctor](/docs/troubleshooting#doctor) expect Metals.
+makes [Doctor](/docs/doctor) expect Metals.
 
-## Running Scala files
+## Running
 
-How a Scala file runs depends on the build it belongs to:
+<a id="running-scala-files"></a>How a Scala file runs depends on the build it belongs to:
 
 - A file of an **sbt** build (a `build.sbt` above it) runs its main class
   through sbt, in the sbt console of the [Output window](/docs/build-tools):
@@ -65,6 +65,14 @@ passes as `JAVA_HOME`. Editora finds it as `scala-cli` on your `PATH`, then
 `scalacli` and `scala`. When there is none, Run says Scala CLI is not installed
 instead of starting anything. The first run of a Scala version downloads its
 compiler, so it takes longer.
+
+## Tests
+
+Scala tests run with the build's own test task from its
+[tasks window](/docs/build-tools): `test` in sbt, `__.test` in Mill, `test` in
+Scala CLI. Their output stays in the Output console, since the
+[Test Results](/docs/build-tools#test-runner) window does not read it yet, and a
+Scala test file has no ▶ per test.
 
 ## Debugging
 

@@ -431,11 +431,11 @@ chosen by an earlier response or a script.
 **Settings → Web** turns scripts off, picks the Node.js to use and sets the
 timeout. Left empty, scripts run on the same Node.js as Run: a project's
 `.nvmrc` or `.node-version`, then the **Node.js** setting, then `node` on the
-`PATH` (see [Which Node.js runs](/docs/javascript-typescript#running-nodejs-scripts)). A Detected line
+`PATH` (see [Which Node.js runs](/docs/javascript-typescript#running)). A Detected line
 under **Node.js for HTTP scripts** says whether that node is there (*node: found
 (/usr/bin/node)* or *node: not found*), and the script rows are greyed out while
 the HTTP client or its scripts are off. The
-[Doctor](/docs/troubleshooting#doctor) shows which Node.js runs them and whether the permission
+[Doctor](/docs/doctor) shows which Node.js runs them and whether the permission
 model is on.
 
 ## Running and the response

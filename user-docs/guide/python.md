@@ -68,7 +68,7 @@ its imports resolve within seconds, with no restart.
 A `pyrightconfig.json` or a `[tool.pyright]` section with `venvPath` and `venv`
 still wins inside Pyright, and settings such as `pythonVersion` or
 `typeCheckingMode` belong there too.
-[Doctor](/docs/troubleshooting#doctor) shows the same interpreter in its
+[Doctor](/docs/doctor) shows the same interpreter in its
 **Python interpreter** row, whose **Settings…** opens the Python card.
 
 ### Python sub-projects
@@ -174,9 +174,9 @@ off by default, runs after an explicit save only (never after auto-save), and
 uses Ruff or Black even when a Python server that formats is running. With no
 formatter found, a save says so in the status bar.
 
-## Running scripts
+## Running
 
-Run, Python [run configurations](/docs/run-debug#run-configurations), the
+<a id="running-scripts"></a>Run, Python [run configurations](/docs/run-debug#run-configurations), the
 [test runner](/docs/build-tools#test-runner) and the debugger all use the same
 Python. The status-bar item on a Python file shows which one and why, for
 example `Python 3.13.5 (.venv)`; click it, or use **Python: Select
@@ -227,7 +227,7 @@ and Run on it runs its tests: see [Test runner](/docs/build-tools#test-runner).
 ## Web apps
 
 Run File and Debug File on the file that starts a Django, Flask or FastAPI app
-serve the app, under the Python that [Run](#running-scripts) uses:
+serve the app, under the Python that [Run](#running) uses:
 
 | File | Runs |
 | --- | --- |
@@ -266,9 +266,9 @@ described at the end of [Debugging](#debugging).
 
 Debug a Python file with **Debug: Start / Continue** (`debug.start`:
 `C-c C-d d` in the Emacs keymap, F5 in the VS Code, CUA and Sublime Text
-keymaps), or with
+keymaps, Shift+F9 (⌃D on macOS) in the IntelliJ IDEA keymap), or with
 **Debug File** in the editor's right-click menu, next to **Run File**. The
-program runs the way [Run](#running-scripts) runs it: under the same
+program runs the way [Run](#running) runs it: under the same
 interpreter (the project's virtual environment, the one picked for the project,
 or the shebang's), in the script's own folder, with the project root and its
 `src/` folder at the front of `PYTHONPATH`, and with the arguments set by

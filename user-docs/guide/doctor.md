@@ -23,7 +23,7 @@ installed, is it the version I think, and is Editora looking at the right one" i
 one pass. **Copy Report** puts the whole report on the clipboard, ready to paste
 into a bug report.
 
-![The Doctor tab: a summary line of 1 warning, 23 OK, 9 not installed and 3 off, a Needs Attention section with the GitHub CLI not signed in, then Version Control, Search and Encryption folded to one line and the Preview & Diagrams rows](/screenshots/docs/doctor.png "The Doctor puts what needs attention first and folds the sections where everything is OK.")
+![The Doctor tab scrolled to Build Tools: Maven, npm, Cargo, the Go toolchain, Clojure CLI, Leiningen and jkit 0.4.0 OK and five more not installed; AI & Agents turned off with Turn On; the other sections folded to one OK line each](/screenshots/docs/doctor.png "The Doctor puts what needs attention first and folds the sections where everything is OK.")
 
 ## Reading the report
 
@@ -111,6 +111,7 @@ Editora's TypeScript. See
 
 ## ESLint, Prettier and Biome
 
+For a project with a `package.json` at its root, **Formatting & Linting** has
 an **ESLint**, a **Prettier** and a **Biome** row. Each reads the tool from
 the project's own `node_modules` and its version from the tool's
 `package.json`; nothing is run.

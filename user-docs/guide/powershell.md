@@ -10,9 +10,9 @@ PowerShell gets code intelligence and debugging from PowerShell Editor Services
 (PowerShell 7). Editora doesn't install either; see
 [Installing PSES](#installing-pses).
 
-## Code intelligence
+## Language server
 
-PSES is PowerShell's [language server](/docs/lsp): diagnostics from
+<a id="code-intelligence"></a>PSES is PowerShell's [language server](/docs/lsp): diagnostics from
 PSScriptAnalyzer (an alias in a script, an unused variable), completion,
 hover, go to definition, references, rename, formatting, document symbols and
 folding. A blank **PowerShell server command** under **Settings → LSP** starts
@@ -21,15 +21,16 @@ start it another way.
 
 ## Running
 
-A `.ps1` script has a ▶ on its first line. **Run File** (`file.run`, `C-c r`
-in the Emacs keymap) runs it with `pwsh -NoLogo -NoProfile -File`, in its
-folder, with the arguments set by **File: Run with Arguments…**. Without `pwsh`, Windows PowerShell's
+A `.ps1` script has a ▶ on its first line. **Run File** (`file.run`: `C-c r`
+in the Emacs keymap, Ctrl+Shift+B (⌘⇧B on macOS) in VS Code) runs it with
+`pwsh -NoLogo -NoProfile -File`, in its folder, with the arguments set by
+**File: Run with Arguments…**. On Windows without `pwsh`, Windows PowerShell's
 `powershell` runs it. A module (`.psm1`) or data file (`.psd1`) has no ▶.
 
 ## Debugging
 
 **Debug: Start / Continue** (`debug.start`: `C-c C-d d` in the Emacs keymap,
-F5 in the VS Code, CUA and Sublime Text keymaps) on a `.ps1` debugs it on PSES,
+F5 in the VS Code, CUA and Sublime Text keymaps, Shift+F9 (⌃D on macOS) in the IntelliJ IDEA keymap) on a `.ps1` debugs it on PSES,
 in its folder, with its arguments:
 
 - **Breakpoints**, with conditions, hit counts and log messages, and

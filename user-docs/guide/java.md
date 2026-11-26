@@ -7,7 +7,9 @@ order: 10
 
 Java gets code intelligence from Eclipse JDT LS (`jdtls`), runs a compact source file, a single-file program or any main class from the gutter, and debugs with the Java debug adapter. What every language shares is on the [language servers](/docs/lsp), [running](/docs/run-debug) and [debugging](/docs/debugging) pages; this page is what is particular to Java.
 
-## The Java server and your project
+## Language server
+
+<a id="the-java-server-and-your-project"></a>
 
 - **Untrusted folders.** In a folder you have not trusted, jdtls starts
   without the project's Maven or Gradle build, and the file says so with
@@ -100,7 +102,7 @@ Java gets code intelligence from Eclipse JDT LS (`jdtls`), runs a compact source
   classpath it worked out, then imports the project again: the cure for a stale
   or corrupt index.
 
-## Java refactorings that ask a question
+### Java refactorings that ask a question
 
 Three refactorings in the Code Actions menu need more than the caret position,
 so each one asks before it runs. They need the Java language server.
@@ -142,7 +144,7 @@ changes. When Change Signature or Move changes other files, they are listed
 first, ticked, the way a [rename](/docs/lsp#rename-preview) is, and a file you untick is
 left alone.
 
-## Java-only assists
+### Java-only assists
 
 **Pasted code imports itself.** Paste a snippet into a Java file and the server
 is asked which imports the pasted text needs; they are added for you, and only
@@ -204,7 +206,7 @@ Imports and Format.
 
 ## Running
 
-**Run File** (`file.run`, `C-c r` in the Emacs keymap) runs a compact source
+**Run File** (`file.run`: `C-c r` in the Emacs keymap, Ctrl+Shift+B (⌘⇧B on macOS) in VS Code) runs a compact source
 file, a single-file program (`java File.java`) or a `java --source` shebang
 script. In a Maven or Gradle project, every `main` gets a ▶ in the gutter and
 runs with the project's classpath. See

@@ -13,7 +13,9 @@ Editora debugs [**Java**](/docs/java#debugging), [**Python**](/docs/python#debug
 [**C#**](/docs/csharp#debugging), [**Ruby**](/docs/ruby#debugging),
 [**PHP**](/docs/php#debugging), [**Bash**](/docs/shell#debugging),
 [**Elixir**](/docs/elixir#debugging), [**PowerShell**](/docs/powershell#debugging),
-[**Dart and Flutter**](/docs/dart#debugging) and [**Lua**](/docs/lua#debugging) through the Debug Adapter Protocol, with an IntelliJ-style Debug tool window (`M-g d`). Debugging
+[**Dart and Flutter**](/docs/dart#debugging) and [**Lua**](/docs/lua#debugging) through the Debug Adapter Protocol, with an IntelliJ-style Debug tool window (`M-g d` in Emacs,
+Ctrl+Shift+Y in CUA and Sublime Text, Ctrl+Shift+D in VS Code, Alt+5 in
+IntelliJ IDEA; ⌘ for Ctrl, and ⌘5 in IntelliJ IDEA, on macOS). Debugging
 is **on by default**, and each language's debugger starts once its adapter is
 found ([Installing adapters](#installing-adapters)); the switch is **Enable
 debugging (DAP)** in **Settings → Debugging**. A project's
@@ -87,9 +89,7 @@ or **Debug: Find in Console** (`debug.findInConsole`) from anywhere, opens a
 find bar over it that searches as you type: Enter goes to the next match,
 Shift+Enter to the previous one, and running the command again goes to the
 next match too. It keeps the last 200,000 characters;
-when older output was dropped, the Debug window's state line says so. **Restart** is disabled for a debugger attached to a test or build
-run (its tooltip says why); a session started with *Debug → Attach* can still be
-restarted.
+when older output was dropped, the Debug window's state line says so.
 
 A spinner beside the Debug window's status turns while the before-launch build,
 the session start, or the program is running, and stops while the program is
@@ -97,6 +97,9 @@ paused (at a breakpoint, a step, or Pause). Pause works only on a running
 program, so it is greyed out while the program is paused, starting or being
 built. In Java, Pause stops every thread of the program, and Continue resumes
 them all (see [Threads in a Java program](/docs/java#threads-in-a-java-program)).
+**Restart** is disabled for a debugger attached to a test or build run (its
+tooltip says why); a session started with *Debug → Attach* can still be
+restarted.
 
 ### Which runtime a session runs under
 
@@ -202,7 +205,7 @@ key under Settings → Keymaps:
 | Stop every session ([Several sessions](#several-sessions)) | `debug.stopAll` | (palette) | — |
 | Restart | `debug.restart` | `C-c C-d r` | CUA, Sublime Text, VS Code: Ctrl+Shift+F5; IntelliJ: Ctrl+F5 |
 | Step over | `debug.stepOver` | `C-c C-d n` | CUA, Sublime Text, VS Code: F10; IntelliJ: F8 |
-| Step into | `debug.stepInto` | `C-c C-d i` | VS Code: F11; IntelliJ: F7 |
+| Step into | `debug.stepInto` | `C-c C-d i` | VS Code: F11; CUA, Sublime Text: F11 while paused (full screen otherwise); IntelliJ: F7 |
 | Step out | `debug.stepOut` | `C-c C-d o` | CUA, Sublime Text, VS Code: Shift+F11; IntelliJ: Shift+F8 |
 | Step over / into one machine instruction ([Disassembly](#disassembly-and-memory)) | `debug.stepOverInstruction`, `debug.stepIntoInstruction` | (palette) | — |
 | Run to cursor | `debug.runToCursor` | `C-c C-d u` | IntelliJ: Alt+F9 |
@@ -256,17 +259,17 @@ key under Settings → Keymaps:
 | List the stops of the session | `debug.showHistory` | (palette) | — |
 | Show the [Disassembly or Memory view](#disassembly-and-memory) | `debug.showDisassembly`, `debug.showMemory` | (palette) | — |
 | List the program's [loaded sources or modules](#loaded-sources-and-modules) | `debug.loadedSources`, `debug.modules` | (palette) | — |
-| Turn a debugger on or off: any language's but Java's, or Firefox's | `debug.toggleAdapter` | (palette) | — |
+| Turn any language's debugger on or off, except Java's and Firefox's | `debug.toggleAdapter` | (palette) | — |
 | Set an adapter's path | `debug.setAdapterPath` | (palette) | — |
 | Change a setting of **Settings → Debugging** | `debug.changeSetting` | (palette) | — |
 
 The **Emacs key** column is the default Emacs keymap; **Other keymaps** gives
 the chords the CUA, Sublime Text, VS Code and IntelliJ IDEA keymaps bind (— where
 none does). On macOS those mostly use ⌘ for Ctrl; the
-[keybindings reference](/keybindings) lists every keymap.
+[keybindings reference](/keybindings) lists every keymap, and
+[Debugger keys](/docs/keymaps#debugger-keys) compares them.
 
-The keys are the Emacs keymap's; the other keymaps' keys are listed under
-[Debugger keys](/docs/keymaps#debugger-keys). The step commands are also
+The step commands are also
 buttons in the Debug window, and most debugger actions are in the **Run** menu.
 Its top level has Start / Continue, Debug Main Class, Attach, Stop, Stop All
 and Restart. The rest is in four submenus:
@@ -359,7 +362,7 @@ listed first. With no `launch.json`, the status bar says so.
 | `go` | Delve, with `exec` for a program you built yourself; `mode: remote` isn't supported |
 | `debugpy`, `python` | debugpy; an attach connects to its `connect` address |
 | `node`, `pwa-node` | vscode-js-debug; an attach connects to its `address` and `port` |
-| `java` | the Java debugger: `mainClass`, `projectName`, `args`, `vmArgs`, `cwd` and `env` |
+| `java` | the Java debugger: `mainClass`, `projectName`, `args`, `vmArgs`, `cwd` and `env`; it can't attach (use [Debug: Attach](#commands-and-menus)) |
 | `coreclr` | netcoredbg, `program` being the built assembly; attaches by `processId` |
 | `rdbg` | rdbg, with `useBundler` for `bundle exec`; an attach connects to a local `debugPort` |
 | `php` | PHP Debug; without a `program`, it listens for Xdebug |
@@ -371,8 +374,9 @@ listed first. With no `launch.json`, the status bar says so.
 | `mix_task` | [ElixirLS](/docs/elixir#debugging), which runs a Mix `task` with its `taskArgs`; it can't attach |
 
 A [debug adapter of your own](#debug-adapters-of-your-own) is used by its
-`type` too. Any other type, such as C# Dev Kit's `dotnet`, is refused with a
-message.
+`type` too. Any other type, such as C# Dev Kit's `dotnet` or the Dart
+extension's `dart`, is refused with a message; Dart and Flutter start from
+[Start / Continue](/docs/dart#debugging) instead.
 
 The file is read as VS Code reads it: comments and trailing commas are allowed,
 and a configuration's `linux`, `osx` and `windows` parts apply on that system.
@@ -701,21 +705,6 @@ Editora keeps the choice for each project, so a muted project is still muted
 when you open it again. **Debug: Enable / Disable Breakpoint** (`C-c C-d t`)
 switches the breakpoint on the caret line. These commands are in
 **Run ▸ Breakpoints**.
-
-**Debug: Break on Caught Exceptions** stops wherever an exception is thrown,
-even one the program catches. **Debug: Break on Uncaught Exceptions** stops on
-an exception that nothing catches. Both are in Run ▸ Breakpoints, checked when on,
-and in the menu of the ⚠ button in the Debug window's toolbar. While either is
-on, the ⚠ is drawn in the accent colour, and its tooltip says which are on.
-They act on the running session's language, or else on the active file's, and
-Editora keeps your choice for each project. To stop only on some Java exception
-classes, list them, separated by commas, in **Exception breakpoints: only these
-classes** on the Java card of **Settings → Debugging** (for example
-java.lang.IllegalStateException). Left blank, both stop on every exception.
-
-At an exception stop, the line that threw is drawn red, the
-[exception card](#exception-card) opens under it, and the exception's type and
-message are the top row of Variables.
 
 ### Logpoints
 
@@ -1083,13 +1072,27 @@ Go has none to choose: Delve stops on a panic by itself. Lua's debugger stops
 on an uncaught error by itself too. Elixir and PowerShell have none, and Bash
 has no exceptions.
 
+**Debug: Break on Caught Exceptions** stops wherever an exception is thrown,
+even one the program catches. **Debug: Break on Uncaught Exceptions** stops on
+an exception that nothing catches. Both are in Run ▸ Breakpoints, checked when on,
+and in the menu of the ⚠ button in the Debug window's toolbar. While either is
+on, the ⚠ is drawn in the accent colour, and its tooltip says which are on.
+They act on the running session's language, or else on the active file's, and
+Editora keeps your choice for each project. To stop only on some Java exception
+classes, list them, separated by commas, in **Exception breakpoints: only these
+classes** on the Java card of **Settings → Debugging** (for example
+java.lang.IllegalStateException). Left blank, both stop on every exception.
+
+At an exception stop, the line that threw is drawn red, the
+[exception card](#exception-card) opens under it, and the exception's type and
+message are the top row of Variables.
+
 A session starts with the filters its debugger turns on by default, so a
 Python program stops where an uncaught exception is raised, with the
 exception's type and message in the Debug window and the status bar. In
 Python, `sys.exit()` with a non-zero code also counts as an uncaught exception;
 Continue then ends the program. Editora keeps your choice for each language and
-each project, as it does for **Break on Caught Exceptions** and **Break on
-Uncaught Exceptions** (see [Managing breakpoints](#managing-breakpoints)).
+each project.
 
 ### Exception breakpoints by type
 
@@ -1273,6 +1276,12 @@ it with Show Value at Caret, the keyboard works it while it is open:
 Any other key closes the popup and does its usual thing in the editor. When the
 popup was opened by the mouse, any key closes it.
 
+Emoji and other characters outside the Basic Multilingual Plane show as
+written in Java string values: in Variables, watches, the hover popup and
+inline values. One limit remains, from a bug in the Java language server's
+debugger: a string that an evaluation builds, such as `name + "!"`, and the
+text inside a `toString()` result can still show such characters garbled.
+
 After a step or any other stop, a value in Variables or Watches that changed
 since the previous stop is **highlighted**: its row is tinted and the value is
 bold, keeping its colours. Each frame is compared with what that same frame
@@ -1332,24 +1341,6 @@ has not returned, the debugger takes no other request, and the status bar says
 so: wait, or press Stop. **Show toString() values** on the Java card of
 **Settings → Debugging** (on by default) turns these calls off: objects then
 read `Type@id`, from the next debug session.
-
-While the program is paused, **completion** works in the
-[evaluate field](#the-evaluate-field-in-variables) over Variables, the
-[Evaluate window](#the-evaluate-window), the Debug console's input field, the
-Add Watch and Edit Watch prompts, and a breakpoint's condition and log message.
-Press Ctrl+Space, or type `.`, to list what the debugger can complete in the
-stopped frame. Keep typing to narrow the list, use Up and Down to move in it,
-Enter or Tab to insert the selected item, and Esc to close it. In a field that
-evaluates, Enter inserts the item and does not evaluate yet. In a log message, only the `{expression}` part at the caret is completed.
-When the program is not paused, Ctrl+Space says under the field that
-completion needs a pause. A breakpoint's condition is completed against the
-frame the program is stopped in, not the breakpoint's own line.
-
-Emoji and other characters outside the Basic Multilingual Plane show as
-written in Java string values: in Variables, watches, the hover popup and
-inline values. One limit remains, from a bug in the Java language server's
-debugger: a string that an evaluation builds, such as `name + "!"`, and the
-text inside a `toString()` result can still show such characters garbled.
 
 ### Autos
 
@@ -1452,7 +1443,7 @@ The evaluate field and the Evaluate window's field are small code editors:
   that is `C-a` and `C-e`, `M-f` and `M-b`, `C-d`, `C-k`, `M-d`, `M-DEL`,
   `C-w`, `M-w` and `C-y`, and `C-/` to undo.
 - **Completion** lists what the debugger can complete: press Ctrl+Space, or
-  type `.` (see [completion](#the-variables-tree)).
+  type `.` (see below).
 - They share one **history**, kept between sessions. Up and Down bring back
   the expressions you evaluated before; in Emacs, `C-p` and `C-n` do too at the
   first and last line, and so do `M-p` and `M-n`.
@@ -1463,6 +1454,18 @@ The evaluate field and the Evaluate window's field are small code editors:
 Java and JavaScript give a fragment's value: `int x = 2; return x * 3;` in
 Java, or `let x = 2; x * 3` in JavaScript, shows 6. Python runs a fragment but
 shows no value; evaluate an expression on its own to see one.
+
+While the program is paused, **completion** works in the
+[evaluate field](#the-evaluate-field-in-variables) over Variables, the
+[Evaluate window](#the-evaluate-window), the Debug console's input field, the
+Add Watch and Edit Watch prompts, and a breakpoint's condition and log message.
+Press Ctrl+Space, or type `.`, to list what the debugger can complete in the
+stopped frame. Keep typing to narrow the list, use Up and Down to move in it,
+Enter or Tab to insert the selected item, and Esc to close it. In a field that
+evaluates, Enter inserts the item and does not evaluate yet. In a log message, only the `{expression}` part at the caret is completed.
+When the program is not paused, Ctrl+Space says under the field that
+completion needs a pause. A breakpoint's condition is completed against the
+frame the program is stopped in, not the breakpoint's own line.
 
 #### Quick Evaluate
 
@@ -1502,7 +1505,7 @@ Evaluate window, the editor's right-click menu while paused (**Debug: Add
 Expression at Caret to Watches…**, `debug.addWatchAtCaret`), or
 *Debug: Add Watch* (`C-c C-d w`). Delete, or **Debug: Remove Selected Watch**
 (`debug.removeSelectedWatch`), removes the selected watch, and
-[Undo Last Removal](#managing-breakpoints) puts it back in its place, paused
+[Undo Last Removal](/docs/undo-history#undo-last-removal) puts it back in its place, paused
 or not. **Edit Watch…** (`debug.editSelectedWatch`) changes its expression.
 
 A watch row's right-click menu has:
@@ -1537,7 +1540,7 @@ shown as *Pin `total` to Line 12*, pins the popup's expression to the line it
 opened for (`debug.pinShownValue`). A line holds at most four pinned values. **Debug: Unpin Values on
 Line** (`debug.unpinLine`) removes every value pinned to the caret's line. The
 status bar says what was pinned or unpinned, and
-[Undo Last Removal](#managing-breakpoints) puts back a value, or a line's
+[Undo Last Removal](/docs/undo-history#undo-last-removal) puts back a value, or a line's
 values, that you unpinned.
 
 At each stop, and when you pick another frame, every pinned value in the open

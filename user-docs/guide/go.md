@@ -15,7 +15,7 @@ for you; see [language servers](/docs/lsp#servers-are-auto-detected-never-bundle
 
 ## Running
 
-**Run File** (`file.run`, `C-c r` in the Emacs keymap) runs a Go file that has
+**Run File** (`file.run`: `C-c r` in the Emacs keymap, Ctrl+Shift+B (⌘⇧B on macOS) in VS Code) runs a Go file that has
 `package main` and a `func main()`. Editora saves the file, and the module's
 other edited Go files, then builds the program with `go build` into its cache
 folder and runs it in the file's folder:
@@ -36,8 +36,10 @@ arguments; they are kept for that file and used by every later Run File.
 In a `_test.go` file, **Run Test at Caret** (`test.runAtCaret`) builds the
 package's test binary (`go test -c`) and runs the test function the caret is
 in (`-test.run ^Name$ -test.v`), or every test of the package when the caret
-is outside a test function. Its output goes to the Run window. Run File on a
-`_test.go` file runs the package's tests.
+is outside a test function. Its output goes to the Run window. A
+`Benchmark…` function runs nothing this way, since `-test.run` matches tests
+only: run it with **Debug Test at Caret**, which runs it as a benchmark. Run
+File on a `_test.go` file runs the package's tests.
 
 **Run Tests** (`test.run`) in a Go module runs `go test -json ./...` and fills
 the [Test Results](/docs/build-tools#test-runner) window, where failed tests
@@ -48,7 +50,7 @@ can be run again. Debugging a test is described under [Debugging](#debugging).
 Go is debugged with [Delve](https://github.com/go-delve/delve), the debugger
 VS Code's Go extension uses. Debug a Go file with **Debug: Start / Continue**
 (`debug.start`: `C-c C-d d` in the Emacs keymap, F5 in the VS Code, CUA and
-Sublime Text keymaps), or with
+Sublime Text keymaps, Shift+F9 (⌃D on macOS) in the IntelliJ IDEA keymap), or with
 **Debug File** in the editor's right-click menu:
 
 - A file of a module (a `go.mod` in its folder or above) debugs its
@@ -119,4 +121,4 @@ is found too. The card's **Install…** runs
 `go install github.com/go-delve/delve/cmd/dlv@latest`, which needs Go. Without
 Delve, Debug says *Delve (dlv) was not found* and how to get it. The card's
 switch, **Enable Go debugging (Delve)**, is on by default, and the
-[Doctor](/docs/troubleshooting#doctor) checks for Delve.
+[Doctor](/docs/doctor) checks for Delve.

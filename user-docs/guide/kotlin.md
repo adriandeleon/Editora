@@ -32,9 +32,9 @@ folders; a `.kts` script, `build.gradle.kts`, and a `.kt` file outside a build
 get no diagnostics or hover from it. A folder without a build file is not
 imported at all.
 
-## Running Kotlin files
+## Running
 
-Kotlin runs with the Kotlin compiler, `kotlinc`, on the JDK chosen in Settings
+<a id="running-kotlin-files"></a>Kotlin runs with the Kotlin compiler, `kotlinc`, on the JDK chosen in Settings
 for builds and runs (the one Maven, Gradle and Java use). Editora finds
 `kotlinc` through `KOTLIN_HOME`, then your `PATH`, then SDKMAN (`sdk install
 kotlin`). When none of them has it, Run says Kotlin is not installed instead of
@@ -80,7 +80,7 @@ to it, as for a [Java test](/docs/build-tools#test-runner).
 
 Kotlin is debugged by a debugger built into Editora, so there is nothing to
 install beyond the Kotlin compiler. Debug on a Kotlin file runs it as
-[Run does](#running-kotlin-files), compiling a program first, and Debug on a Kotlin run
+[Run does](#running), compiling a program first, and Debug on a Kotlin run
 configuration uses that configuration's file, arguments, folder, environment,
 JDK and VM arguments.
 

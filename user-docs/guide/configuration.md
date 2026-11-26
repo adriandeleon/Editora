@@ -227,7 +227,7 @@ They are created only when needed.
 | `line-ending-originals/` | The original bytes of the last 30 files whose [mixed line endings](/docs/editorconfig#files-with-mixed-line-endings) a save rewrote |
 | `sync/` | The [Settings sync](/docs/settings-sync) working copy (`sync/repo/`) and copies of files a sync replaced (`sync/backups/`) |
 | `settings.json.before-reset-<date>.bak` | The preferences as they were before **Reset to Defaults** or **Restore from Backup…** |
-| `backups/config.before-import-<date>.zip` | The whole configuration as it was before **Import Configuration…**, API keys and HTTP history included, readable only by you |
+| `backups/config.before-import-<date>.zip` | The whole configuration as it was before **Import Configuration…**, HTTP history included (never the AI API keys), readable only by you |
 | `<name>.v<n>.bak` | A file written by a newer Editora, set aside by an older one (see [Schema versioning](#schema-versioning)) |
 | `<name>.corrupt.bak` | A config file that was empty, damaged, or not valid UTF-8 when it was read |
 

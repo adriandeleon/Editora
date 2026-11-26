@@ -199,7 +199,7 @@ as in the Emacs keymap, it is a palette command.
 
 | Action | Command | Emacs key | Other keymaps |
 | --- | --- | --- | --- |
-| Save every modified file in the window | `file.saveAll` | `C-x s` | VS Code: Ctrl+K, S |
+| Save every modified file in the window | `file.saveAll` | `C-x s` | VS Code: Ctrl+K S |
 | Throw away unsaved changes and read the file again | `file.revert` | (palette) | — |
 
 The **Emacs key** column is the default Emacs keymap; **Other keymaps** gives
@@ -587,13 +587,13 @@ when the editor has moved on (unsaved edits, an undo, or a restore of an older
 row). When you switch to a tab with no file, such as a diff or a terminal, the
 window steps aside, and it comes back on the next tab that has a local file.
 
-| Action | Command | Emacs | CUA, Sublime Text, VS Code, IntelliJ IDEA |
+| Action | Command | Emacs key | Other keymaps |
 | --- | --- | --- | --- |
-| Show or hide Local History | `tool.fileHistory` | `M-g l` | Alt+Shift+H (⌃⌘H on macOS) |
-| Show the current file's history (leaves it open) | `history.showActiveFile` | (palette) | (palette) |
-| Put Label | `history.putLabel` | (palette) | (palette) |
-| Recent Changes | `history.recentChanges` | (palette) | (palette) |
-| Turn Local History on or off | `view.toggleLocalHistory` | (palette) | (palette) |
+| Show or hide Local History | `tool.fileHistory` | `M-g l` | CUA, Sublime Text, VS Code, IntelliJ: Alt+Shift+H (⌃⌘H on macOS) |
+| Show the current file's history (leaves it open) | `history.showActiveFile` | (palette) | — |
+| Put Label | `history.putLabel` | (palette) | — |
+| Recent Changes | `history.recentChanges` | (palette) | — |
+| Turn Local History on or off | `view.toggleLocalHistory` | (palette) | — |
 
 ![The Local History tool window beside a Java file: the file's revisions newest first under day captions, each with its time and reason, the selected one shown as a side-by-side diff against the current text with Restore](/screenshots/features/local-file-history.png "Local History: every save and auto-save of the file, each one a diff away.")
 

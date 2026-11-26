@@ -123,7 +123,7 @@ configuration.
 Nothing breaks when a tool is missing. The feature stays hidden until it
 appears. Run **Doctor** (`view.doctor`) to see what was found, what's only
 half-configured, and what's missing, with an install button on the ones Editora
-can fetch for you. See [Doctor](/features/doctor).
+can fetch for you. See [Doctor](/docs/doctor).
 
 ## Is this an Emacs clone? Do I need to know Emacs?
 

@@ -1,8 +1,8 @@
 ---
 title: Terminal
 description: Shells on this machine, a remote host, a container or WSL, with shell integration, scrollback search, clickable links, and programs run or debugged in a tab.
-category: Workspace
-order: 9
+category: Tools
+order: 1
 ---
 
 The **Terminal** tool window runs shells inside Editora, one per tab, at the

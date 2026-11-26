@@ -27,12 +27,12 @@ the project's own files. In a folder you have not trusted, a `project.clj`,
 
 A server runs per project root: the folder with a `deps.edn`, `project.clj`,
 `bb.edn`, `shadow-cljs.edn` or `build.boot`, else the repository. Any of those
-files at a project's root also makes [Doctor](/docs/troubleshooting#doctor)
+files at a project's root also makes [Doctor](/docs/doctor)
 expect the Clojure server.
 
-## Running Clojure files
+## Running
 
-A Clojure file runs with one of three tools, picked from the file and its
+<a id="running-clojure-files"></a>A Clojure file runs with one of three tools, picked from the file and its
 project, the nearest folder above it with a `deps.edn`, `project.clj` or
 `bb.edn`:
 
@@ -69,10 +69,18 @@ needs is missing, Run says so instead of starting anything. On Windows the
 Clojure CLI is best used under WSL; see
 [Running in a container or WSL](/docs/run-debug#running-in-a-container-or-wsl).
 
+## Tests
+
+Clojure tests run from the [Clojure CLI, Leiningen or Babashka
+window](/docs/build-tools#clojure), such as the `-M:test` alias or `lein test`.
+Their output stays in the Output console, since the
+[Test Results](/docs/build-tools#test-runner) window does not read Clojure test
+runners' output, and a Clojure test file has no ▶ per test.
+
 ## Debugging
 
 Clojure is debugged by the same built-in debugger as Groovy, with nothing to
-install. Debug on a Clojure file runs it as [Run does](#running-clojure-files), under
+install. Debug on a Clojure file runs it as [Run does](#running), under
 the Clojure CLI or Leiningen, and Debug on a Clojure script run configuration
 uses that configuration's file, arguments, folder, environment, JDK and VM
 arguments.

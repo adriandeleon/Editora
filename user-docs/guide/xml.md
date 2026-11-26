@@ -177,7 +177,7 @@ change reaches the running server without a restart.
 
 The schemas lemminx downloads are kept in `cache/lemminx` under Editora's
 config folder, not in `~/.lemminx`, and settings export leaves them out.
-[Doctor](/docs/troubleshooting#doctor)'s **XML schema cache** row shows their
+[Doctor](/docs/doctor)'s **XML schema cache** row shows their
 size and folder, with **Clear**.
 
 ### Without the XML server
@@ -224,7 +224,7 @@ Server…** installs **lemminx 0.31.2**, the native build from Red Hat's
 vscode-xml 0.29.3 release on GitHub (about 17 MB). Both the download and the
 program inside it are checked against the SHA-256 the release publishes. The
 installed server is asked one request before it is kept. Settings and
-[Doctor](/docs/troubleshooting#doctor) show which lemminx runs, and Doctor
+[Doctor](/docs/doctor) show which lemminx runs, and Doctor
 offers **Update…** when a later Editora moves to a newer one.
 
 The install leaves the XML command in Settings blank, and a blank command runs
@@ -307,7 +307,7 @@ to use, expanding `${env.…}` and system properties in `<localRepository>` as
 Maven does. lemminx-maven keeps what it resolves in `.lemminx-maven` beside
 that repository: `~/.m2/.lemminx-maven` by default, or next to the folder
 `<localRepository>` names in `~/.m2/settings.xml`. `${env.*}` property
-completions list the variable names but never show their values. [Doctor](/docs/troubleshooting#doctor) lists it as the
+completions list the variable names but never show their values. [Doctor](/docs/doctor) lists it as the
 **lemminx-maven artifact store** with **Clear**.
 
 **Installing it.** While the Maven server is not installed, a `pom.xml` in a
@@ -325,7 +325,7 @@ runs Editora's own copy, so **Reset to default** keeps it.
 A folder that lacks any of the jars, or whose jsoup is not a 1.14 release, does
 not count as installed: `pom.xml` falls back to the XML server, the Settings →
 LSP card reads *lemminx-maven: incomplete — Install… repairs it*, and
-[Doctor](/docs/troubleshooting#doctor) names the missing jars beside an
+[Doctor](/docs/doctor) names the missing jars beside an
 **Install…** button. Click it once to repair the folder. Install puts in jsoup
 1.14.3, the line the server's documentation renderer needs; with a newer jsoup,
 every hover on a schema-documented element fails.

@@ -113,7 +113,7 @@ HTML, CSS, JSON, YAML and Bash servers, Pyright and the others. Left blank,
 they run on `node` on the `PATH`. A project's `.nvmrc` or `.node-version` does
 not change them, so an old Node.js pinned for the project cannot break them;
 only the TypeScript server follows the project's version file (from nvm), as
-[Run](/docs/javascript-typescript#running-nodejs-scripts) does. A server row that would warn about
+[Run](/docs/javascript-typescript#running) does. A server row that would warn about
 a missing Node.js does not, when that setting names one that exists.
 
 Install uses the npm beside that Node.js when there is one, so npm-installed

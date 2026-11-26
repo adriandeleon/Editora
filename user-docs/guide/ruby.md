@@ -13,9 +13,9 @@ from the gutter, and debugs with rdbg.
 Ruby's language server is `ruby-lsp`. Editora finds it on the PATH or installs
 it for you; see [language servers](/docs/lsp#servers-are-auto-detected-never-bundled).
 
-## Running Ruby files
+## Running
 
-*Run File* (`file.run`, `C-c r` in the Emacs keymap) on a Ruby file runs what it is, in the project's folder (the nearest
+<a id="running-ruby-files"></a>*Run File* (`file.run`: `C-c r` in the Emacs keymap, Ctrl+Shift+B (⌘⇧B on macOS) in VS Code) on a Ruby file runs what it is, in the project's folder (the nearest
 with a `Gemfile`) and under `bundle exec` once the bundle is installed:
 
 - an **RSpec** file (`…_spec.rb`) runs `rspec` on it;
@@ -43,8 +43,8 @@ results fill [Test Results](/docs/build-tools#test-runner).
 
 Ruby is debugged with rdbg, the debugger of Ruby's `debug` gem, which Ruby 3.1
 and later ship. **Debug: Start / Continue** (`debug.start`: `C-c C-d d` in
-the Emacs keymap, F5 in the VS Code, CUA and Sublime Text keymaps) or **Debug
-File** runs the file under rdbg as [Run File](#running-ruby-files) runs it, and stops at
+the Emacs keymap, F5 in the VS Code, CUA and Sublime Text keymaps, Shift+F9 (⌃D on macOS) in the IntelliJ IDEA keymap) or **Debug
+File** runs the file under rdbg as [Run File](#running) runs it, and stops at
 your breakpoints:
 
 - a **script** runs with `ruby` and the arguments set by **File: Run with

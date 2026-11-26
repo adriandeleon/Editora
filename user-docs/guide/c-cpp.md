@@ -15,7 +15,7 @@ installs it for you; see [language servers](/docs/lsp#servers-are-auto-detected-
 
 ## Running
 
-**Run File** (`file.run`, `C-c r` in the Emacs keymap) on a C or C++ file with
+**Run File** (`file.run`: `C-c r` in the Emacs keymap, Ctrl+Shift+B (⌘⇧B on macOS) in VS Code) on a C or C++ file with
 a `main` builds the program as [Debug File](#debugging) builds it (CMake, Make,
 or the file alone), with the same trust question, then runs it in the **Run**
 window with the arguments set by **File: Run with Arguments…**
@@ -59,7 +59,7 @@ CTest isn't run: the test program runs directly.
 C and C++ are debugged with the same [CodeLLDB](/docs/rust#debugging) as Rust, or
 with GDB if you choose it. **Debug: Start / Continue** (`debug.start`:
 `C-c C-d d` in the Emacs keymap, F5 in the VS Code, CUA and Sublime Text
-keymaps) or **Debug File** in the editor's right-click menu builds the program
+keymaps, Shift+F9 (⌃D on macOS) in the IntelliJ IDEA keymap) or **Debug File** in the editor's right-click menu builds the program
 first, in the Debug console, after Editora saves the project's edited C and C++
 files:
 
