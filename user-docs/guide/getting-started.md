@@ -10,13 +10,26 @@ make it feel fast.
 
 ## Install
 
-Grab the package for your platform from the
-[releases page](https://github.com/adriandeleon/Editora/releases) (or use the
-OS-detected button on the [home page](/)). The native packages bundle their own
-Java runtime, so there's nothing else to install. If you already have JDK 25,
-there is also a portable jar for Linux x64, Linux arm64 and Windows x64
-(`Editora-<version>-linux-x64.jar` and so on), run with `java -jar`; see the
-[command-line reference](/docs/cli).
+Every release has native packages that bundle their own Java runtime, so
+there's nothing else to install. Get them from the
+[releases page](https://github.com/adriandeleon/Editora/releases/latest) (or the
+OS-detected button on the [home page](/)), or let a package manager fetch and
+update Editora for you.
+
+| Your system | Best choice | Also works |
+| --- | --- | --- |
+| Mac with Apple Silicon | [Homebrew](#package-managers), or `Editora-<version>-macos-arm64.dmg` | |
+| Intel Mac | `Editora-<version>-macos-x64.dmg` | |
+| Windows x64 | `Editora-<version>-windows-x64.msi` | The portable jar |
+| Debian, Ubuntu, Mint (x64) | The [apt repository](#package-managers) | The `.deb`, the `.AppImage`, the `.tar.gz` |
+| Fedora, RHEL, openSUSE (x64) | `Editora-<version>-linux-x64.rpm` | The `.AppImage`, the `.tar.gz` |
+| Any other Linux (x64) | The `.AppImage` or the `.tar.gz` | The portable jar |
+| Linux arm64 | `Editora-<version>-linux-arm64.tar.gz` | The portable jar |
+
+If you already have JDK 25, there is also a portable jar for Linux x64, Linux
+arm64 and Windows x64 (`Editora-<version>-linux-x64.jar` and so on), run with
+`java -jar`; see the [command-line reference](/docs/cli). Each jar is built for
+its platform, so take the one that matches your system.
 
 ### macOS
 
@@ -32,7 +45,9 @@ and adds a Start Menu group and a desktop shortcut.
 ### Linux
 
 Pick the format that suits your system. `.deb`, `.rpm`, and `.AppImage` are x64
-only; the `.tar.gz` comes for x64 and arm64.
+only; the `.tar.gz` comes for x64 and arm64. On Debian and Ubuntu, the
+[apt repository](#package-managers) installs the same `.deb` and keeps it up to
+date.
 
 ```bash
 # Debian / Ubuntu: adds an `editora` command and a menu entry
@@ -45,12 +60,16 @@ sudo dnf install ./Editora-<version>-linux-x64.rpm
 chmod +x Editora-<version>-linux-x64.AppImage
 ./Editora-<version>-linux-x64.AppImage
 
-# Tarball: adds an `editora` command and a menu entry
-tar xzf Editora-<version>-linux-x64.tar.gz && cd editora-*
+# Tarball (x64 or arm64): adds an `editora` command and a menu entry
+tar xzf Editora-<version>-linux-x64.tar.gz && cd editora-x64
 ./install.sh          # per-user  -> ~/.local/editora  (+ ~/.local/bin/editora)
 sudo ./install.sh     # system    -> /opt/editora       (+ /usr/local/bin/editora)
 ./install.sh --uninstall   # remove it again
 ```
+
+The tarball also runs in place without installing: `./Editora/bin/Editora`
+from the extracted folder. For arm64, use `linux-arm64` in the file name and
+`cd editora-arm64`.
 
 The `.deb` also adds a second menu entry, *Editora Expert Mode*, which opens a
 file in one window with minimal chrome (see
@@ -62,8 +81,12 @@ package.
 
 ### Package managers
 
-On an Apple Silicon Mac, Editora is also in Homebrew, as a cask in its own tap.
-Intel Macs use the `macos-x64` `.dmg` above.
+A package manager downloads Editora, checks the download for you and installs
+new releases with your other updates. Editora's own update check only tells you
+a newer version exists, so the package manager does the updating.
+
+**Homebrew (Mac with Apple Silicon).** Editora is a cask in its own tap. Intel
+Macs use the `macos-x64` `.dmg` above.
 
 ```bash
 brew install --cask adriandeleon/tap/editora   # install
@@ -72,11 +95,60 @@ brew uninstall --cask editora                  # remove it
 ```
 
 The cask installs the same signed and notarized app as the `.dmg` into
-Applications. Editora's own update check only tells you a newer version exists,
-so Homebrew does the updating.
+Applications.
+
+**apt (Debian, Ubuntu and their derivatives, x64).** Editora is in
+[Vitrina](https://vitrina-project.dev), the apt repository for Editora and its
+sibling apps, signed with the same release key as the downloads (see
+[Checking a download](#checking-a-download)). Add the repository once:
+
+```bash
+sudo install -d -m 0755 /etc/apt/keyrings
+curl -fsSL https://vitrina-project.dev/vitrina.asc | sudo tee /etc/apt/keyrings/vitrina.asc > /dev/null
+sudo tee /etc/apt/sources.list.d/vitrina.sources > /dev/null <<'EOF'
+Types: deb
+URIs: https://vitrina-project.dev/apt
+Suites: stable
+Components: main
+Architectures: amd64 arm64
+Signed-By: /etc/apt/keyrings/vitrina.asc
+EOF
+sudo apt update
+```
+
+Then:
+
+```bash
+sudo apt install editora      # install
+sudo apt upgrade              # update it along with everything else
+sudo apt remove editora       # remove it
+```
+
+It installs the same `.deb` as the download, so everything said about the `.deb`
+above holds. Vitrina carries the latest release only, and picks a new one up
+within a day of it being published. A `.deb` you installed by hand earlier is
+upgraded in place by `apt upgrade` once the repository is added.
 
 A winget package for Windows is on its way but not available yet; until it is,
 use the `.msi`.
+
+### Check that it runs
+
+Ask the installed launcher for its version. It prints the version and exits
+without opening a window:
+
+| Package | Command |
+| --- | --- |
+| `.deb`, apt, `.tar.gz` | `editora --version` |
+| `.rpm` | `/opt/editora/bin/Editora --version` |
+| `.AppImage` | `./Editora-<version>-linux-x64.AppImage --version` |
+| macOS (`.dmg` or Homebrew) | `/Applications/Editora.app/Contents/MacOS/Editora --version` |
+| Windows `.msi` | `editora-cli --version` (in a new terminal, so the updated `PATH` applies) |
+| Portable jar | `java -jar Editora-<version>-<platform>.jar --version` |
+
+Then start Editora from your menu, Launchpad or Start Menu.
+**`View: Doctor`** (in the Tools menu) lists the tools it found on your system;
+see [Doctor](/docs/doctor).
 
 ### First launch
 
@@ -146,6 +218,7 @@ update itself: download the new package and install it the same way.
 | Homebrew cask | `brew upgrade --cask editora` | `brew uninstall --cask editora` (`~/.editora/` stays) |
 | Windows `.msi` | Run the new `.msi`; it replaces the installed version | In Windows Settings, **Apps → Installed apps**, then Editora's **Uninstall** |
 | `.deb` | `sudo apt install ./Editora-<version>-linux-x64.deb` | `sudo apt remove editora` |
+| apt repository | `sudo apt upgrade` | `sudo apt remove editora` |
 | `.rpm` | `sudo dnf install ./Editora-<version>-linux-x64.rpm` | `sudo dnf remove editora` |
 | `.AppImage` | Replace the file with the new one | Delete the file |
 | `.tar.gz` | Extract the new tarball and run its `./install.sh` (with `sudo` for a system install) | `./install.sh --uninstall` (with `sudo` for a system install) |

@@ -103,15 +103,22 @@ have the full reference.
 Download the package for your platform from [GitHub Releases](https://github.com/adriandeleon/Editora/releases/latest),
 or use the OS-detected button on the [home page](https://editora-project.dev/#download).
 
-- **macOS** — `.dmg` for Apple Silicon (`macos-arm64`) or Intel (`macos-x64`).
+- **macOS** — `.dmg` for Apple Silicon (`macos-arm64`) or Intel (`macos-x64`), or on Apple Silicon
+  `brew install --cask adriandeleon/tap/editora`.
 - **Windows** — `.msi` (x64).
 - **Linux** — `.deb`, `.rpm` or `.AppImage` (x64), or a portable `.tar.gz` with an `install.sh`
-  (x64 and arm64). The `.deb` and the tarball add an `editora` command and a menu entry.
+  (x64 and arm64). The `.deb` and the tarball add an `editora` command and a menu entry. On Debian
+  and Ubuntu, the [Vitrina](https://vitrina-project.dev) apt repository installs the same `.deb` and
+  keeps it updated with `apt upgrade`.
 - **Any OS with a JDK 25** — a per-platform fat jar, run with `java -jar`.
 
+The [Getting Started](https://editora-project.dev/docs/getting-started/) guide has the steps for every
+package, adding the apt repository, checking that the install runs, updating and removing.
+
 The native packages bundle their own Java runtime. The macOS DMGs are signed and notarized by Apple.
-Every Linux download has an OpenPGP signature beside it (`<file>.asc`), by the key attached to the
-release as `editora-signing-key.asc`:
+`checksums_sha256.txt` on each release lists the SHA-256 of every file
+(`sha256sum --ignore-missing -c checksums_sha256.txt`). Every Linux download has an OpenPGP signature
+beside it (`<file>.asc`), by the key attached to the release as `editora-signing-key.asc`:
 
 ```bash
 gpg --import editora-signing-key.asc
