@@ -319,6 +319,46 @@ class LspProjectOverridesFxTest {
         assertEquals(PROJECT_JDTLS, configuredJava());
     }
 
+    /**
+     * The project file is read off the FX thread. A first buffer synced before that read landed compared the
+     * stand-in's (empty) overrides with those applied, found no change and launched the global command; the
+     * read's landing then re-ran nothing, so the project's command and enables waited for some Settings change.
+     * Here the read is held until the buffer has synced.
+     */
+    @Test
+    void aProjectsOverridesApplyWhenItsFileIsReadAfterTheFirstBufferSynced() throws Exception {
+        overrideJavaAndEnableRust();
+        config.getTrustStore().trust(project);
+        ops.projectRoot = null;
+        applySupport();
+        assertEquals("jdtls", configuredJava());
+        java.util.concurrent.ConcurrentLinkedQueue<Runnable> held = new java.util.concurrent.ConcurrentLinkedQueue<>();
+        FxTestSupport.runOnFx(() -> coordinator.projectScope().reads = held::add);
+
+        ops.projectRoot = project;
+        Path file = project.resolve("A.java");
+        Files.writeString(file, "class A {}\n");
+        FxTestSupport.runOnFx(() -> {
+            coordinator.projectScope().reload(); // the window's new root told at once, its file not read yet
+            EditorBuffer b = new EditorBuffer();
+            b.setPath(file);
+            b.setContent("class A {}\n");
+            host.buffers.add(b);
+            host.active = b;
+            coordinator.syncBuffer(b);
+        });
+        assertEquals("jdtls", configuredJava(), "nothing of the project's is known before its read");
+
+        FxTestSupport.runOnFx(() -> {
+            for (Runnable read; (read = held.poll()) != null; ) {
+                read.run(); // lands in place on the FX thread
+            }
+        });
+
+        assertEquals(PROJECT_JDTLS, configuredJava(), "the project's command once its file is read");
+        assertTrue(FxTestSupport.callOnFx(() -> coordinator.serverEnabled("rust")), "and its enable");
+    }
+
     @Test
     void theOnTypeFormattingSettingReachesJdtlsInitialization() throws Exception {
         host.settings.setLspOnTypeFormatting(true);

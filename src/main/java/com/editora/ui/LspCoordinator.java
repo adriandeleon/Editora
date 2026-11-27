@@ -371,6 +371,13 @@ final class LspCoordinator {
         projectScope.addChangeListener(() -> {
             lspManager.setJavaDefaultJdk(projectScope.jdkHome(host.settings()));
             sayMissingTools();
+            // So are the project's server commands and enables: a buffer synced before the read landed was
+            // configured with the stand-in's (none), and nothing re-ran the support when the file's arrived.
+            if (supportConfigured
+                    && ops.lspFeatureEnabled()
+                    && !projectOverrideSignature().equals(appliedProjectOverrides)) {
+                applySupport();
+            }
         });
         this.xmlTrust = new XmlFolderTrust(this, host, lspManager, ops);
         this.html = new HtmlLspAids(host, lspManager, ops);
@@ -1828,6 +1835,7 @@ final class LspCoordinator {
         applyXmlSettings();
         appliedProjectRoot = ops.lspProjectRoot();
         appliedProjectOverrides = projectOverrideSignature();
+        supportConfigured = true;
         workspaceEdits.offerInterruptedEdits();
         if (on) {
             noticeWithheldOverrides();
@@ -2544,6 +2552,9 @@ final class LspCoordinator {
 
     /** The overrides in force when {@link #applySupport} last configured the manager. */
     private String appliedProjectOverrides = "";
+
+    /** Whether {@link #applySupport} has configured the manager yet: until init has, a scope change re-runs nothing. */
+    private boolean supportConfigured;
 
     /** The project root those overrides were resolved for. */
     private @Nullable Path appliedProjectRoot;

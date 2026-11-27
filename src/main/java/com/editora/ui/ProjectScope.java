@@ -294,9 +294,15 @@ final class ProjectScope {
      */
     private @Nullable String applied;
 
-    /** What applies here, as one string: root, trust and the values (language servers aside: LspCoordinator's). */
+    /**
+     * What applies here, as one string: root, trust, the values and the language servers' commands, enables and
+     * Bash IDE object. Without those last, a project whose read landed after its first buffer synced told nobody
+     * that its servers' overrides had arrived.
+     */
     private String signature() {
-        return root() + "|" + trusted() + "|" + settings().valueOverrides() + "|"
+        ProjectSettings s = settings();
+        return root() + "|" + trusted() + "|" + s.valueOverrides() + "|"
+                + s.getLspCommands() + "|" + s.getLspEnabled() + "|" + s.getBashIde() + "|"
                 + toolchain().signature();
     }
 

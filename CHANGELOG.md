@@ -59,6 +59,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A trusted project's language-server commands and switches apply even when its first file opens before the
+  settings file is read.** The project's `lspCommands` and `lspEnabled` waited for the next Settings change instead.
 - **MCP resource updates for edited files.** The window did not pass each buffer's change stamp to the MCP server,
   so an agent watching an open file never heard that it changed.
 - **The column ruler no longer flashes black when a tab is first shown.** Its line was drawn once in the default
