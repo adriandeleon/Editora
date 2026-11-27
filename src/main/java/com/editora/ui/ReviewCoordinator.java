@@ -486,12 +486,17 @@ final class ReviewCoordinator {
         }
         ReviewAnchors.Located at = ReviewAnchors.locate(t, buffer.getContent());
         CodeArea area = buffer.getFocusedArea();
-        double[] anchor = anchor(area, at.startLine(), at.endLine());
-        if (anchor == null) {
-            if (pulses <= 0) {
+        double[] anchor = lineAnchor.find(area, at.startLine(), at.endLine());
+        if (anchor == null && pulses <= 0) {
+            // The lines never got a place on screen (a window still settling): the card opens at the editor's top
+            // rather than not at all, which left a click on a thread with nothing to show for it.
+            anchor = areaAnchor(area);
+            if (anchor == null) {
                 host.setStatus(tr("status.review.scrolledTo"));
                 return;
             }
+        }
+        if (anchor == null) {
             if (pulses == SCROLL_PULSES) {
                 buffer.getFoldManager().unfoldContaining(at.startLine());
                 area.moveTo(at.startLine(), 0);
@@ -827,6 +832,27 @@ final class ReviewCoordinator {
      * Where the card goes for lines {@code first…last}: {@code {x, belowY, aboveY}} in scene coordinates, from the
      * part of them that is on screen; {@code null} when none of it is (as {@code GitHunkCoordinator} places its card).
      */
+    /** Where a card goes for a thread's lines; a seam so a test can have them never laid out. */
+    interface LineAnchor {
+        double @Nullable [] find(CodeArea area, int first, int last);
+    }
+
+    private LineAnchor lineAnchor = ReviewCoordinator::anchor;
+
+    /** TEST SEAM — where cards are placed for a thread's lines. */
+    void setLineAnchorForTest(LineAnchor anchor) {
+        this.lineAnchor = anchor;
+    }
+
+    /** The card under the editor's top edge: {@code {x, belowY, aboveY}} in scene coordinates, or null off scene. */
+    static double @Nullable [] areaAnchor(CodeArea area) {
+        if (area.getScene() == null) {
+            return null;
+        }
+        Bounds b = area.localToScene(area.getBoundsInLocal());
+        return new double[] {b.getMinX() + 48, b.getMinY() + Math.min(b.getHeight(), 24), b.getMinY()};
+    }
+
     private static double @Nullable [] anchor(CodeArea area, int first, int last) {
         try {
             int top = Math.max(first, area.firstVisibleParToAllParIndex());

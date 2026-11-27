@@ -497,4 +497,20 @@ class ReviewCoordinatorFxTest {
         fx(() -> other.restore(again));
         assertEquals(List.of("💬 1 · Shared with the team."), labelsOn(again, 2), "a new window reads it");
     }
+
+    /**
+     * Regression (macOS CI): a thread whose lines never got a place on screen left the card closed after its few
+     * pulses of waiting, so a click on the thread showed nothing. The card now opens at the editor's top.
+     */
+    @Test
+    void aThreadWhoseLinesAreNeverLaidOutStillOpensItsCard() throws Exception {
+        EditorBuffer b = open(TEXT);
+        fx(coordinator::addComment);
+        answer("Laid out?", tr("review.dialog.save"));
+        fx(() -> coordinator.setLineAnchorForTest((area, first, last) -> null));
+        fx(() -> coordinator.showThread(b, stored().get(0).id()));
+        com.editora.testkit.Await.until(() -> onFxShowing(), "the card opened at the editor's top");
+        assertTrue(FxTestSupport.callOnFx(() -> card().lookupAll(".label").stream()
+                .anyMatch(n -> n instanceof javafx.scene.control.Label l && "Laid out?".equals(l.getText()))));
+    }
 }
