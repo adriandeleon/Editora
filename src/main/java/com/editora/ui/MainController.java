@@ -2588,6 +2588,9 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     final WindowMcpBridge mcpBridge = new WindowMcpBridge(new WindowMcpHost(this));
 
+    /** Hover, definitions, references and the Map on a diff's file side. */
+    final DiffCodeIntel diffIntel = new DiffCodeIntel(this);
+
     final FileWorkflowCoordinator fileWorkflows = new FileWorkflowCoordinator(new FileWorkflowHost(this));
 
     @FXML

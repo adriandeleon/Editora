@@ -244,6 +244,9 @@ final class WindowCommandRegistrar {
 
         ReviewCoordinator reviewCoordinator();
 
+        /** Code intelligence on a diff's file side. */
+        DiffCodeIntel diffIntel();
+
         HttpClientCoordinator httpClient();
 
         AgentCoordinator agentCoordinator();
@@ -522,6 +525,9 @@ final class WindowCommandRegistrar {
             if (!host.projectsEnabled()) {
                 host.setStatus(projectsOff());
                 return;
+            }
+            if (host.diffIntel().fromFile(() -> host.registry().run("projectMap.revealActiveFile"))) {
+                return; // a diff's file side: that file
             }
             ProjectPanel panel = host.builtProjectPanel();
             if (panel.isMapShowing() || panel.getRoot() != null) {
@@ -2732,6 +2738,9 @@ final class WindowCommandRegistrar {
                                             host.settingsWindow().syncAll();
                                         })));
         host.registry().register(Command.of("lsp.gotoDefinition", () -> {
+            if (host.diffIntel().fromFile(() -> host.registry().run("lsp.gotoDefinition"))) {
+                return; // from a diff's file side: from the file, at the same place
+            }
             // A server's answer first; without one (LSP off, no server for the file, nothing found) an HTML
             // page's href/src opens its file (HTML review B6), else the server-free symbol index answers for
             // the languages it reads.
@@ -2750,7 +2759,13 @@ final class WindowCommandRegistrar {
                 .register(Command.of(
                         "lsp.gotoDefinitionInSplit", () -> host.ifLsp(host.navigation()::gotoDefinitionInSplit)));
         host.registry()
-                .register(Command.of("lsp.findReferences", () -> host.ifLsp(host.lspCoordinator()::findReferences)));
+                .register(Command.of(
+                        "lsp.findReferences",
+                        () -> host.ifLsp(() -> {
+                            if (!host.diffIntel().fromFile(() -> host.registry().run("lsp.findReferences"))) {
+                                host.lspCoordinator().findReferences();
+                            }
+                        })));
         host.registry()
                 .register(Command.of(
                         "lsp.gotoImplementation", () -> host.ifLsp(host.lspCoordinator()::gotoImplementation)));
@@ -2763,7 +2778,14 @@ final class WindowCommandRegistrar {
                 .register(Command.of("lsp.gotoSuperMethod", () -> host.ifLsp(host.lspCoordinator()::gotoSuperMethod)));
         host.registry()
                 .register(Command.of("lsp.gotoSymbol", () -> host.ifLsp(host.lspCoordinator()::gotoSymbolInWorkspace)));
-        host.registry().register(Command.of("lsp.hover", () -> host.ifLsp(host.lspCoordinator()::showHover)));
+        host.registry()
+                .register(Command.of(
+                        "lsp.hover",
+                        () -> host.ifLsp(() -> {
+                            if (!host.diffIntel().hover()) { // a diff's file side: answered over the diff
+                                host.lspCoordinator().showHover();
+                            }
+                        })));
         host.registry()
                 .register(Command.of("lsp.restartServers", () -> host.ifLsp(host.lspCoordinator()::restartServers)));
         host.registry()

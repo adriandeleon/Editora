@@ -59,6 +59,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   app), Run File and F5 on the `config.ru`, a Ruby file at the project's top such as `app.rb`, or a file under `app/` or
   `config/` start the app under rackup on the first free port from 9292; under the debugger a request stops in your
   routes. A `config.ru` opens as Ruby.
+- **Code intelligence in diffs.** On the side of a diff that is your file, Show Hover answers over the diff, and Go to
+  Definition, Find References and Reveal in Map act from the file at the same place.
 - **Phoenix: run and debug the web server.** F5 or Run File on a module of a Phoenix app runs `mix phx.server`; under
   the debugger a breakpoint in a controller, LiveView or plug stops while the browser's request waits, and the server
   runs until Stop.
