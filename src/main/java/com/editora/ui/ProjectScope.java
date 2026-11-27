@@ -295,13 +295,16 @@ final class ProjectScope {
     private @Nullable String applied;
 
     /**
-     * What applies here, as one string: root, trust, the values (language servers aside: LspCoordinator's) and the
-     * {@code html} object. That object is read untrusted too (the HTML servers take it, its ignored keys are said):
-     * without it here, a project whose read landed after its first page opened never told the servers.
+     * What applies here, as one string: root, trust, the values, the language servers' commands, enables and Bash
+     * IDE object, and the {@code html} object (read untrusted too: the HTML servers take it, its ignored keys are
+     * said). Without those, a project whose read landed after its first buffer synced or page opened told nobody
+     * that its servers' settings had arrived.
      */
     private String signature() {
-        return root() + "|" + trusted() + "|" + settings().valueOverrides() + "|"
-                + settings().getHtml() + "|"
+        ProjectSettings s = settings();
+        return root() + "|" + trusted() + "|" + s.valueOverrides() + "|"
+                + s.getLspCommands() + "|" + s.getLspEnabled() + "|" + s.getBashIde() + "|"
+                + s.getHtml() + "|"
                 + toolchain().signature();
     }
 
