@@ -365,12 +365,12 @@ public final class BranchPopup {
     }
 
     /**
-     * "No VCS" mode: the active file isn't under version control, so the dropdown offers
+     * "No Git" mode: the active file isn't under version control, so the dropdown offers
      * "Clone Git repository…" only. Opened from the always-visible status-bar segment.
      */
     public void showNoVcs(Window owner, Node anchor, Runnable onClone) {
         ensureBuilt();
-        titleLabel.setText(tr("branchpopup.noVcs"));
+        titleLabel.setText(tr("branchpopup.noGit"));
         remoteUrlLabel.setText("");
         remoteUrlLabel.setTooltip(null);
         all = List.of(new ActionRow(tr("branchpopup.clone"), "", "git.clone", onClone));
@@ -378,12 +378,12 @@ public final class BranchPopup {
     }
 
     /**
-     * "No VCS" mode with both ways to get a repository: "Clone Git repository…" and "Initialize Repository"
+     * "No Git" mode with both ways to get a repository: "Clone Git repository…" and "Initialize Repository"
      * (a new one in the project's folder, {@code git.init}).
      */
     public void showNoVcs(Window owner, Node anchor, Runnable onClone, Runnable onInit) {
         ensureBuilt();
-        titleLabel.setText(tr("branchpopup.noVcs"));
+        titleLabel.setText(tr("branchpopup.noGit"));
         remoteUrlLabel.setText("");
         remoteUrlLabel.setTooltip(null);
         all = List.of(

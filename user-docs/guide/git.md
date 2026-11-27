@@ -14,7 +14,7 @@ inert.
 
 - The **status bar** shows the current branch with ahead/behind counts. Click it
   for a dropdown to switch or create branches, pull, fetch, and push. Outside a
-  repo it reads "No VCS" and offers to clone one or to initialize a new one. While a merge,
+  repo it reads "No Git" and offers to clone one or to initialize a new one. While a merge,
   rebase, cherry-pick, or revert is in progress it names it (`main · MERGING`).
   A repository Git refuses to work in (for example "dubious ownership") is
   reported with Git's reason in the status bar and the Commit window.

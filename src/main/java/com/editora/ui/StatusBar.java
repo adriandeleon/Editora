@@ -68,7 +68,7 @@ public final class StatusBar extends HBox {
 
     private @Nullable Runnable onOpenDoctor;
     private @Nullable OverlayHost messageLogHost;
-    /** Git branch + ahead/behind, "No VCS" outside a repository, "Git off" when disabled; opens the dropdown. */
+    /** Git branch + ahead/behind, "No Git" outside a repository, "Git off" when disabled; opens the dropdown. */
     private final Label git = segment("git.switchBranch", tr("statusbar.tip.gitSwitch"));
     /** The node id of the checks segment — the checks list card anchors itself to it. */
     static final String GITHUB_CHECKS_ID = "status-github-checks";
@@ -235,7 +235,7 @@ public final class StatusBar extends HBox {
         readOnly.getStyleClass().add("status-readonly");
 
         git.getStyleClass().add("status-git");
-        git.setText(tr("statusbar.noVcs")); // always shown; updated by setGitBranch
+        git.setText(tr("statusbar.noGit")); // always shown; updated by setGitBranch
 
         githubChecks.getStyleClass().add("status-git");
         githubChecks.setId(GITHUB_CHECKS_ID);
@@ -636,12 +636,12 @@ public final class StatusBar extends HBox {
     }
 
     /**
-     * "No VCS": Git is on but there is no repository here. Clicking opens the dropdown's Clone / Init. A
+     * "No Git": Git is on but there is no repository here. Clicking opens the dropdown's Clone / Init. A
      * folder git <em>refuses</em> to work in says so instead, with git's reason in the tooltip.
      */
     private void showNoVcs() {
         if (gitRefusal.isEmpty()) {
-            git.setText(tr("statusbar.noVcs"));
+            git.setText(tr("statusbar.noGit"));
             ControlNames.tip(git, tr("statusbar.tip.gitNoVcs"));
         } else {
             git.setText(tr("statusbar.gitRefused"));
@@ -658,7 +658,7 @@ public final class StatusBar extends HBox {
 
     /**
      * Updates the Git branch segment: {@code ⎇ branch} with optional {@code ↑ahead ↓behind} inside a
-     * repository, "No VCS" for a {@code null}/blank {@code branch} (no version control for this file, or no
+     * repository, "No Git" for a {@code null}/blank {@code branch} (no version control for this file, or no
      * file). While Git is off the segment keeps saying so.
      */
     public void setGitBranch(@Nullable String branch, int ahead, int behind) {
@@ -698,7 +698,7 @@ public final class StatusBar extends HBox {
     /**
      * Git's reason for refusing to work in this folder (dubious ownership, a bare repository, …), or
      * {@code ""}: outside a repository the segment then reads "Git: refused" with the reason in its tooltip
-     * rather than "No VCS", which sent people looking for a repository that was there all along.
+     * rather than "No Git", which sent people looking for a repository that was there all along.
      */
     public void setGitRefusal(String reason) {
         gitRefusal = reason == null ? "" : reason.strip();
@@ -730,7 +730,7 @@ public final class StatusBar extends HBox {
     }
 
     /**
-     * The segment is part of the bar in every Git state — branch, "No VCS" or "Git off" — so the dropdown
+     * The segment is part of the bar in every Git state — branch, "No Git" or "Git off" — so the dropdown
      * (and with it Clone and Init) is always one click away. Simple UI mode has no Git at all and hides it.
      */
     private void applyGitVisibility() {

@@ -101,7 +101,7 @@ class GitStateFxTest {
     }
 
     /**
-     * Outside a repository the status bar says "No VCS" (one click from Clone / Init) and the Commit window
+     * Outside a repository the status bar says "No Git" (one click from Clone / Init) and the Commit window
      * stays, showing "Not a Git repository" with its Clone button. Both used to be hidden there, so neither
      * text was ever seen. With Git switched off the segment says so and the windows go.
      */
@@ -129,7 +129,7 @@ class GitStateFxTest {
         assertFalse(unavailable.contains(log));
 
         applyGitState(GitService.RepoState.NONE);
-        assertEquals(com.editora.i18n.Messages.tr("statusbar.noVcs"), FxTestSupport.callOnFx(segment::getText));
+        assertEquals(com.editora.i18n.Messages.tr("statusbar.noGit"), FxTestSupport.callOnFx(segment::getText));
         assertTrue(FxTestSupport.callOnFx(segment::isVisible), "the segment is shown, not hidden");
         assertFalse(FxTestSupport.callOnFx(segment::isDisable), "and clickable: it opens Clone / Init");
         assertFalse(unavailable.contains(commit), "the Commit window stays available");
@@ -148,7 +148,7 @@ class GitStateFxTest {
         fx.shared.getSettings().setGitSupport(true);
         FxTestSupport.runOnFx(() -> FxTestSupport.invoke(git, "applySupport"));
         assertEquals(
-                com.editora.i18n.Messages.tr("statusbar.noVcs"),
+                com.editora.i18n.Messages.tr("statusbar.noGit"),
                 FxTestSupport.callOnFx(segment::getText),
                 "switched back on: no longer \"Git off\"");
     }

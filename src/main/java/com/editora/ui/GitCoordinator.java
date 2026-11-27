@@ -342,7 +342,7 @@ final class GitCoordinator {
     }
 
     /** True when Git actions can actually run: the feature is on AND the active context is inside a repo
-     *  (the "No VCS" state has no repo). Drives whether repo-only menu items are shown/enabled. */
+     *  (the "No Git" state has no repo). Drives whether repo-only menu items are shown/enabled. */
     boolean isAvailable() {
         return isEnabled() && repoRoot != null;
     }
