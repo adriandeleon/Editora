@@ -742,7 +742,11 @@ public enum ConfigSchema {
                         "dismissedUpdateVersion",
                         "latestReleaseVersion",
                         "latestReleaseUrl",
-                        "lastUpdateCheckOkEpoch");
+                        "lastUpdateCheckOkEpoch",
+                        // First-run state, not preferences: v189→190 turns keymapChosen on for every older file, so
+                        // an older build's defaults would otherwise never read as defaults again (StoreIntegrityTest)
+                        "keymapChosen",
+                        "javaSourcesOffered");
             case PROJECTS -> java.util.Set.of("activeProjectId", "openProjectIds");
             default -> java.util.Set.of();
         };
