@@ -69,6 +69,19 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
 
         /** The window's review threads. */
         ReviewCoordinator reviewCoordinator();
+
+        /** Whether agent edits are proposed for approval rather than applied (a setting, off by default). */
+        boolean editsNeedApproval();
+
+        /** Opens a proposed edit of {@code buffer} for the user to accept or reject; {@code decided} hears which. */
+        void openProposal(
+                EditorBuffer buffer,
+                String before,
+                String after,
+                com.editora.diff.DiffModels.DiffModel model,
+                @Nullable String why,
+                String agent,
+                java.util.concurrent.CompletableFuture<ProposalPane.Decision> decided);
     }
 
     private final Host host;
@@ -351,6 +364,105 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
             }
         }
         return "The buffer kept changing while the edit was applied; read it again and retry.";
+    }
+
+    /** How long a proposed edit waits for the user before the tool answers {@code timeout} (within the relay's 5 min). */
+    static final long PROPOSAL_WAIT_MILLIS = 240_000;
+
+    /** {@link #PROPOSAL_WAIT_MILLIS}, shorter in tests. */
+    private volatile long proposalWaitMillis = PROPOSAL_WAIT_MILLIS;
+
+    void setProposalWaitMillisForTest(long millis) {
+        proposalWaitMillis = millis;
+    }
+
+    @Override
+    public boolean editsNeedApproval() {
+        return mcpOnFx(host::editsNeedApproval);
+    }
+
+    @Override
+    public ProposalOutcome proposeEdit(
+            @Nullable String path,
+            @Nullable String oldText,
+            String newText,
+            boolean replaceAll,
+            boolean wholeBuffer,
+            @Nullable String why,
+            String agent) {
+        Taken taken = mcpOnFx(() -> take(path));
+        if (taken.refusal() != null) {
+            return new ProposalOutcome("refused", taken.refusal());
+        }
+        String text = taken.text();
+        String replacement = newText == null ? "" : newText;
+        String next;
+        if (wholeBuffer) {
+            next = com.editora.editops.LineEndings.toLf(replacement);
+        } else {
+            if (oldText == null || oldText.isEmpty()) {
+                return new ProposalOutcome("refused", "old_text is required unless replace_whole_buffer is true.");
+            }
+            int first = text.indexOf(oldText);
+            if (first < 0) {
+                return new ProposalOutcome("refused", "old_text not found in the buffer.");
+            }
+            if (!replaceAll && text.indexOf(oldText, first + 1) >= 0) {
+                return new ProposalOutcome(
+                        "refused", "old_text occurs more than once; pass replace_all or a longer, unique old_text.");
+            }
+            next = com.editora.editops.LineEndings.toLf(
+                    replaceAll
+                            ? text.replace(oldText, replacement)
+                            : text.substring(0, first) + replacement + text.substring(first + oldText.length()));
+        }
+        if (next.equals(text)) {
+            return new ProposalOutcome(
+                    "refused", "The proposed text is the buffer's text: there is nothing to change.");
+        }
+        java.util.concurrent.CompletableFuture<ProposalPane.Decision> decided =
+                new java.util.concurrent.CompletableFuture<>();
+        String proposed = next;
+        // The diff is worked out here, off the FX thread (PERF-01); the FX thread only builds the tab.
+        com.editora.diff.DiffModels.DiffModel model =
+                com.editora.diff.DiffEngine.compute(text, proposed, com.editora.diff.DiffEngine.DiffOptions.DEFAULT);
+        mcpOnFx(() -> {
+            host.openProposal(taken.buffer(), text, proposed, model, why, agent, decided);
+            return null;
+        });
+        ProposalPane.Decision d;
+        try {
+            d = decided.get(proposalWaitMillis, java.util.concurrent.TimeUnit.MILLISECONDS);
+        } catch (java.util.concurrent.TimeoutException e) {
+            decided.complete(ProposalPane.Decision.timeout()); // closes the tab: the answer came too late
+            return new ProposalOutcome("timeout", "The user did not answer in time; nothing was changed.");
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return new ProposalOutcome("refused", "Interrupted while waiting for the user.");
+        } catch (java.util.concurrent.ExecutionException e) {
+            return new ProposalOutcome("refused", String.valueOf(e.getCause()));
+        }
+        if (!d.accepted()) {
+            return new ProposalOutcome(d.timedOut() ? "timeout" : "rejected", d.reason());
+        }
+        EditorBuffer.PreparedEdit prepared = EditorBuffer.PreparedEdit.between(taken.version(), text, proposed);
+        Applied applied = mcpOnFx(() -> {
+            EditorBuffer b = taken.buffer();
+            if (b.isDisposed() || b.docVersion() != taken.version()) {
+                return new Applied("The buffer changed while the user looked at the proposal; nothing was applied."
+                        + " Read it again and propose again.");
+            }
+            NoUndoGuard.Verdict verdict = NoUndoGuard.check(b, tr("noUndo.op.agent"));
+            if (!verdict.allowed()) {
+                return new Applied(verdict.message());
+            }
+            b.applyPreparedWholeText(prepared, proposed); // one undo step for the span that differs
+            served.served(b, proposed);
+            return Applied.DONE;
+        });
+        return applied.refusal() == null
+                ? new ProposalOutcome("accepted", "")
+                : new ProposalOutcome("refused", applied.refusal());
     }
 
     /** How many times an edit is searched for again when the buffer changed before it was applied. */

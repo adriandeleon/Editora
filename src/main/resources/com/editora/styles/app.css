@@ -7136,3 +7136,15 @@
     -fx-font-size: 11px;
     -fx-font-style: italic;
 }
+
+/* An agent's proposed edit (MCP propose_edit): the bar over its diff. */
+.proposal-banner {
+    -fx-background-color: -color-accent-subtle;
+    -fx-border-color: transparent transparent -color-border-default transparent;
+}
+.proposal-banner .proposal-banner-lead {
+    -fx-font-weight: bold;
+}
+.proposal-banner .proposal-banner-text {
+    -fx-text-fill: -color-fg-default;
+}
