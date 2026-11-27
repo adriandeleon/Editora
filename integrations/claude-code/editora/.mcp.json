@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "editora": {
+      "command": "${user_config.editora_bin}",
+      "args": ["mcp"]
+    }
+  }
+}
