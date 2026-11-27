@@ -146,6 +146,25 @@ you refresh it a review from it is not tied to a commit. A review of a pull
 request on a GitHub Enterprise address with a port number is not tied to a
 commit either.
 
+### Line comments and threads
+
+A file's diff opened from the review tab shows the pull request's review
+threads from GitHub: a mark in the gutter of the side and line each is on.
+Click it to read the thread, reply, **Resolve** or **Reopen** it, or open it on
+GitHub. The review tab's summary line counts the open and resolved threads.
+
+To comment on lines, put the caret on them (or select a range) on either side
+and run **Add Review Comment** (`review.addComment`), or click **Comment Here**
+on a line's card. The comment is a **draft**: it is kept in the review tab, not
+sent. A `suggestion` block in it becomes a GitHub suggested change. Drafts are
+marked like threads, and their card lets you edit or delete them. **Submit
+review…** sends them all with the review, as its line comments, for the commit
+the tab showed. Closing the review tab with drafts asks first: **Keep Drafts**
+keeps it open.
+
+Replies and resolving go to GitHub when you click them; drafts go only with the
+review you submit.
+
 ## Working with pull requests
 
 - **GitHub: Check Out Pull Request…** (`github.checkoutPr`) picks an open pull
@@ -383,9 +402,10 @@ Selected Row**, and **Refresh**.
 
 ## Limitations
 
-The integration can only do what `gh` can. Inline and threaded review
-comments, and GitHub's "suggested changes", have no `gh` subcommand, so they
-aren't supported yet. Neither are notifications, job-level drill-down into a run,
+The integration can only do what `gh` can, including its `gh api` calls. Drafts
+of line comments live in the review tab until you submit the review: they are
+not saved anywhere else. Comments on files that are not in the pull request's
+diff are not supported, and neither are notifications, job-level drill-down into a run,
 or artifact downloads. Pull request diffs are fetched whole rather than per file
 (see [Large pull requests](#large-pull-requests) for the exception), and a file
 with no text changes, such as a rename, a mode change or a binary file, has no

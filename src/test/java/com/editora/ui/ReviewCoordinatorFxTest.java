@@ -617,4 +617,43 @@ class ReviewCoordinatorFxTest {
         assertEquals(1, sent.size());
         assertTrue(sent.get(0).contains("Fix me."));
     }
+
+    @Test
+    void addReviewCommentInAPullRequestsDiffDraftsALineComment() throws Exception {
+        String base = "a\nb\n";
+        String head = "a\nB\n";
+        var model = com.editora.diff.DiffEngine.compute(base, head, com.editora.diff.DiffEngine.DiffOptions.DEFAULT);
+        DiffViewerPane pane = FxTestSupport.callOnFx(() ->
+                new DiffViewerPane("A", "Base", "Head", "A", "A", base, head, model, "Monospaced", 13, true, "A"));
+        List<String> asked = new ArrayList<>();
+        fx(() -> {
+            pane.setLineHook(new DiffViewerPane.LineHook() {
+                @Override
+                public java.util.Set<Integer> marked(boolean left) {
+                    return java.util.Set.of();
+                }
+
+                @Override
+                public void open(boolean left, int line) {}
+
+                @Override
+                public void comment(boolean left, int first, int last) {
+                    asked.add((left ? "base " : "head ") + first + "-" + last);
+                }
+            });
+            root.getChildren().add(0, pane.node());
+            root.applyCss();
+            root.layout();
+        });
+        active = null;
+        activeDiff = pane;
+        org.fxmisc.richtext.CodeArea right = FxTestSupport.field(pane, "rightArea");
+        fx(() -> {
+            right.requestFocus();
+            right.moveTo(1, 0);
+        });
+        fx(coordinator::addComment);
+        assertEquals(List.of("head 2-2"), asked, "the pull request's own draft, on the head side");
+        fx(() -> root.getChildren().remove(pane.node()));
+    }
 }
