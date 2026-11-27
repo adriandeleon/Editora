@@ -93,9 +93,10 @@ class McpProtocolTest {
                 + "\"promptsListChanged\":true,\"resourceSubscriptions\":[\"file:///b\",\"file:///a\",\"\",3]}}"));
         assertEquals(List.of("file:///a", "file:///b"), f.resourceSubscriptions());
         assertEquals(
-                "{\"toolsListChanged\":true,\"resourceSubscriptions\":[\"file:///a\",\"file:///b\"]}",
+                "{\"toolsListChanged\":true,\"promptsListChanged\":true,\"resourceSubscriptions\":"
+                        + "[\"file:///a\",\"file:///b\"]}",
                 f.agreed(m).toString(),
-                "no prompts are offered, so their filter is not agreed to");
+                "the fixed lists are agreed to (they never fire)");
         assertEquals("{}", McpProtocol.Filters.of(null).agreed(m).toString());
     }
 }
