@@ -221,6 +221,25 @@ class ClaudeIdeServerTest {
         }
     }
 
+    /** Regression: an Editora that stopped without closing its windows left lock files for Claude Code to offer. */
+    @Test
+    void lockFilesOfAGoneEditoraAreReapedOthersKept(@TempDir Path dir) throws Exception {
+        Process done = new ProcessBuilder("true").start();
+        done.waitFor();
+        long gone = done.pid();
+        Files.writeString(dir.resolve("1.lock"), "{\"pid\":" + gone + ",\"ideName\":\"Editora\"}");
+        Files.writeString(dir.resolve("2.lock"), "{\"pid\":" + gone + ",\"ideName\":\"Visual Studio Code\"}");
+        Files.writeString(
+                dir.resolve("3.lock"), "{\"pid\":" + ProcessHandle.current().pid() + ",\"ideName\":\"Editora\"}");
+        Files.writeString(dir.resolve("4.lock"), "not json");
+        ClaudeIdeServer.reapStaleLockFiles(dir);
+        assertFalse(Files.exists(dir.resolve("1.lock")), "Editora's, process gone");
+        assertTrue(Files.exists(dir.resolve("2.lock")), "another IDE's is never touched");
+        assertTrue(Files.exists(dir.resolve("3.lock")), "a running Editora's stays");
+        assertTrue(Files.exists(dir.resolve("4.lock")), "unreadable: not ours to judge");
+        ClaudeIdeServer.reapStaleLockFiles(dir.resolve("missing")); // no folder yet: nothing to do
+    }
+
     @Test
     void theLockFolderFollowsClaudesConfigFolder() {
         assertEquals(Path.of("/c/ide"), ClaudeIdeServer.ideDir("/c", Path.of("/home/u")));

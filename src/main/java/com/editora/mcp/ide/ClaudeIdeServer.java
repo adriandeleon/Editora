@@ -70,7 +70,47 @@ public final class ClaudeIdeServer implements AutoCloseable {
         });
         this.ideDir = ideDir;
         this.lockFile = ideDir.resolve(ws.port() + ".lock");
+        reapStaleLockFiles(ideDir);
+        // A JVM that stops without closing its windows (a signal, a crash of the FX thread) still removes the lock
+        // file, so Claude Code does not offer a window that is gone. A hard kill cannot; the next start reaps it.
+        Runtime.getRuntime().addShutdownHook(shutdownHook);
         writeLockFile(ideDir);
+    }
+
+    private final Thread shutdownHook = new Thread(this::deleteLockFile, "claude-ide-lock-cleanup");
+
+    /**
+     * Removes the lock files Editora left in {@code ideDir} for a process that is no longer running: Editora's own
+     * only (its {@code ideName}), so another IDE's files are never touched.
+     */
+    static void reapStaleLockFiles(Path ideDir) {
+        try (var files = Files.list(ideDir)) {
+            for (Path f : files.filter(p -> p.getFileName().toString().endsWith(".lock"))
+                    .toList()) {
+                try {
+                    JsonNode lock = new ObjectMapper().readTree(Files.readString(f));
+                    long pid = lock.path("pid").asLong(-1);
+                    boolean ours = "Editora".equals(lock.path("ideName").asText(""));
+                    boolean alive = pid > 0
+                            && ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false);
+                    if (ours && !alive) {
+                        Files.deleteIfExists(f);
+                    }
+                } catch (IOException | RuntimeException unreadable) {
+                    // not ours to judge
+                }
+            }
+        } catch (IOException e) {
+            LOG.log(Level.FINE, "could not list " + ideDir, e);
+        }
+    }
+
+    private void deleteLockFile() {
+        try {
+            Files.deleteIfExists(lockFile);
+        } catch (IOException e) {
+            LOG.log(Level.FINE, "could not remove " + lockFile, e);
+        }
     }
 
     /** Where Claude Code looks for lock files: {@code $CLAUDE_CONFIG_DIR/ide}, else {@code ~/.claude/ide}. Pure. */
@@ -257,10 +297,11 @@ public final class ClaudeIdeServer implements AutoCloseable {
     @Override
     public void close() {
         ws.close();
+        deleteLockFile();
         try {
-            Files.deleteIfExists(lockFile);
-        } catch (IOException e) {
-            LOG.log(Level.FINE, "could not remove " + lockFile, e);
+            Runtime.getRuntime().removeShutdownHook(shutdownHook);
+        } catch (IllegalStateException shuttingDown) {
+            // the hook is running or about to: it removes the same file
         }
     }
 }

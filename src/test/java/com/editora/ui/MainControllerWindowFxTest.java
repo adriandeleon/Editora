@@ -238,6 +238,10 @@ class MainControllerWindowFxTest {
             assertTrue(connect.startsWith("claude mcp add --scope user editora -- "), connect);
             assertTrue(connect.contains(" mcp --config-dir "), "a test config folder is not the default: " + connect);
 
+            // Settings is open (built, with the MCP page's status line) before the server is switched on.
+            SettingsWindow settingsWindow = FxTestSupport.field(controller, "settingsWindow");
+            settingsWindow.show(FxTestSupport.<javafx.stage.Stage>field(controller, "stage"));
+
             List<SettingsRig.Shown> asked = SettingsRig.answering(
                     ButtonBar.ButtonData.CANCEL_CLOSE, () -> FxTestSupport.invoke(controller, "toggleMcpSupport"));
             assertEquals(1, asked.size());
@@ -257,6 +261,25 @@ class MainControllerWindowFxTest {
         com.editora.mcp.McpServer server =
                 (com.editora.mcp.McpServer) FxTestSupport.callOnFx(() -> getStatic("mcpServer"));
         awaitRunning(server, true);
+        // Regression: Settings read the status when the switch was flipped, before the server was up, and went on
+        // saying it was not running.
+        com.editora.testkit.Await.until(
+                () -> {
+                    try {
+                        return FxTestSupport.callOnFx(() -> {
+                            SettingsWindow sw = FxTestSupport.field(controller, "settingsWindow");
+                            SettingsAiPages pages = FxTestSupport.field(sw, "aiPages");
+                            Label status = FxTestSupport.field(pages, "mcpStatusLabel");
+                            return tr("settings.mcp.running", server.url()).equals(status.getText());
+                        });
+                    } catch (Exception e) {
+                        return false;
+                    }
+                },
+                "Settings says the server runs");
+        FxTestSupport.runOnFx(() -> FxTestSupport.<javafx.stage.Stage>field(
+                        FxTestSupport.field(controller, "settingsWindow"), "stage")
+                .hide());
         FxTestSupport.runOnFx(() -> {
             Label indicator = statusSegment("mcp");
             assertTrue(server.isRunning());
