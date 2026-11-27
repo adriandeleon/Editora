@@ -65,7 +65,7 @@ class AgentChangeSetsTest {
         sets.endTurn();
         sets.beforeMcpEdit("MCP agent", b, "b0");
         assertEquals(2, heard.size(), heard.toString());
-        assertEquals("Turn 1 · Claude Code /r/A.java one", heard.get(0));
+        assertEquals("Turn 1 · Claude Code " + a + " one", heard.get(0)); // the path as this OS writes it
         assertEquals("Turn 2 · MCP agent /r/B.java b0", heard.get(1));
     }
 
