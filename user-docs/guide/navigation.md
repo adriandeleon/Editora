@@ -218,6 +218,17 @@ projects are on (Settings → Workspace), not in the *Project: Open Folder…* p
 (whose Enter already chooses a folder), and not in the IntelliJ macOS keymap,
 where `C-d` is Start Debugging.
 
+**Save As from the keyboard** (`file.saveAs`: `C-x C-w` in the Emacs keymap,
+`Ctrl+Shift+S`, or `Cmd+Shift+S` on macOS, in the others)
+uses the same card. It starts from the file's current path with the name
+selected, so typing a new name replaces it. The folder you are typing in is
+listed, and Tab completes folder and file names. Enter on a folder goes into it
+and keeps the file's name, so a second Enter saves there. Otherwise Enter saves
+under exactly what you typed: the first row is only highlighted, so typing
+`notes` next to `notes.txt` saves `notes`. Move the highlight onto a row with
+the arrow keys to pick that file or folder. A relative name is saved next to
+the current file, and `~` is your home folder.
+
 ## The tab switcher
 
 `C-x C-b` (`switcher.show`) opens an IntelliJ-style switcher over the open

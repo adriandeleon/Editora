@@ -102,6 +102,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Save As completes folders.** The keyboard Save As (`file.saveAs`) is now the file finder's card: it lists the
+  folder you are typing in, Tab completes folder and file names, and Enter on a folder goes into it and keeps the
+  file's name. Before, it was a plain text field, so a different folder had to be typed out in full.
 - **Go to File searches the project.** IntelliJ's **Ctrl+Shift+N** (⌘⇧O on macOS) and VS Code's and Sublime's
   **Ctrl+P** (⌘P) run the new **Go: Go to File…**: Search Everywhere showing only the project's files, so a class
   name finds its file wherever it sits. They ran Find File, a path prompt in the project root, where a name that did

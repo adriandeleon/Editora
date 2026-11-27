@@ -2879,38 +2879,46 @@ final class FileWorkflowCoordinator {
     /**
      * The keyboard-first Save As: instead of the native file chooser (which the toolbar button uses), prompt
      * for the target path in the in-scene overlay so the command palette / a keybinding stay mouse-free. The
-     * field is pre-filled with the current path (or the project folder + suggested name for an untitled
-     * buffer); a relative name resolves against that folder, {@code ~} expands to home. Confirms before
-     * overwriting a different existing file.
+     * prompt is the file finder's card ({@link FileFinder#forSave}): it lists the folder being typed, Tab
+     * completes folder and file names, and Enter on a folder goes into it. The field is pre-filled with the
+     * current path (or the project folder + suggested name for an untitled buffer); a relative name resolves
+     * against that folder, {@code ~} expands to home. Confirms before overwriting a different existing file.
      */
     void saveAsPrompt(@Nullable EditorBuffer buffer) {
         if (buffer == null || refuseUnsavable(buffer)) {
             return;
         }
         Path base = saveAsBaseDir(buffer); // a local folder, also for a remote buffer: its copy is saved locally
-        host.promptText(tr("dialog.saveAs.title"), tr("dialog.saveAs.prompt"), saveAsInitial(buffer, base), value -> {
-            Path target = com.editora.config.PathKeys.resolveUserInput(value, base, System.getProperty("user.home"));
-            if (target == null) {
-                host.setStatus(tr("status.saveAs.invalidPath"));
-                return;
-            }
-            if (refuseTargetOpenElsewhere(buffer, target)) {
-                return; // before asking to overwrite: the answer could not be honoured
-            }
-            // whether the typed name is taken is looked at off the FX thread (PERF-01, Pauta 6.2.0)
-            com.editora.perf.OffFx.then("save-as-look", () -> Files.exists(target), taken -> {
-                if (buffer.isDisposed() || refuseTargetOpenElsewhere(buffer, target)) {
-                    return;
-                }
-                Path current = buffer.getPath();
-                boolean overwritingOther = taken.or(false)
-                        && (current == null || !com.editora.config.PathKeys.sameNormalized(target, current));
-                if (overwritingOther && !confirmOverwrite(target)) {
-                    return;
-                }
-                applySaveAsTarget(buffer, target);
-            });
-        });
+        String initial = saveAsInitial(buffer, base);
+        FileFinder finder = FileFinder.forSave(
+                () -> initial,
+                value -> {
+                    Path target =
+                            com.editora.config.PathKeys.resolveUserInput(value, base, System.getProperty("user.home"));
+                    if (target == null) {
+                        host.setStatus(tr("status.saveAs.invalidPath"));
+                        return;
+                    }
+                    if (refuseTargetOpenElsewhere(buffer, target)) {
+                        return; // before asking to overwrite: the answer could not be honoured
+                    }
+                    // whether the typed name is taken is looked at off the FX thread (PERF-01, Pauta 6.2.0)
+                    com.editora.perf.OffFx.then("save-as-look", () -> Files.exists(target), taken -> {
+                        if (buffer.isDisposed() || refuseTargetOpenElsewhere(buffer, target)) {
+                            return;
+                        }
+                        Path current = buffer.getPath();
+                        boolean overwritingOther = taken.or(false)
+                                && (current == null || !com.editora.config.PathKeys.sameNormalized(target, current));
+                        if (overwritingOther && !confirmOverwrite(target)) {
+                            return;
+                        }
+                        applySaveAsTarget(buffer, target);
+                    });
+                },
+                tr("dialog.saveAs.title"));
+        finder.setOverlayHost(host.services().overlayHost());
+        finder.show(host.stage());
     }
 
     /**

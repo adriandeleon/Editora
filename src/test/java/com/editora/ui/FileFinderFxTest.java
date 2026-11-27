@@ -54,6 +54,8 @@ class FileFinderFxTest {
     private static final class Shown implements AutoCloseable {
         final AsyncTestScope async = new AsyncTestScope();
         final List<Path> chosen = new ArrayList<>();
+        /** What a Save As finder handed over, as typed. */
+        final List<String> saved = new ArrayList<>();
         /** Folders C-d opened as a project. */
         final List<Path> projects = new ArrayList<>();
         /** Whether project support is on: asked each time the finder is shown. */
@@ -67,9 +69,20 @@ class FileFinderFxTest {
         OverlayHost host;
 
         Shown(Path root, boolean pickDirectory, int expectedRows) throws Exception {
-            finder = FxTestSupport.callOnFx(() -> pickDirectory
-                    ? new FileFinder(() -> root, chosen::add, true, "Choose Folder")
-                    : new FileFinder(() -> root, chosen::add));
+            this(root, pickDirectory, null, expectedRows);
+        }
+
+        /** A Save As finder ({@link FileFinder#forSave}) that starts from {@code initial}. */
+        static Shown saving(Path root, String initial, int expectedRows) throws Exception {
+            return new Shown(root, false, initial, expectedRows);
+        }
+
+        private Shown(Path root, boolean pickDirectory, String saveInitial, int expectedRows) throws Exception {
+            finder = FxTestSupport.callOnFx(() -> saveInitial != null
+                    ? FileFinder.forSave(() -> saveInitial, saved::add, "Save As")
+                    : pickDirectory
+                            ? new FileFinder(() -> root, chosen::add, true, "Choose Folder")
+                            : new FileFinder(() -> root, chosen::add));
             FxTestSupport.runOnFx(finder::ensureBuilt); // the card is made on the first show: the fields below are its
             input = FxTestSupport.field(finder, "input");
             list = FxTestSupport.field(finder, "list");
@@ -260,6 +273,99 @@ class FileFinderFxTest {
             assertEquals(List.of(guide), s.chosen);
             assertFalse(FxTestSupport.callOnFx(s.finder::isShown), "the finder closes once a file is chosen");
         }
+    }
+
+    // --- Save As (FileFinder.forSave) ----------------------------------------------------------------------
+
+    @Test
+    void saveAsStartsFromTheFilesPathWithItsNameSelectedAndSaysEnterSaves(@TempDir Path root) throws Exception {
+        tree(root);
+        try (Shown s = Shown.saving(root, root + SEP + "alpha.txt", 1)) {
+            assertEquals(root + SEP + "alpha.txt", s.text());
+            assertEquals(List.of("alpha.txt"), s.names());
+            SaveGuardsFxTest.awaitOnFx(
+                    s.async,
+                    "the name selected without its extension",
+                    () -> "alpha".equals(s.input.getSelectedText()));
+            String save = com.editora.i18n.Messages.tr("pickerKeys.save", "").trim();
+            assertTrue(s.hint().contains(save) && s.hint().contains("tab"), "Tab completes, Enter saves: " + s.hint());
+        }
+    }
+
+    /** The bug: the Save As prompt was a plain field, so a folder could not be completed or browsed into. */
+    @Test
+    void saveAsTabCompletesAFolderAndEnterGoesIntoItKeepingTheName(@TempDir Path root) throws Exception {
+        tree(root);
+        Files.writeString(root.resolve("docs").resolve("guide.md"), "");
+        try (Shown s = Shown.saving(root, root + SEP + "alpha.txt", 1)) {
+            s.type(root + SEP + "do");
+            assertEquals(List.of("docs"), s.names(), "files and folders are listed as you type");
+            assertTrue(s.press(KeyCode.TAB));
+            assertEquals(root + SEP + "docs", s.text());
+
+            assertTrue(s.press(KeyCode.ENTER));
+            assertEquals(root.resolve("docs") + SEP + "alpha.txt", s.text(), "into the folder, the name kept");
+            assertTrue(s.saved.isEmpty(), "going into a folder saves nothing");
+            assertTrue(FxTestSupport.callOnFx(s.finder::isShown));
+
+            s.press(KeyCode.ENTER);
+            assertEquals(List.of(root.resolve("docs") + SEP + "alpha.txt"), s.saved);
+            assertFalse(FxTestSupport.callOnFx(s.finder::isShown), "the card closes once the path is taken");
+        }
+        try (Shown s = Shown.saving(root, root + SEP + "alpha.txt", 1)) {
+            s.type(root + SEP + "src" + SEP);
+            s.press(KeyCode.ENTER);
+            assertEquals(root.resolve("src") + SEP + "alpha.txt", s.text(), "a folder typed with its separator too");
+        }
+    }
+
+    @Test
+    void saveAsSavesTheTypedNameNotTheFirstRowThatMatchesIt(@TempDir Path root) throws Exception {
+        tree(root);
+        try (Shown s = Shown.saving(root, root + SEP + "beta.txt", 1)) {
+            s.type(root + SEP + "al");
+            assertEquals(List.of("alpha.txt", "Alpine.md"), s.names());
+            s.press(KeyCode.ENTER);
+            assertEquals(List.of(root + SEP + "al"), s.saved, "the first row is highlighted, not chosen");
+        }
+        try (Shown s = Shown.saving(root, root + SEP + "beta.txt", 1)) {
+            s.type("notes.txt");
+            s.press(KeyCode.ENTER);
+            assertEquals(List.of("notes.txt"), s.saved, "a bare name is handed over as typed, for Save As to resolve");
+        }
+        try (Shown s = Shown.saving(root, root + SEP + "beta.txt", 1)) {
+            s.type("  ");
+            s.press(KeyCode.ENTER);
+            assertEquals(List.of("  "), s.saved, "Save As says a blank name is not a path");
+        }
+    }
+
+    @Test
+    void saveAsUsesARowTheHighlightWasMovedOnto(@TempDir Path root) throws Exception {
+        tree(root);
+        try (Shown s = Shown.saving(root, root + SEP + "beta.txt", 1)) {
+            s.type(root + SEP + "a");
+            s.press(KeyCode.DOWN);
+            s.press(KeyCode.ENTER);
+            assertEquals(List.of(root.resolve("Alpine.md").toString()), s.saved, "a file moved onto is the target");
+        }
+        try (Shown s = Shown.saving(root, root + SEP + "beta.txt", 1)) {
+            s.type(root + SEP);
+            s.awaitRows(5);
+            s.press(KeyCode.DOWN);
+            s.press(KeyCode.ENTER);
+            assertEquals(root.resolve("src") + SEP + "beta.txt", s.text(), "a folder moved onto is gone into");
+            assertTrue(s.saved.isEmpty());
+        }
+    }
+
+    @Test
+    void aLeadingTildeIsTheHomeFolder() {
+        String home = System.getProperty("user.home");
+        assertEquals(home, FileFinder.expandHome("~"));
+        assertEquals(home + SEP + "notes", FileFinder.expandHome("~" + SEP + "notes"));
+        assertEquals("~notes", FileFinder.expandHome("~notes"), "another user's home is not guessed");
+        assertEquals("a" + SEP + "~", FileFinder.expandHome("a" + SEP + "~"));
     }
 
     @Test

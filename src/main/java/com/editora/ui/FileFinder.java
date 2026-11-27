@@ -40,6 +40,10 @@ import static com.editora.i18n.Messages.tr;
  * save), ↑/↓ (or the keymap's line-up/down chords) to move, {@code Esc} (or the keymap's cancel) to cancel.
  * When {@link #setOpenAsProject} wires it, {@code C-d} opens the highlighted folder (or the folder being listed)
  * as a project. Keyboard-only; see {@link PickerKeys}.
+ *
+ * <p>{@link #forSave} makes the same card the keyboard Save As: it starts from the file's current path, lists
+ * files and folders, completes with {@code Tab}, and Enter saves under the typed path — a folder is gone into,
+ * keeping the file's name, so the next Enter saves there.
  */
 public class FileFinder {
 
@@ -66,6 +70,18 @@ public class FileFinder {
 
     /** The raw chord token that opens a folder as a project in this showing, or null when there is none. */
     private @Nullable String projectChord;
+
+    /** Save mode ({@link #forSave}): takes the typed path instead of anything being opened; null otherwise. */
+    private @Nullable Consumer<String> onSave;
+
+    /** Save mode: the field's first text — the file's current path, or a folder and a suggested name. */
+    private Supplier<String> saveInitial = () -> "";
+
+    /** Save mode: the file name kept when Enter goes into a folder, so the next Enter saves there. */
+    private String saveName = "";
+
+    /** Save mode: the field still holds the text it was shown with, so placing the caret selects the name. */
+    private boolean selectNamePending;
 
     /** True once the user moved the highlight in the current listing (it no longer just sits on row one). */
     private boolean highlightMoved;
@@ -108,6 +124,34 @@ public class FileFinder {
         this.title = title;
     }
 
+    /**
+     * The keyboard Save As: the field starts as {@code initial} (asked at each show) with the file's name selected,
+     * Tab completes folder and file names, and Enter hands the typed text to {@code onSave} — unresolved, so the
+     * caller resolves a relative name or {@code ~} its own way — or goes into the folder it names, keeping the
+     * name. A row the user moved onto is used as it is: a folder is gone into, a file is the target.
+     */
+    static FileFinder forSave(Supplier<String> initial, Consumer<String> onSave, String title) {
+        FileFinder finder = new FileFinder(
+                () -> {
+                    Path parent = parentOf(initial.get());
+                    return parent == null ? Path.of(System.getProperty("user.home", ".")) : parent;
+                },
+                p -> {},
+                false,
+                title);
+        finder.onSave = onSave;
+        finder.saveInitial = initial;
+        return finder;
+    }
+
+    private static @Nullable Path parentOf(String text) {
+        try {
+            return Path.of(text).getParent();
+        } catch (java.nio.file.InvalidPathException e) {
+            return null;
+        }
+    }
+
     /** Builds the card now if nothing has yet: the first show does, and a test that reads the card before one. */
     void ensureBuilt() {
         if (!built) {
@@ -129,10 +173,19 @@ public class FileFinder {
         list.setCellFactory(v -> new EntryCell());
 
         input.textProperty().addListener((obs, old, now) -> {
+            selectNamePending = false; // typed: the selection is the user's now
             whenFiltered = null; // typed on after Enter or Tab: the key was for the text before
             refresh(now);
         });
         input.addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
+        // A field that already has focus when its skin is made selects all of its text, and the skin is made on the
+        // first pulse that styles the card, which can come after the caret was placed: place it again then, or the
+        // first key typed replaces the whole pre-filled path.
+        input.skinProperty().addListener((obs, was, now) -> {
+            if (now != null && showing) {
+                placeCaret();
+            }
+        });
         // Emacs caret movement + basic editing in the path field. Registered after onKey so the finder's own
         // list navigation (C-n/C-p/C-g) consumes those chords first and the keymap yields to it (isConsumed).
         TextInputKeymap.installShared(input);
@@ -169,7 +222,10 @@ public class FileFinder {
             return;
         }
         ensureBuilt();
-        Path dir = startDir.get();
+        boolean saving = onSave != null;
+        String start = saving ? saveInitial.get() : startText(startDir.get());
+        saveName = saving ? prefixPart(start) : "";
+        input.setAccessibleText(saving ? tr("dialog.saveAs.prompt") : tr("filefinder.prompt"));
         currentDir = null;
         listing = DirectoryListing.UNREADABLE;
         listGeneration++; // a read still in flight belongs to the previous showing
@@ -180,19 +236,20 @@ public class FileFinder {
         hint.setText(PickerKeys.legend(
                 keymap,
                 PickerKeys.hint("complete", "tab"),
-                PickerKeys.hint("open", "↵"),
+                PickerKeys.hint(saving ? "save" : "open", "↵"),
                 PickerKeys.hint(
                         "openProject",
                         projectChord == null || keymap == null ? projectChord : keymap.display(projectChord))));
-        // Pre-fill with the start directory + separator so the user types a name straight away.
+        // Pre-fill with the start directory + separator so the user types a name straight away (Save As: the path).
         listNow = true;
         try {
-            input.setText(dir.toString().endsWith(SEP) ? dir.toString() : dir + SEP);
+            input.setText(start);
             input.positionCaret(input.getText().length());
             refresh(input.getText());
         } finally {
             listNow = false;
         }
+        selectNamePending = saving;
         showing = true;
         overlayHost.show(
                 content,
@@ -200,13 +257,11 @@ public class FileFinder {
                     input.requestFocus();
                     // A TextField selects all its text on focus-gain (asynchronously), which would highlight the
                     // pre-filled path; clear the selection after focus settles and leave the caret at the end.
-                    Platform.runLater(() -> {
-                        input.deselect();
-                        input.positionCaret(input.getText().length());
-                    });
+                    Platform.runLater(this::placeCaret);
                 },
                 () -> {
                     showing = false;
+                    selectNamePending = false;
                     filtering.cancel(); // a filter landing after the card closed shows nothing and acts on nothing
                     whenFiltered = null;
                 });
@@ -221,6 +276,43 @@ public class FileFinder {
 
     public boolean isShown() {
         return showing;
+    }
+
+    /** The field's first text in a finder: the start directory and a separator, ready for a name. */
+    private static String startText(Path dir) {
+        return dir.toString().endsWith(SEP) ? dir.toString() : dir + SEP;
+    }
+
+    /** Caret at the end with nothing selected; in Save As, until something is typed, the file name selected. */
+    private void placeCaret() {
+        input.deselect();
+        input.positionCaret(input.getText().length());
+        if (selectNamePending) {
+            selectName();
+        }
+    }
+
+    /**
+     * Selects the file name in the field, without its extension, so typing a new name replaces it (as a save
+     * dialog does); the folder part and the extension stay.
+     */
+    private void selectName() {
+        String text = input.getText();
+        int start = dirPart(text).length();
+        int dot = text.lastIndexOf('.');
+        int end = dot > start ? dot : text.length();
+        input.selectRange(start, end);
+    }
+
+    /**
+     * {@code text} with a leading {@code ~} (alone, or followed by a separator) replaced by the home folder, so
+     * the folder it names can be listed. Pure apart from reading {@code user.home}.
+     */
+    static String expandHome(String text) {
+        if (text.equals("~") || text.startsWith("~" + SEP) || text.startsWith("~/")) {
+            return System.getProperty("user.home", "~") + text.substring(1);
+        }
+        return text;
     }
 
     /** The directory part of {@code text} (up to and including the last separator). */
@@ -242,7 +334,7 @@ public class FileFinder {
      * window at the keystroke that completed the folder's name. The list is empty until the read lands.
      */
     private void refresh(String text) {
-        Path dir = dirPart(text).isEmpty() ? currentDir : Path.of(dirPart(text));
+        Path dir = dirPart(text).isEmpty() ? currentDir : Path.of(expandHome(dirPart(text)));
         if (dir != null && !dir.equals(currentDir)) {
             currentDir = dir;
             listing = DirectoryListing.UNREADABLE;
@@ -358,7 +450,7 @@ public class FileFinder {
         PickerKeys.Action action = PickerKeys.action(e);
         switch (action) {
             case CANCEL -> hide();
-            case ACCEPT -> afterFilter(this::chooseSelected);
+            case ACCEPT -> afterFilter(this::accept);
             default -> {
                 if (e.getCode() == javafx.scene.input.KeyCode.TAB) {
                     afterFilter(this::autocomplete);
@@ -372,6 +464,79 @@ public class FileFinder {
             }
         }
         e.consume();
+    }
+
+    /** Enter, or a click on a row: save under the typed path in save mode, else choose the selected entry. */
+    private void accept() {
+        if (onSave != null) {
+            saveTyped();
+        } else {
+            chooseSelected();
+        }
+    }
+
+    /**
+     * Enter in save mode. A row the user moved onto is used as it is (a folder is gone into, a file is the target);
+     * otherwise the typed text is: a folder it names is gone into, keeping the file's name, and anything else is
+     * handed to {@link #onSave} as typed. The first row, highlighted only because it matches the typed prefix, is
+     * not a choice: typing {@code notes} beside {@code notes.txt} saves {@code notes}.
+     */
+    private void saveTyped() {
+        Consumer<String> save = onSave;
+        if (save == null || choosing) {
+            return; // a second Enter while the first one's look is under way does nothing
+        }
+        Path selected = list.getSelectionModel().getSelectedItem();
+        if (highlightMoved && selected != null) {
+            savedOrEntered(selected.toString(), listing.isDirectory(selected));
+            return;
+        }
+        String text = input.getText();
+        if (text.isBlank()) {
+            savedOrEntered(text, false); // the caller says it is not a path
+            return;
+        }
+        if (text.endsWith(SEP) || text.endsWith("/")) {
+            savedOrEntered(text, true); // a folder, and no name yet
+            return;
+        }
+        Path typed;
+        try {
+            typed = typedPath(expandHome(text), currentDir);
+        } catch (java.nio.file.InvalidPathException e) {
+            savedOrEntered(text, false); // the caller says it is not a path
+            return;
+        }
+        if (typed == null || listing.lists(typed)) {
+            savedOrEntered(text, typed != null && listing.isDirectory(typed)); // listed: known already
+            return;
+        }
+        // A typed path: whether it is a folder is looked at off the FX thread (PERF-01, Pauta 6.2.0).
+        choosing = true;
+        Path target = typed;
+        com.editora.perf.OffFx.then("save-as-finder-look", () -> Files.isDirectory(target), folder -> {
+            choosing = false;
+            if (text.equals(input.getText())) { // nothing typed meanwhile
+                savedOrEntered(text, folder.or(false));
+            }
+        });
+    }
+
+    /** Save mode: goes into the folder {@code text} names, keeping the file's name, or saves under {@code text}. */
+    private void savedOrEntered(String text, boolean folder) {
+        Consumer<String> save = onSave;
+        if (folder && !saveName.isEmpty()) {
+            String dir = text.endsWith(SEP) || text.endsWith("/") ? text : text + SEP;
+            input.setText(dir + saveName);
+            input.positionCaret(input.getText().length());
+            selectName();
+            return;
+        }
+        if (folder || save == null) {
+            return; // no name to save under: stay in the folder
+        }
+        hide();
+        save.accept(text);
     }
 
     /**
@@ -540,7 +705,8 @@ public class FileFinder {
             setOnMouseClicked(e -> {
                 if (e.getButton() == MouseButton.PRIMARY && !isEmpty() && getItem() != null) {
                     getListView().getSelectionModel().select(getItem());
-                    chooseSelected();
+                    highlightMoved = true; // clicked: this row is the choice, also in save mode
+                    accept();
                 }
             });
         }
