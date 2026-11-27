@@ -70,6 +70,11 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
         /** The window's review threads. */
         ReviewCoordinator reviewCoordinator();
 
+        /** What agents changed, turn by turn. */
+        default @Nullable AgentChangeSets agentChanges() {
+            return null;
+        }
+
         /** Whether agent edits are proposed for approval rather than applied (a setting, off by default). */
         boolean editsNeedApproval();
 
@@ -356,6 +361,7 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
                 if (!verdict.allowed()) {
                     return new Applied(verdict.message());
                 }
+                recordChange(b, text);
                 CodeArea area = b.getArea();
                 int at = first - b.narrowStart();
                 if (!replaceAll && at >= 0 && at + oldText.length() <= area.getLength()) {
@@ -374,6 +380,14 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
             }
         }
         return "The buffer kept changing while the edit was applied; read it again and retry.";
+    }
+
+    /** Keeps what {@code b} was ({@code before}) in the MCP agent's change set, before an edit lands. FX thread. */
+    private void recordChange(EditorBuffer b, String before) {
+        AgentChangeSets changes = host.agentChanges();
+        if (changes != null && b.getPath() != null) {
+            changes.beforeMcpEdit(tr("agent.changes.mcpAgent"), b.getPath(), before);
+        }
     }
 
     /** How long a proposed edit waits for the user before the tool answers {@code timeout} (within the relay's 5 min). */
@@ -466,6 +480,7 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
             if (!verdict.allowed()) {
                 return new Applied(verdict.message());
             }
+            recordChange(b, text); // an accepted proposal is the MCP agent's change too
             b.applyPreparedWholeText(prepared, proposed); // one undo step for the span that differs
             served.served(b, proposed);
             return Applied.DONE;
@@ -714,6 +729,7 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
                 if (!verdict.allowed()) {
                     return new Applied(verdict.message());
                 }
+                recordChange(b, taken.text());
                 // Widens first, then one undo step that records only the span that differs.
                 b.applyPreparedWholeText(prepared, nextLf);
                 served.served(b, nextLf);

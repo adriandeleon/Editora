@@ -22,6 +22,11 @@ final class WindowMcpHost implements WindowMcpBridge.Host {
     }
 
     @Override
+    public AgentChangeSets agentChanges() {
+        return mc.agentChanges;
+    }
+
+    @Override
     public boolean editsNeedApproval() {
         return mc.config.getSettings().isMcpEditsNeedApproval();
     }

@@ -75,6 +75,10 @@ a Local History label "Before Claude turn N" on each touched file. An **Agent Ch
 **Revert Turn**. Optionally includes files Claude Code changed on disk from a terminal session (through
 the file watcher, or through item 12's hook). *Done when:* a three-file agent edit can be reviewed,
 partly rejected, and fully reverted, with undo intact.
+*Status:* built (`AgentChangeSets`, `agent.reviewChanges`, `agent.revertTurn`): ACP turns, and MCP edits grouped
+until two quiet minutes; a change is taken back with the diff's own per-change apply. Not built: a picker for older
+turns (the latest only), a Local History label per turn, files Claude Code writes from a terminal (needs the plugin
+hook, D4), and `propose_edit` accepts (#1836) until both are in master.
 
 **5. `propose_edit` MCP tool (M)** — needs 2
 Instead of writing, the agent proposes: Editora opens the proposal in `DiffViewerPane` with the
