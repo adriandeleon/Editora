@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Code intelligence in diffs.** On the side of a diff that is your file, Show Hover answers over the diff, and Go to
   Definition, Find References and Reveal in Map act from the file at the same place.
+- **Slash commands for Claude Code.** Editora's MCP server offers prompts, which Claude Code lists as
+  `/mcp__editora__review_changes` (review the uncommitted changes and leave findings as review comments),
+  `/mcp__editora__fix_open_comments` (fix and resolve the open review threads) and `/mcp__editora__explain_selection`.
 - **A Claude Code plugin for Editora** (`integrations/claude-code`): it sets up `editora mcp` and adds two skills,
   one for reviewing a change and leaving findings as review comments in Editora, one for editing open files
   without losing unsaved changes. Install it with `claude plugin marketplace add ./integrations/claude-code`.

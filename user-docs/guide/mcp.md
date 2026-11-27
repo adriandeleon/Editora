@@ -96,6 +96,18 @@ A finding you dismissed on some lines is not added there again:
 These tools change no file: they write only the review threads. A comment goes
 only on a file the agent may open (see below), and none reaches GitHub.
 
+### Prompts
+
+The server also offers **prompts**, which Claude Code shows as slash commands
+(`/mcp__editora__<name>`). Each is written from what the window has at that
+moment:
+
+| Prompt | What it asks the agent |
+| --- | --- |
+| `review_changes` | Review the repository's uncommitted changes (the changed files are listed; the agent reads the diff with `git`) and record each finding with `add_review_comment`. Optional `focus`, e.g. `security`. |
+| `fix_open_comments` | Do what each open review comment asks and resolve it with a note, or reply when it disagrees. Optional `path`: one file's comments. |
+| `explain_selection` | Explain the code selected in the editor, or the caret's line. |
+
 ### Which files an agent can reach
 
 The tools act on the window the MCP server belongs to, whichever window has
