@@ -20,7 +20,7 @@
   "Cmd-f": "find.show",
   "M-Cmd-f": "find.replace",
   "Cmd-S-f": "search.inFiles",
-  "Cmd-p": "file.find",
+  "Cmd-p": "nav.gotoFile",
   "Cmd-S-p": "palette.show",
   "Cmd-S-e": "search.everywhere",
   "f1": "palette.show",

@@ -979,7 +979,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 }
                 return true;
             }
-            case "file.find" -> {
+            case "file.find", "nav.gotoFile" -> { // Go to File (C-S-n, C-p) in the Map is its own file finder
                 return mapGotoFile();
             }
             case "search.inFiles", "search.inFilesPopup" -> {

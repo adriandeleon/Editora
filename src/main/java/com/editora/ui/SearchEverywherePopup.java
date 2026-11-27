@@ -214,6 +214,19 @@ final class SearchEverywherePopup {
     }
 
     void show(String seed) {
+        show(seed, true);
+    }
+
+    /**
+     * Opens scoped to project files: {@code #} typed in, the caret after it, so the name typed next searches only
+     * files. What Go to File (IntelliJ's Ctrl+Shift+N, VS Code's Ctrl+P) opens.
+     */
+    void showFiles() {
+        show("#", false);
+    }
+
+    /** Opens with {@code seed} in the query: all of it selected, or ({@code selectSeed} false) the caret after it. */
+    private void show(String seed, boolean selectSeed) {
         ensureBuilt();
         var keymap = com.editora.command.TextInputKeymap.sharedKeymap();
         docsChord = PickerKeys.freeChord(keymap, "C-h", "f1", "S-f1"); // as the command palette
@@ -230,7 +243,17 @@ final class SearchEverywherePopup {
                 card,
                 () -> {
                     input.requestFocus();
-                    input.selectAll();
+                    if (selectSeed) {
+                        input.selectAll();
+                    } else {
+                        input.end();
+                        // A TextField selects all its text on focus-gain (asynchronously, as FileFinder notes), which
+                        // would make the first key typed replace the #: clear it once focus settles.
+                        Platform.runLater(() -> {
+                            input.deselect();
+                            input.end();
+                        });
+                    }
                     // setText(seed) may have armed the query debounce. We refresh synchronously for an open,
                     // so letting that redundant timer fire later can reset a cursor the user has already moved.
                     debounce.stop();

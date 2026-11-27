@@ -35,6 +35,7 @@ public final class OtherIdeNames {
             Map.entry("lsp.callHierarchy", List.of("Show Call Hierarchy", "Call Hierarchy")),
             Map.entry("lsp.typeHierarchy", List.of("Show Type Hierarchy", "Type Hierarchy")),
             Map.entry("nav.relatedFile", List.of("Go to Test", "Go to Test Subject")),
+            Map.entry("nav.gotoFile", List.of("Go to File", "Quick Open")),
             Map.entry("palette.show", List.of("Find Action", "Show All Commands")),
             Map.entry("lsp.gotoDefinition", List.of("Go to Declaration or Usages", "Jump to Source")),
             Map.entry("lsp.hover", List.of("Quick Documentation", "Show Hover")),

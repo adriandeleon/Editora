@@ -25,7 +25,7 @@
   "C-S-f6": "spell.previousMisspelling",
   "M-Cmd-f": "find.replace",
   "Cmd-S-f": "search.inFiles",
-  "Cmd-p": "file.find",
+  "Cmd-p": "nav.gotoFile",
   "Cmd-S-p": "palette.show",
   "C-S-q": "macro.replayLast",
   "Cmd-S-e": "search.everywhere",

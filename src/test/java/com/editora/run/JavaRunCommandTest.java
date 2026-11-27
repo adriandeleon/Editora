@@ -75,4 +75,49 @@ class JavaRunCommandTest {
         JavaLaunchInfo plain = new JavaLaunchInfo("java", List.of(), List.of("/cp"), null);
         assertEquals(List.of("-Xmx1g"), plain.vmArgs(List.of("-Xmx1g")));
     }
+
+    /**
+     * Regression (r/JavaFX dry run, 2026-11-27): Run on a Maven JavaFX app's {@code main} put the JavaFX jars on
+     * {@code -cp}, and an {@code Application} subclass stopped with "JavaFX runtime components are missing".
+     */
+    @Test
+    void javaFxJarsGoOnTheModulePathWithTheirModulesAdded() {
+        List<String> argv = JavaRunCommand.build(
+                "java",
+                List.of(),
+                List.of("/p/target/classes", "/m2/javafx-controls-25-linux.jar", "/m2/javafx-graphics-25-linux.jar"),
+                "demo.HelloApp",
+                List.of("-Xmx256m"),
+                List.of());
+        assertEquals(
+                List.of(
+                        "java",
+                        "-Xmx256m",
+                        "--module-path",
+                        "/m2/javafx-controls-25-linux.jar" + S + "/m2/javafx-graphics-25-linux.jar",
+                        "--add-modules",
+                        "javafx.controls,javafx.graphics",
+                        "-cp",
+                        "/p/target/classes",
+                        "demo.HelloApp"),
+                argv);
+    }
+
+    @Test
+    void javaFxStaysWhereTheUsersOwnModuleOptionsPutIt() {
+        List<String> vm = List.of("--module-path", "/sdk/lib", "--add-modules", "javafx.controls");
+        List<String> argv = JavaRunCommand.build(
+                "java", List.of(), List.of("/c", "/m2/javafx-controls-25-linux.jar"), "M", vm, List.of());
+        assertEquals(
+                List.of(
+                        "java",
+                        "--module-path",
+                        "/sdk/lib",
+                        "--add-modules",
+                        "javafx.controls",
+                        "-cp",
+                        "/c" + S + "/m2/javafx-controls-25-linux.jar",
+                        "M"),
+                argv);
+    }
 }
