@@ -1,0 +1,18 @@
+{
+  "name": "editora",
+  "version": "0.1.0",
+  "description": "Connects Claude Code to the running Editora over MCP (editora mcp), and teaches it to review code there: findings on lines, fixing and resolving review threads, and editing open buffers without losing unsaved work.",
+  "author": { "name": "Editora" },
+  "homepage": "https://editora-project.dev/docs/mcp",
+  "repository": "https://github.com/adriandeleon/Editora",
+  "license": "MIT",
+  "keywords": ["editor", "code-review", "mcp", "editora"],
+  "userConfig": {
+    "editora_bin": {
+      "type": "string",
+      "title": "Editora command",
+      "description": "The command that starts Editora's launcher, or its full path (editora-cli on Windows). Settings > MCP Server > Copy Connect Command shows the one for your install.",
+      "default": "editora"
+    }
+  }
+}
