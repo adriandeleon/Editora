@@ -472,6 +472,11 @@ beside it; your choice is remembered across restarts. The dropdown ends with
 with the configuration you had selected already picked out. The same window is
 available as **Run: Edit Run Configurations…** (`run.editConfigs`).
 
+With no configuration selected, the dropdown names the last run instead, such
+as *HelloApp (last run)* after a ▶ in the gutter, and its **Run** button starts
+it again, as **Run: Rerun Last** (`run.rerun`) does. Save it with **Run: Save Run
+Configuration…** to keep it.
+
 Starting a file or configuration always opens and focuses the **Run** tool
 window. If that process is already active, Run brings its existing console back
 instead of hiding the useful output behind a busy message.

@@ -5649,6 +5649,22 @@ public class EditorBuffer implements TabContent {
         banners.showFileNotice(message, actionLabel, dismissLabel, onAction);
     }
 
+    /** As above, with a link after the message ({@code detailsLabel}) that runs {@code onDetails}. */
+    public void showFileNotice(
+            String message,
+            String detailsLabel,
+            Runnable onDetails,
+            String actionLabel,
+            String dismissLabel,
+            Runnable onAction) {
+        banners.showFileNotice(message, detailsLabel, onDetails, actionLabel, dismissLabel, onAction);
+    }
+
+    /** TEST SEAM: fires the file notice's action, or ({@code details}) its details link. */
+    public void fireFileNoticeForTest(boolean details) {
+        banners.fireFileNoticeForTest(details);
+    }
+
     public void hideFileNotice() {
         banners.hideFileNotice();
     }

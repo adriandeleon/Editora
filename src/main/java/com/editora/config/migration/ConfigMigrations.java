@@ -1059,6 +1059,18 @@ public final class ConfigMigrations {
     }
 
     /**
+     * v189→190: {@code keymapChosen} on for a settings file that has no such key. The key is new and off by default,
+     * so the Welcome page offers a fresh install the five keymaps; a file written before it belongs to an install
+     * whose keymap has been in use all along, and is not offered them. A stored value is kept. Safe to repeat.
+     */
+    static JsonNode keymapChosenForExistingInstalls(JsonNode input) {
+        if (input instanceof ObjectNode o && !o.has("keymapChosen")) {
+            o.put("keymapChosen", true);
+        }
+        return input;
+    }
+
+    /**
      * v178→179: turns the extended window (the menu bar in the title bar) on for existing installs, now that it
      * is the default on Windows and Linux (Pauta WIN-03).
      *

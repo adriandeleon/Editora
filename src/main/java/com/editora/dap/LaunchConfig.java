@@ -102,7 +102,10 @@ public final class LaunchConfig {
             List<String> mods = new java.util.ArrayList<>(modulePaths == null ? List.of() : modulePaths);
             mods.addAll(fx.jars());
             mp = mods;
-            vm = ((vmArgs == null ? "" : vmArgs.strip()) + " --add-modules " + fx.addModules()).strip();
+            String nativeAccess = fx.enableNativeAccess();
+            vm = ((vmArgs == null ? "" : vmArgs.strip()) + " --add-modules " + fx.addModules()
+                            + (nativeAccess == null ? "" : " " + nativeAccess))
+                    .strip();
         }
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("type", "java");

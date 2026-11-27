@@ -93,7 +93,9 @@ class ClaudeIdeServerTest {
             JsonNode lock = m.readTree(Files.readString(ide.resolve(server.port() + ".lock")));
             assertEquals("ws", lock.get("transport").asText());
             assertEquals("Editora", lock.get("ideName").asText());
-            assertEquals("/r", lock.get("workspaceFolders").get(0).asText());
+            assertEquals(
+                    Path.of("/r").toString(),
+                    lock.get("workspaceFolders").get(0).asText()); // \r on Windows
             String token = lock.get("authToken").asText();
             assertTrue(token.matches("[0-9a-f]{32}"), token);
 
@@ -205,7 +207,9 @@ class ClaudeIdeServerTest {
             folders.add(Path.of("/r/jkit"));
             server.refreshLockFile();
             JsonNode lock = m.readTree(Files.readString(server.lockFile()));
-            assertEquals("/r/jkit", lock.get("workspaceFolders").get(0).asText());
+            assertEquals(
+                    Path.of("/r/jkit").toString(),
+                    lock.get("workspaceFolders").get(0).asText()); // \r\jkit on Windows
             assertTrue(lock.get("authToken").asText().matches("[0-9a-f]{32}"), "the same token, written again");
         }
     }

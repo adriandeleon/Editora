@@ -66,4 +66,40 @@ class JavaFxModulesTest {
         assertFalse(JavaFxModules.split(paths, "-Xmx1g --add-modules javafx.controls")
                 .any());
     }
+
+    /**
+     * Regression (r/JavaFX re-review, 2026-11-27): every run of a JavaFX app on JDK 24+ printed four red "restricted
+     * method" warnings. JavaFX 24+ (which needs JDK 22+) gets native access for the modules that load native code.
+     */
+    @Test
+    void recentJavaFxGetsNativeAccessForItsNativeModules() {
+        JavaFxModules.Split s = JavaFxModules.split(
+                List.of(
+                        "/m2/javafx-controls-25-linux.jar",
+                        "/m2/javafx-graphics-25-linux.jar",
+                        "/m2/javafx-media-25-linux.jar"),
+                List.<String>of());
+        assertEquals(List.of("javafx.graphics", "javafx.media"), s.nativeAccess());
+        assertEquals("--enable-native-access=javafx.graphics,javafx.media", s.enableNativeAccess());
+        assertEquals(25, JavaFxModules.versionOf("/m2/javafx-graphics-25.0.1-mac-aarch64.jar"));
+        assertEquals(0, JavaFxModules.versionOf("/sdk/lib/javafx.graphics.jar"));
+    }
+
+    @Test
+    void olderOrUnversionedJavaFxOrTheUsersOwnFlagGetsNoneAdded() {
+        assertNull(
+                JavaFxModules.split(List.of("/m2/javafx-graphics-21.0.5-linux.jar"), List.<String>of())
+                        .enableNativeAccess(),
+                "JavaFX 21 may run on JDK 17");
+        assertNull(
+                JavaFxModules.split(List.of("/sdk/lib/javafx.graphics.jar"), List.<String>of())
+                        .enableNativeAccess(),
+                "an SDK jar names no version");
+        assertNull(
+                JavaFxModules.split(
+                                List.of("/m2/javafx-graphics-25-linux.jar"),
+                                List.of("--enable-native-access=ALL-UNNAMED"))
+                        .enableNativeAccess(),
+                "the user's own option stands");
+    }
 }

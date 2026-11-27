@@ -66,6 +66,7 @@ class ConfigMigrationsTest {
         expected.put("aiModel", "").put("aiModelOpenai", "local-model");
         expected.put("aiEndpoint", "").put("aiEndpointOpenai", "http://localhost:1234/v1/chat/completions");
         expected.put("aiModelCodex", ""); // v133→134 copies aiModel, which v126→127 had moved to the OpenAI field
+        expected.put("keymapChosen", true); // v189→190: an existing install is not asked for its keymap
         assertEquals(expected, ConfigMigrations.upgrade(ConfigSchema.SETTINGS, previous, mapper));
     }
 

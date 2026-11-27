@@ -174,6 +174,9 @@ final class WindowCommandRegistrar {
 
         boolean projectsEnabled();
 
+        /** The system's folder dialog, opening the folder picked as a project (the toolbar button, a click). */
+        void openFolderDialog();
+
         void applyProjectSupport();
 
         void closeProject();
@@ -495,6 +498,13 @@ final class WindowCommandRegistrar {
             FileFinder folderFinder = host.navigation().folderFinder;
             if (host.projectsEnabled() && folderFinder != null) {
                 folderFinder.show(host.stage());
+            }
+        }));
+        // The same, through the system's folder dialog: what a click runs (the toolbar button, the Welcome page's and
+        // the empty editor's Open Folder), as File: Open… is for a file. Keys and the palette keep the finder.
+        host.registry().register(Command.of("project.openDialog", () -> {
+            if (host.projectsEnabled()) {
+                host.openFolderDialog();
             }
         }));
         host.registry().register(Command.of("project.switch", () -> {

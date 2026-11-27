@@ -46,7 +46,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 189;
+    public static final int SCHEMA_VERSION = 190;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -128,6 +128,12 @@ public class Settings {
     private int fillColumn = com.editora.editops.Filler.DEFAULT_FILL_COLUMN;
 
     private String keymap = "emacs";
+    /**
+     * Whether the user has picked a keymap — on the Welcome page's first-run card, with Keymap: Select… or in
+     * Settings. Until then the Welcome page offers the five. Off for a fresh config; the v189→190 step turns it on
+     * for every install that already existed, whose keymap was in use.
+     */
+    private boolean keymapChosen = false;
     /** UI language code (e.g. {@code "es"}); empty = auto (system language if bundled, else English). */
     private String uiLanguage = "";
 
@@ -1140,6 +1146,8 @@ public class Settings {
     private boolean mavenPomCentralIndex = false;
     /** Whether jdtls downloads every Maven or Gradle dependency's sources when it imports a project. */
     private boolean javaDownloadSources = false;
+    /** Whether a Java file has offered {@link #javaDownloadSources} once (shown at a project's first healthy import). */
+    private boolean javaSourcesOffered = false;
     /**
      * Whether the XML server (lemminx) may download the schemas, DTDs and RelaxNG grammars a file names over the
      * network: {@code never}, {@code trusted} (only for a file in a trusted folder) or {@code always}.
@@ -1329,6 +1337,14 @@ public class Settings {
 
     public void setKeymap(String keymap) {
         this.keymap = keymap;
+    }
+
+    public boolean isKeymapChosen() {
+        return keymapChosen;
+    }
+
+    public void setKeymapChosen(boolean keymapChosen) {
+        this.keymapChosen = keymapChosen;
     }
 
     public String getUiLanguage() {
@@ -4926,6 +4942,14 @@ public class Settings {
 
     public void setJavaDownloadSources(boolean javaDownloadSources) {
         this.javaDownloadSources = javaDownloadSources;
+    }
+
+    public boolean isJavaSourcesOffered() {
+        return javaSourcesOffered;
+    }
+
+    public void setJavaSourcesOffered(boolean javaSourcesOffered) {
+        this.javaSourcesOffered = javaSourcesOffered;
     }
 
     public static final java.util.List<String> XML_SCHEMA_DOWNLOADS = java.util.List.of("never", "trusted", "always");

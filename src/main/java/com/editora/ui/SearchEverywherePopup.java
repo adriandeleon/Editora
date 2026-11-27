@@ -180,6 +180,22 @@ final class SearchEverywherePopup {
         input.textProperty().addListener((o, a, b) -> {
             acceptWhenLanded = false; // typed on after Enter: the Enter was for the query before
             debounce.playFromStart();
+            if (!FILES_SEED.equals(b)) {
+                caretAfterSeed = false; // typed past the sigil: the field is the user's now
+            }
+        });
+        // A TextField selects all its text whenever the scene's focus owner becomes it (TextFieldBehavior), and on a
+        // first open in a window that comes after the open's own placing of the caret, so the first key typed
+        // replaced the #. While the field holds only the seed, a select-all is undone once it has landed.
+        input.selectionProperty().addListener((o, a, now) -> {
+            if (caretAfterSeed && now.getLength() > 0) {
+                Platform.runLater(() -> {
+                    if (caretAfterSeed && input.getSelection().getLength() > 0) {
+                        input.deselect();
+                        input.end();
+                    }
+                });
+            }
         });
         input.addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
         com.editora.command.TextInputKeymap.installShared(input);
@@ -222,8 +238,14 @@ final class SearchEverywherePopup {
      * files. What Go to File (IntelliJ's Ctrl+Shift+N, VS Code's Ctrl+P) opens.
      */
     void showFiles() {
-        show("#", false);
+        show(FILES_SEED, false);
     }
+
+    /** What Go to File types in: Search Everywhere's files-only sigil. */
+    private static final String FILES_SEED = "#";
+
+    /** Whether the caret stays after the files seed: from {@link #showFiles} until something else is typed. */
+    private boolean caretAfterSeed;
 
     /** Opens with {@code seed} in the query: all of it selected, or ({@code selectSeed} false) the caret after it. */
     private void show(String seed, boolean selectSeed) {
@@ -238,6 +260,7 @@ final class SearchEverywherePopup {
                 PickerKeys.hint("showInMap", map == null || keymap == null ? map : keymap.display(map)),
                 PickerKeys.hint("docs", docs == null || keymap == null ? docs : keymap.display(docs))));
         input.setText(seed == null ? "" : seed);
+        caretAfterSeed = !selectSeed;
         showing = true;
         overlayHost.show(
                 card,
@@ -246,13 +269,7 @@ final class SearchEverywherePopup {
                     if (selectSeed) {
                         input.selectAll();
                     } else {
-                        input.end();
-                        // A TextField selects all its text on focus-gain (asynchronously, as FileFinder notes), which
-                        // would make the first key typed replace the #: clear it once focus settles.
-                        Platform.runLater(() -> {
-                            input.deselect();
-                            input.end();
-                        });
+                        input.end(); // and kept there while the field holds only the seed (see build())
                     }
                     // setText(seed) may have armed the query debounce. We refresh synchronously for an open,
                     // so letting that redundant timer fire later can reset a cursor the user has already moved.
@@ -269,6 +286,7 @@ final class SearchEverywherePopup {
                 },
                 () -> {
                     showing = false;
+                    caretAfterSeed = false;
                     acceptWhenLanded = false;
                     debounce.stop();
                     search.cancel();

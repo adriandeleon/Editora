@@ -51,7 +51,10 @@ Java gets code intelligence from Eclipse JDT LS (`jdtls`), runs a compact source
   **Download library sources when a Java project is imported** (off by default;
   Maven only), or run **View: Toggle Downloading Library Sources at Import**
   (`view.toggleJavaDownloadSources`). It applies at the next import; **LSP: Clean Java
-  Workspace and Restart** applies it now.
+  Workspace and Restart** applies it now. The first time a Maven project imports
+  with it off, its Java file offers it once (completion shows `arg0` for a
+  library method's parameters until the sources are there): **Download Sources**
+  turns it on and imports the project afresh; **Not now** leaves it off.
 - **A failed import says why.** When jdtls cannot import the project, the status
   bar names the reason, each of its open files says **Not checked**, and Problems
   lists the build file's own errors. That covers a Gradle build that does not run
@@ -212,7 +215,9 @@ script. In a Maven or Gradle project, every `main` gets a ▶ in the gutter and
 runs with the project's classpath. A JavaFX application runs too: its JavaFX
 jars go on the module path with `--add-modules`, as `javafx:run` puts them,
 unless the configuration's VM options already set `--module-path` or
-`--add-modules`. Run and Debug both do this. See
+`--add-modules`. Run and Debug both do this. With JavaFX 24 or later it also
+grants the JavaFX modules that load native code `--enable-native-access`, so
+JDK 24 and later print no "restricted method" warning on every run. See
 [Running files](/docs/run-debug#running-files) and
 [Running a project's main class](/docs/run-debug#running-a-projects-main-class).
 

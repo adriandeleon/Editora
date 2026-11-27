@@ -256,12 +256,27 @@ final class XmlFolderTrust {
         return false;
     }
 
+    /**
+     * The Trust Folder notice on {@code b}. Its button is the decision and trusts at once; its "What does trusting
+     * allow?" link opens the full question (Cancel its default), which is what the button did before. Two steps for
+     * one decision read as a second confirmation of the first (r/JavaFX dry run, 2026-11-27).
+     */
     private void show(EditorBuffer b, String message) {
-        b.showFileNotice(message, tr("xml.trust.button"), tr("xml.trust.notNow"), () -> {
-            if (b == host.activeBuffer()) {
-                trustFolder(); // what the command does (not through executeCommand: that is the MCP bridge's)
-            }
-        });
+        b.showFileNotice(
+                message,
+                tr("xml.trust.details"),
+                () -> {
+                    if (b == host.activeBuffer()) {
+                        trustFolder(); // the question in full, as the command asks it
+                    }
+                },
+                tr("xml.trust.button"),
+                tr("xml.trust.notNow"),
+                () -> {
+                    if (b == host.activeBuffer()) {
+                        trustFolder(false); // not through executeCommand: that is the MCP bridge's
+                    }
+                });
     }
 
     /** Hides a notice this class showed on {@code b}; another feature's notice stays. */
@@ -375,6 +390,14 @@ final class XmlFolderTrust {
      * pom's own Maven root outside it — after the trust prompt (Cancel is its default), then tells every window.
      */
     void trustFolder() {
+        trustFolder(true);
+    }
+
+    /**
+     * As {@link #trustFolder()}; {@code ask} false trusts without the question, for the notice's own button, which
+     * already is the decision (its text says what trusting runs, and its link opens the question in full).
+     */
+    void trustFolder(boolean ask) {
         ConfigManager config = ops.config();
         EditorBuffer b = host.activeBuffer();
         Path root = b == null ? ops.lspProjectRoot() : target(b);
@@ -388,7 +411,7 @@ final class XmlFolderTrust {
             host.setStatus(tr("xml.trust.already", shown));
             return;
         }
-        if (!confirmer.test(host.window(), root)) {
+        if (ask && !confirmer.test(host.window(), root)) {
             return;
         }
         config.getTrustStore().trust(root);

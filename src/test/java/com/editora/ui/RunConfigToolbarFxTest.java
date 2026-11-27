@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
+import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -69,6 +70,12 @@ class RunConfigToolbarFxTest {
         return FxTestSupport.callOnFx(() -> FxTestSupport.field(fx.controller, "runConfigCombo"));
     }
 
+    private static void setField(Object target, String name, Object value) throws Exception {
+        java.lang.reflect.Field f = target.getClass().getDeclaredField(name);
+        f.setAccessible(true);
+        f.set(target, value);
+    }
+
     private static RunConfiguration java(String name) {
         return new RunConfiguration(name, "com.example.App", "", "", "", "");
     }
@@ -99,6 +106,36 @@ class RunConfigToolbarFxTest {
         assertTrue(
                 combo.getItems().stream().anyMatch(c -> c != null && "demo".equals(c.name())),
                 "the added configuration is missing from the toolbar selector");
+    }
+
+    /**
+     * Regression (r/JavaFX re-review, 2026-11-27): after a run from the gutter ▶ the selector still said "No
+     * configurations" and its ▶ was disabled. With nothing selected, the last run stands in: named, and ▶ reruns it.
+     */
+    @Test
+    void withNothingSelectedTheLastRunIsNamedAndItsRunButtonWorks() throws Exception {
+        setConfigs(List.of());
+        Object run = FxTestSupport.field(fx.controller, "runCoordinator");
+        javafx.scene.control.Button runButton = FxTestSupport.field(fx.controller, "runConfigRunButton");
+        ComboBox<RunConfiguration> combo = combo();
+        FxTestSupport.callOnFx(() -> {
+            setField(run, "lastRunCommand", null); // another test of this window may have run something
+            setField(run, "lastRunDir", null);
+            FxTestSupport.invoke(FxTestSupport.field(fx.controller, "runConfigurations"), "updateRunConfigButtons");
+            assertEquals(tr("toolbar.runConfig.none"), combo.getPromptText());
+            assertTrue(runButton.isDisable(), "nothing to run yet");
+
+            setField(run, "lastRunCommand", List.of("java", "-cp", "classes", "demo.HelloApp"));
+            setField(run, "lastRunDir", java.nio.file.Path.of("."));
+            setField(run, "lastRunLabel", "HelloApp");
+            FxTestSupport.invoke(FxTestSupport.field(fx.controller, "runConfigurations"), "updateRunConfigButtons");
+            assertEquals(tr("toolbar.runConfig.lastRun", "HelloApp"), combo.getPromptText());
+            assertFalse(runButton.isDisable(), "the ▶ reruns it");
+
+            setField(run, "lastRunCommand", null);
+            setField(run, "lastRunDir", null);
+            return null;
+        });
     }
 
     /**

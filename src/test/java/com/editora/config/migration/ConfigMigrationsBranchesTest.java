@@ -44,6 +44,7 @@ class ConfigMigrationsBranchesTest {
                 ConfigMigrations::keepLegacyPdfPageSize,
                 ConfigMigrations::remoteImagesToPolicy,
                 ConfigMigrations::extendedWindowOn,
+                ConfigMigrations::keymapChosenForExistingInstalls,
                 ConfigMigrations::remoteExecutionOn,
                 ConfigMigrations::spellSkipJsonLinesLikeJson,
                 ConfigMigrations::clampTerminalScrollback,
@@ -202,6 +203,19 @@ class ConfigMigrationsBranchesTest {
         ObjectNode current = json("{\"keyBindings\": {\"default\": {}}}");
         assertSame(current, ConfigMigrations.keyBindingsByCommand(current));
         assertEquals("{\"keyBindings\":{\"default\":{}}}", current.toString(), "nothing of the old shape");
+    }
+
+    /** v189→190: an existing install has used its keymap, so it is not offered the first-run card; a choice is kept. */
+    @Test
+    void keymapChosenIsOnForAFileWithoutItAndAStoredValueIsKept() throws Exception {
+        ObjectNode old = json("{\"keymap\": \"emacs\"}");
+        ConfigMigrations.keymapChosenForExistingInstalls(old);
+        assertTrue(old.get("keymapChosen").asBoolean());
+        ConfigMigrations.keymapChosenForExistingInstalls(old); // safe to repeat
+        assertTrue(old.get("keymapChosen").asBoolean());
+        ObjectNode fresh = json("{\"keymapChosen\": false}");
+        ConfigMigrations.keymapChosenForExistingInstalls(fresh);
+        assertEquals("{\"keymapChosen\":false}", fresh.toString(), "a stored value is the user's state");
     }
 
     @Test

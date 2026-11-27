@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Pick your keymap on first launch.** A fresh install's Welcome page asks which keys your fingers know, with a
+  button for each of the five keymaps and **Keep Emacs**; it asks once. An existing install is not asked.
+- **Library sources, offered once.** The first time a Maven project imports with library sources off, its Java file
+  offers **Download Sources**, so completion names a library method's parameters and shows its Javadoc. It turns
+  on Settings → LSP → Download library sources and imports the project afresh.
 - **Samples for every debugger, test framework and build tool.** `samples/debug/` gains the shelf project for
   Python, TypeScript on Node.js, Deno, Kotlin (Gradle Kotlin DSL), Groovy (with a Spock spec), Scala CLI, Dart,
   Lua, Elixir and PowerShell; the new `samples/tests/` has one pass / fail / skip suite each for pytest, Jest,
@@ -108,6 +113,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Trust Folder on a file's notice trusts at once.** The notice's button is the decision; **What does trusting
+  allow?** beside it opens the full question (Cancel its default), and **Workspace: Trust This Folder** still asks.
+- **The Run toolbar names the last run.** With no configuration selected, the dropdown reads *HelloApp (last run)*
+  after a ▶ in the gutter, and its Run button reruns it, where it said "No configurations" with Run disabled.
+- **Open File on the Welcome page shows a shortcut in the IntelliJ keymap again:** Ctrl+Shift+N (Go to File), which
+  opens Find File in a window with no project.
+- **Clicking Open Folder opens the system's folder dialog** on the Welcome page and in an empty editor, as the
+  toolbar button and Open File already did; the shortcut and the palette keep the typed folder prompt. New command:
+  **Project: Open Folder with the System Dialog…** (`project.openDialog`).
 - **Save As completes folders.** The keyboard Save As (`file.saveAs`) is now the file finder's card: it lists the
   folder you are typing in, Tab completes folder and file names, and Enter on a folder goes into it and keeps the
   file's name. Before, it was a plain text field, so a different folder had to be typed out in full.
@@ -123,6 +137,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **No "restricted method" warnings on every JavaFX run.** With JavaFX 24 or later, Run and Debug grant
+  `--enable-native-access` to the JavaFX modules that load native code, so JDK 24+ no longer prints four red WARNING
+  lines.
+- **The trust question names the build servers.** It listed lemminx-maven, schemas and wrappers but not what the
+  Java file's notice is about: starting Java, Kotlin, Scala, Rust, Ruby, C#, Clojure, Dart and Elixir servers with
+  the folder's build.
+- **The status bar no longer says "Loaded and ready" while a build waits for trust;** it says the server runs
+  without the project's build, syntax checks only.
+- **No "the project did not import" before a folder is trusted.** jdtls runs without the build until you trust the
+  folder, so every file is "a non-project file"; the Trust Folder notice says why, and the status bar no longer
+  reports a failed import (with a red count) beside it.
 - **The status bar says "No Git" outside a repository**, not "No VCS": Git is the only version control Editora
   speaks, so the segment and its dropdown now name it.
 - **Kotlin call stacks name a lowercase or hyphenated file's functions after the file.** A frame in `hello.kt` read

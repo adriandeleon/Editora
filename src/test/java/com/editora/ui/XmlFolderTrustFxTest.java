@@ -270,7 +270,8 @@ class XmlFolderTrustFxTest {
             return (javafx.scene.control.Button) FxTestSupport.field(bar, "action");
         });
         FxTestSupport.runOnFx(action::fire);
-        assertEquals(List.of(project), asked);
+        // The button is the decision: no second question (r/JavaFX dry run, 2026-11-27). Its link asks it.
+        assertEquals(List.of(), asked);
         assertEquals(List.of("broadcast"), told);
         assertTrue(config.getTrustStore().isTrusted(project));
     }
@@ -287,6 +288,8 @@ class XmlFolderTrustFxTest {
         String body = prompt.alert().getContentText();
         assertTrue(body.contains(project.toString()), body);
         assertTrue(body.contains("lemminx-maven"), body);
+        // The Java file's notice links here: the list names the build its server loads (r/JavaFX re-review).
+        assertTrue(body.contains("Java") && body.contains("Gradle") && body.contains("Cargo"), body);
     }
 
     @Test

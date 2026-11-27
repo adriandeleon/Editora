@@ -345,6 +345,11 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
     }
 
     @Override
+    public void openFolderDialog() {
+        mc.onOpenFolder();
+    }
+
+    @Override
     public void deleteProject() {
         mc.deleteProject();
     }

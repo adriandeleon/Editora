@@ -480,11 +480,24 @@ final class RunConfigurationCoordinator {
     void updateRunConfigButtons() {
         boolean hasSelection =
                 host.runConfigCombo() != null && host.runConfigCombo().getValue() != null;
+        String rerun = rerunPrompt(hasSelection, host.runCoordinator().rerunnableLabel());
+        if (host.runConfigCombo() != null) {
+            // With nothing saved or selected, the last run stands in (IntelliJ keeps a temporary configuration): a ▶
+            // in the gutter left "No configurations" and a disabled ▶ here (r/JavaFX re-review, 2026-11-27).
+            host.runConfigCombo()
+                    .setPromptText(
+                            rerun != null ? tr("toolbar.runConfig.lastRun", rerun) : tr("toolbar.runConfig.none"));
+        }
         if (host.runConfigRunButton() != null) {
-            host.runConfigRunButton().setDisable(!hasSelection);
+            host.runConfigRunButton().setDisable(!hasSelection && rerun == null);
             host.runConfigDebugButton().setDisable(!hasSelection);
             host.runConfigStopButton().setDisable(!host.runCoordinator().isRunning());
         }
+    }
+
+    /** The last run the toolbar's ▶ reruns: {@code lastRun} while nothing is selected, else null. Pure. */
+    static @Nullable String rerunPrompt(boolean hasSelection, @Nullable String lastRun) {
+        return hasSelection ? null : lastRun;
     }
 
     /**
@@ -523,7 +536,9 @@ final class RunConfigurationCoordinator {
     /** Run: Run Selected Configuration. With none selected (or none saved) it says so. */
     void runSelectedConfig() {
         com.editora.config.RunConfiguration cfg = selectedRunConfig();
-        if (cfg == null) {
+        if (cfg == null && host.runCoordinator().rerunnableLabel() != null) {
+            host.runCoordinator().rerunLast(); // the last run, which the dropdown names while nothing is selected
+        } else if (cfg == null) {
             host.setStatus(tr("status.run.noSelectedConfig"));
         } else {
             host.runCoordinator().runConfig(cfg);

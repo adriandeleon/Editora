@@ -242,11 +242,15 @@ java -jar target/Editora-*.jar
 
 ## Open a folder or a file
 
-A fresh install opens on the **Welcome** page. Its buttons are the quickest way
-in:
+A fresh install opens on the **Welcome** page. At the top it asks **Which keys
+do your fingers know?**: click Emacs, CUA, Sublime Text, VS Code or IntelliJ
+IDEA and every shortcut in Editora follows, or **Keep Emacs**. It asks once;
+[Choose your keymap](#choose-your-keymap) below changes it later. The buttons
+under it are the quickest way in:
 
 - **Open Folder…** opens a folder as a project, with its file tree in the
-  Project tool window. This is the usual way to work on a codebase; each project
+  Project tool window. A click opens your system's folder dialog; its shortcut
+  opens Editora's own folder prompt, where you type the path. This is the usual way to work on a codebase; each project
   gets its own window and remembers its open files.
 - **Open File…** opens a single file.
 - **New File** starts an empty buffer, and **Clone Git Repository…** fetches a
@@ -271,8 +275,8 @@ closing normally, the next launch offers your unsaved edits back; see
 ## Choose your keymap
 
 Editora ships five keymaps: **Emacs** (the default), **CUA**, **Sublime Text**,
-**VS Code**, and **IntelliJ IDEA**. If Emacs chords aren't your muscle memory,
-switch before you learn anything else: open Settings (the gear in the toolbar,
+**VS Code**, and **IntelliJ IDEA**. The Welcome page asks which one on first
+launch. To change it later: open Settings (the gear in the toolbar,
 or "Settings" in the palette), go to **Keymaps**, and pick one. The change is
 live, and every shortcut shown in menus, tooltips, and the palette follows it.
 See [Keymaps & keybindings](/docs/keymaps).

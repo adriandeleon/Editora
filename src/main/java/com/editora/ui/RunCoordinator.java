@@ -406,6 +406,19 @@ final class RunCoordinator {
         runActiveFile(false, true);
     }
 
+    /**
+     * The name of the last run, which Rerun Last would start again, or null when there is none: what the toolbar's
+     * dropdown names while no configuration is selected, so its ▶ reruns it.
+     */
+    @Nullable
+    String rerunnableLabel() {
+        if (lastRunCommand == null || lastRunDir == null) {
+            return null;
+        }
+        String label = lastRunLabel;
+        return label == null || label.isBlank() ? tr("toolbar.runConfig.lastRunUnnamed") : label;
+    }
+
     /** Re-runs the most recent run (same file + argv) without touching the active tab. */
     void rerunLast() {
         if (lastRunCommand == null || lastRunDir == null) {

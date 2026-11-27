@@ -167,10 +167,33 @@ final class BufferBanners {
 
     /** Shows a notice about the file above the editor, with one action; dismissing it only hides it. */
     void showFileNotice(String message, String actionLabel, String dismissLabel, Runnable onAction) {
+        showFileNotice(message, null, null, actionLabel, dismissLabel, onAction);
+    }
+
+    /** As above, with a link after the message ({@code detailsLabel}, null for none) that runs {@code onDetails}. */
+    void showFileNotice(
+            String message,
+            @Nullable String detailsLabel,
+            @Nullable Runnable onDetails,
+            String actionLabel,
+            String dismissLabel,
+            Runnable onAction) {
         fileNotice = new NoticeBar(dismissLabel, "lsp-install-bar", "file-notice-bar");
         fileNotice.set(message, actionLabel, onAction, this::hideFileNotice);
+        fileNotice.setDetails(detailsLabel, onDetails);
         fileNoticeShown = true;
         refreshTopBars();
+    }
+
+    /** TEST SEAM: fires the shown file notice's action ({@code details} false) or its details link. */
+    void fireFileNoticeForTest(boolean details) {
+        if (fileNoticeShown && fileNotice != null) {
+            if (details) {
+                fileNotice.detailsForTest().fire();
+            } else {
+                fileNotice.buttonsForTest()[0].fire();
+            }
+        }
     }
 
     void hideFileNotice() {
