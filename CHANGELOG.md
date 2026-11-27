@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Claude Code's IDE connection (experimental).** With **Let Claude Code connect as to an IDE** on, `/ide` in Claude
+  Code finds the window: its proposed changes open as diffs to accept or reject, and **Claude Code: Send Selection**
+  sends lines as an @-mention.
 - **Slash commands for Claude Code.** Editora's MCP server offers prompts, which Claude Code lists as
   `/mcp__editora__review_changes` (review the uncommitted changes and leave findings as review comments),
   `/mcp__editora__fix_open_comments` (fix and resolve the open review threads) and `/mcp__editora__explain_selection`.

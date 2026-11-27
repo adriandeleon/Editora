@@ -46,7 +46,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 188;
+    public static final int SCHEMA_VERSION = 189;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -724,6 +724,8 @@ public class Settings {
     private boolean mcpSupport = false;
     /** Every MCP agent edit ({@code edit_buffer}) shown as a proposal to accept or reject first; off: applied at once. */
     private boolean mcpEditsNeedApproval = false;
+    /** Experimental: Claude Code may connect to a window as to an IDE (a lock file in ~/.claude/ide). Off. */
+    private boolean claudeIdeTrial = false;
     /** Master AI kill switch: off by default. When off, {@link #agentSupport}/{@link #aiSupport} (and
      *  everything they gate — the AI Agent chat window, commit-message generation, explain/rewrite
      *  selection, inline ghost-text completion) are effectively disabled regardless of their own
@@ -1657,6 +1659,14 @@ public class Settings {
 
     public void setHtmlPreviewBrowser(String htmlPreviewBrowser) {
         this.htmlPreviewBrowser = htmlPreviewBrowser == null ? "" : htmlPreviewBrowser;
+    }
+
+    public boolean isClaudeIdeTrial() {
+        return claudeIdeTrial;
+    }
+
+    public void setClaudeIdeTrial(boolean claudeIdeTrial) {
+        this.claudeIdeTrial = claudeIdeTrial;
     }
 
     public boolean isMcpEditsNeedApproval() {

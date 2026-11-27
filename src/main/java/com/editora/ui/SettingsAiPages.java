@@ -235,6 +235,14 @@ final class SettingsAiPages {
                 Settings::isMcpEditsNeedApproval,
                 Settings::setMcpEditsNeedApproval,
                 "mcp agent edits approve approval accept reject propose proposal diff review claude");
+        w.switchRow(
+                c,
+                Category.MCP,
+                "claudeIdeTrial",
+                true,
+                Settings::isClaudeIdeTrial,
+                Settings::setClaudeIdeTrial,
+                "claude code ide connection lock file websocket diff at mention experimental vscode jetbrains");
         mcpStatusLabel = new Label();
         mcpStatusLabel.setWrapText(true);
         mcpCopyButton = new Button(tr("settings.mcp.copy"));

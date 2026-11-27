@@ -262,6 +262,11 @@ final class WindowCommandRegistrar {
 
         void copyMcpEndpoint();
 
+        /** Claude Code's IDE trial: the setting changed, and an @-mention of the selection. */
+        void applyClaudeIde();
+
+        void sendSelectionToClaude();
+
         void copyMcpHttpEndpoint();
 
         void ifLsp(Runnable action);
@@ -1371,6 +1376,17 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("mcp.copyEndpoint", () -> host.ifMcp(host::copyMcpEndpoint)));
         host.registry().register(Command.of("mcp.copyHttpEndpoint", () -> host.ifMcp(host::copyMcpHttpEndpoint)));
         host.registry().register(Command.of("view.toggleMcp", host::toggleMcpSupport));
+        // Experimental: Claude Code's IDE connection (lock file + WebSocket), and an @-mention over it.
+        host.registry()
+                .register(Command.of(
+                        "claudeIde.toggleTrial",
+                        () -> host.editorSettings()
+                                .toggleSetting(
+                                        "claudeIde.toggleTrial",
+                                        () -> host.config().getSettings().isClaudeIdeTrial(),
+                                        v -> host.config().getSettings().setClaudeIdeTrial(v),
+                                        host::applyClaudeIde)));
+        host.registry().register(Command.of("claudeIde.sendSelection", () -> host.ifMcp(host::sendSelectionToClaude)));
         host.registry()
                 .register(Command.of(
                         "view.toggleAiEnabled",

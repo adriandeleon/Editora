@@ -150,11 +150,26 @@ public final class LocalShell {
     }
 
     /**
+     * Variables a window adds for the programs its terminals start: {@code CLAUDE_CODE_SSE_PORT} and
+     * {@code ENABLE_IDE_INTEGRATION} while the window's Claude Code IDE trial runs, so a {@code claude} started there
+     * connects to it. The last window to start one wins.
+     */
+    private static volatile Map<String, String> extraEnvironment = Map.of();
+
+    public static void setExtraEnvironment(Map<String, String> extra) {
+        extraEnvironment = Map.copyOf(extra);
+    }
+
+    public static Map<String, String> extraEnvironment() {
+        return extraEnvironment;
+    }
+
+    /**
      * Environment for the child: Editora's user environment (the augmented PATH, the user's locale), plus the
      * terminal identity a shell and its prompt look for.
      */
     public static Map<String, String> environment() {
-        Map<String, String> overrides = new HashMap<>();
+        Map<String, String> overrides = new HashMap<>(extraEnvironment);
         overrides.put("TERM", TERM);
         // Signals to shells and prompt frameworks that a full-featured terminal is present.
         overrides.put("COLORTERM", "truecolor");

@@ -3128,6 +3128,97 @@ public class MainController implements com.editora.mcp.McpBridge {
             mcpOwner = null;
         }
         statusBar.setMcpRunning(mcpServer != null && mcpServer.isRunning());
+        applyClaudeIde();
+    }
+
+    /** This window's Claude Code IDE trial server, while its setting and MCP are on. */
+    private com.editora.mcp.ide.@Nullable ClaudeIdeServer claudeIde;
+
+    /**
+     * Reconciles this window's Claude Code IDE trial with its setting (experimental, off by default; it needs the MCP
+     * server's switch too): writes the lock file Claude Code finds and serves the IDE tools, or stops and removes it.
+     * Started off the FX thread. Runs with {@link #applyMcpSupport}.
+     */
+    void applyClaudeIde() {
+        boolean on = mcpEnabled() && config.getSettings().isClaudeIdeTrial();
+        if (on && claudeIde == null) {
+            java.util.List<Path> folders =
+                    windowProjectRoot() == null ? java.util.List.of() : java.util.List.of(windowProjectRoot());
+            Path dir = com.editora.mcp.ide.ClaudeIdeServer.ideDir(
+                    System.getenv("CLAUDE_CONFIG_DIR"), Path.of(System.getProperty("user.home")));
+            Thread.ofVirtual().name("claude-ide-start").start(() -> {
+                try {
+                    var server = new com.editora.mcp.ide.ClaudeIdeServer(
+                            this, () -> folders, dir, com.editora.AppInfo.VERSION);
+                    Platform.runLater(() -> {
+                        if (claudeIde != null
+                                || !(mcpEnabled() && config.getSettings().isClaudeIdeTrial())) {
+                            server.close(); // turned off, or another start won, meanwhile
+                            return;
+                        }
+                        claudeIde = server;
+                        com.editora.terminal.LocalShell.setExtraEnvironment(java.util.Map.of(
+                                "CLAUDE_CODE_SSE_PORT",
+                                String.valueOf(server.port()),
+                                "ENABLE_IDE_INTEGRATION",
+                                "true"));
+                        setStatus(tr("status.claudeIde.started", server.port()));
+                    });
+                } catch (java.io.IOException | RuntimeException e) {
+                    LOG.log(java.util.logging.Level.WARNING, "Claude Code IDE trial failed to start", e);
+                    Platform.runLater(() -> setStatus(tr("status.claudeIde.failed", String.valueOf(e.getMessage()))));
+                }
+            });
+        } else if (!on && claudeIde != null) {
+            stopClaudeIde();
+        }
+    }
+
+    private void stopClaudeIde() {
+        var server = claudeIde;
+        claudeIde = null;
+        if (server == null) {
+            return;
+        }
+        String port = String.valueOf(server.port());
+        if (port.equals(com.editora.terminal.LocalShell.extraEnvironment().get("CLAUDE_CODE_SSE_PORT"))) {
+            com.editora.terminal.LocalShell.setExtraEnvironment(java.util.Map.of());
+        }
+        Thread.ofVirtual().name("claude-ide-stop").start(server::close);
+    }
+
+    /**
+     * {@code claudeIde.sendSelection}: the active file's selected lines (the caret's line when none) sent to a
+     * connected Claude Code as an @-mention, as the editor plugins send one.
+     */
+    void sendSelectionToClaude() {
+        var server = claudeIde;
+        EditorBuffer b = activeBuffer();
+        if (server == null) {
+            setStatus(tr("status.claudeIde.off"));
+            return;
+        }
+        if (b == null || b.getPath() == null) {
+            setStatus(tr("status.claudeIde.noFile"));
+            return;
+        }
+        var area = b.getArea();
+        var sel = area.getSelection();
+        int first = area.offsetToPosition(sel.getStart(), org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
+                .getMajor();
+        int last = sel.getLength() == 0
+                ? first
+                : area.offsetToPosition(sel.getEnd() - 1, org.fxmisc.richtext.model.TwoDimensional.Bias.Backward)
+                        .getMajor();
+        int offset = navigation.documentLine(b, 0); // a narrowed buffer's lines are counted in the whole file
+        Path file = b.getPath();
+        int from = first + 1 + offset;
+        int to = last + 1 + offset;
+        Thread.ofVirtual().name("claude-ide-mention").start(() -> {
+            boolean sent = server.atMention(file, from, to);
+            Platform.runLater(
+                    () -> setStatus(tr(sent ? "status.claudeIde.mentioned" : "status.claudeIde.notConnected")));
+        });
     }
 
     /**
@@ -3257,6 +3348,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * refreshed. Only when this is the last window is the server actually stopped (#463).
      */
     private void stopMcpIfOwner() {
+        stopClaudeIde(); // this window's lock file goes with it, whoever owns the MCP server
         if (mcpServer == null || mcpOwner != this) {
             return;
         }

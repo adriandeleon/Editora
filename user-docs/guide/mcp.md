@@ -227,6 +227,30 @@ after a restart.
 
 ![Settings on the MCP Server page: the Enable MCP server switch on, and the Server row reading Running at an http://127.0.0.1 endpoint with Copy Endpoint Command and New Token buttons](/screenshots/docs/settings-mcp.png "Settings → MCP Server while the server runs, with the button that copies the connect command.")
 
+## Claude Code's IDE connection (experimental)
+
+Claude Code can also connect to an editor the way its VS Code and JetBrains
+plugins do. **Settings → MCP Server → Let Claude Code connect as to an IDE**
+(or **Claude Code: Toggle IDE Connection**) turns this on for each window,
+together with the MCP server switch:
+
+- The window writes a lock file in `~/.claude/ide` (`$CLAUDE_CONFIG_DIR/ide`
+  when that is set). The file names the window's project folder and holds a
+  random token, and only you can read it. Closing the window or turning the
+  setting off removes the file.
+- In Claude Code, run `/ide` and pick Editora. A `claude` started in one of
+  Editora's terminals finds the window by itself.
+- When Claude Code proposes a change, the file opens as a **Proposed** diff
+  tab. **Accept** applies the change and saves the file; **Reject** turns it
+  down.
+- **Claude Code: Send Selection** sends the selected lines to Claude Code as an
+  @-mention. Claude Code can also ask for the open files, the selection, the
+  diagnostics and the dirty state, and it can open and save files.
+
+Anthropic does not document this connection. Editora follows the plugins'
+behavior as others have described it, so a Claude Code update can break it.
+The MCP server and `editora mcp` remain the supported route.
+
 ## Security
 
 The server binds to loopback only (never the network), requires the bearer
