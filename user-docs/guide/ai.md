@@ -150,7 +150,13 @@ bar say how many.
   gets one undoable edit, and nothing is saved. A file the turn created is
   left for you to delete.
 
-The last 20 turns are kept while the window is open.
+The last 20 turns are kept while the window is open. With more than one kept,
+both commands first ask which turn, the newest at the top.
+
+Before a turn first changes a file that is open, [File History](/docs/workspace#local-file-history)
+keeps the file as it was, labelled with the turn (for example *Before Turn 3 ·
+Claude Code*), so the turn has a restore point after the window closes too. A
+file written while it was not open already gets a *Before agent write* row.
 
 Commands: `tool.agent` (the tool window), `agent.addSelection`, `agent.reviewChanges`, `agent.revertTurn`, `agent.newSession`,
 `agent.resumeSession`, `agent.selectClient`, `agent.selectMode`,

@@ -11,6 +11,11 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 /** {@link AgentChangeSets}: what each turn keeps, and where an MCP agent's turn ends. */
 class AgentChangeSetsTest {
 
+    @org.junit.jupiter.api.BeforeAll
+    static void english() {
+        com.editora.i18n.Messages.init("en");
+    }
+
     private final AtomicLong now = new AtomicLong(1_000);
     private final AgentChangeSets sets = new AgentChangeSets(now::get);
     private final Path a = Path.of("/r/A.java");
@@ -19,9 +24,9 @@ class AgentChangeSetsTest {
     @Test
     void aTurnKeepsEachFileAsItWasBeforeItsFirstWrite() {
         sets.beginTurn("Claude Code");
-        sets.beforeAgentWrite(a, "one");
-        sets.beforeAgentWrite(a, "two"); // a second write in the turn: still "one" before it
-        sets.beforeAgentWrite(b, null); // created by the turn
+        sets.beforeAgentWrite(a, "one", false);
+        sets.beforeAgentWrite(a, "two", false); // a second write in the turn: still "one" before it
+        sets.beforeAgentWrite(b, null, false); // created by the turn
         AgentChangeSets.Turn t = sets.endTurn();
         assertEquals("Claude Code", t.agent());
         assertEquals(2, t.fileCount());
@@ -50,10 +55,25 @@ class AgentChangeSetsTest {
     }
 
     @Test
+    void theFirstWriteOfEachFileInATurnIsHeardOnce() {
+        java.util.List<String> heard = new java.util.ArrayList<>();
+        sets.setOnFirstWrite((turn, file, text) -> heard.add(AgentChangeSets.name(turn) + " " + file + " " + text));
+        sets.beginTurn("Claude Code");
+        sets.beforeAgentWrite(a, "one", true);
+        sets.beforeAgentWrite(a, "two", true); // not the first write of a
+        sets.beforeAgentWrite(b, "closed", false); // a closed file keeps its own Local History row
+        sets.endTurn();
+        sets.beforeMcpEdit("MCP agent", b, "b0");
+        assertEquals(2, heard.size(), heard.toString());
+        assertEquals("Turn 1 · Claude Code /r/A.java one", heard.get(0));
+        assertEquals("Turn 2 · MCP agent /r/B.java b0", heard.get(1));
+    }
+
+    @Test
     void onlyTheNewestTurnsAreKept() {
         for (int i = 0; i < AgentChangeSets.KEPT + 5; i++) {
             sets.beginTurn("A");
-            sets.beforeAgentWrite(a, "v" + i);
+            sets.beforeAgentWrite(a, "v" + i, false);
             sets.endTurn();
         }
         assertEquals(AgentChangeSets.KEPT, sets.turns().size());

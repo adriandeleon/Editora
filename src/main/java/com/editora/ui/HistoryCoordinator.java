@@ -1117,6 +1117,16 @@ final class HistoryCoordinator {
         recordFor(file, content, reason, "", false, encoding, false, null);
     }
 
+    /**
+     * A labelled revision of {@code file} as it was before an agent turn first changed it ({@code content}), so the
+     * turn has a restore point in File History. Forced, like a label: it marks the moment even when unchanged.
+     */
+    void recordAgentTurn(Path file, String content, String label) {
+        if (isEnabled()) {
+            recordFor(file, content, HistoryRevision.REASON_AGENT, label, true);
+        }
+    }
+
     /** Records and waits for the index snapshot to become durable before acknowledging the caller. */
     void recordDurably(
             Path file, @Nullable String content, String reason, java.util.function.Consumer<Boolean> completion) {
