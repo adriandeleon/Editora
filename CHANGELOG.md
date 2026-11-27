@@ -55,6 +55,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   switched off and on, and after New Token. Settings → MCP Server's **Copy Connect Command** copies that line with
   this install's launcher; the old command with the port and token is **Copy HTTP Command**. An agent started before
   Editora still starts and sees the tools, and each call says to turn the server on.
+- **Review what an agent changed.** Each AI Agent turn, and each run of MCP edits, keeps the files it wrote as they
+  were before. **Agent: Review Changes** shows the latest one as a review tab, file before against file now, and
+  **Revert Turn** puts them all back as one undoable edit each.
 - **EEx and HEEx templates.** Phoenix's `.html.eex`, `.leex` and `.heex` files colour their Elixir as Elixir and their
   HTML as HTML (HEEx's `{@assigns}`, `:if={…}` attributes and `<.component>` tags included), and open as HTML templates
   (tag auto-close, Structure, the HTML language server, `<%# %>` comments). The Elixir inside an Elixir file's `~H` and

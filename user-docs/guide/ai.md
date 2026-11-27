@@ -133,7 +133,26 @@ Each one opens the AI Agent panel and adds a block after what you have already
 written. To have the agent fix a thread at once instead, use **Fix Review
 Thread with Agent**.
 
-Commands: `tool.agent` (the tool window), `agent.addSelection`, `agent.newSession`,
+### Reviewing what an agent changed
+
+Each AI Agent turn (a prompt and its answer) keeps the files it wrote as they
+were before its first write. Edits from an [MCP](/docs/mcp) client are kept the
+same way; they have no turns, so they count as one turn until two minutes pass
+without an edit. When a turn has changed files, the transcript and the status
+bar say how many.
+
+- **Agent: Review Changes** opens the latest turn that changed files as one
+  review tab: each file before the turn, against the file now. The right side
+  is your file, so you can take back a single change from the left, as in any
+  diff of your file.
+- **Revert Turn**, above that review (or **Agent: Revert Turn**), puts every
+  file the turn changed back as it was before the turn, after asking. Each file
+  gets one undoable edit, and nothing is saved. A file the turn created is
+  left for you to delete.
+
+The last 20 turns are kept while the window is open.
+
+Commands: `tool.agent` (the tool window), `agent.addSelection`, `agent.reviewChanges`, `agent.revertTurn`, `agent.newSession`,
 `agent.resumeSession`, `agent.selectClient`, `agent.selectMode`,
 `agent.selectModel`, `agent.stop`. AI is gated behind a master **Enable AI**
 switch (off by default) in **Settings → AI**.
