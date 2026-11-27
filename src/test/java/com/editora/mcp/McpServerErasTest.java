@@ -231,7 +231,7 @@ class McpServerErasTest {
         assertEquals(400, wrongName.status(), "the header a proxy checks must be the tool that runs");
         assertEquals(-32020, wrongName.body().at("/error/code").asInt());
 
-        Answer unknown = modern(4, "prompts/list", "");
+        Answer unknown = modern(4, "completion/complete", "");
         assertEquals(404, unknown.status());
         assertEquals(JsonRpc.METHOD_NOT_FOUND, unknown.body().at("/error/code").asInt());
     }
@@ -313,7 +313,7 @@ class McpServerErasTest {
                     "listen-1",
                     ack.at("/params/_meta/io.modelcontextprotocol~1subscriptionId")
                             .asText());
-            assertFalse(ack.at("/params/notifications").has("promptsListChanged"), "no prompts: not agreed");
+            assertTrue(ack.at("/params/notifications").has("promptsListChanged"), "a fixed list: agreed, never fires");
             assertEquals(
                     file,
                     ack.at("/params/notifications/resourceSubscriptions/0").asText());
@@ -394,6 +394,22 @@ class McpServerErasTest {
                 "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"ping\"}", Map.of("MCP-Protocol-Version", "2026-07-28"));
         assertEquals(400, modernHeaderOnly.status(), "the header says modern, the body does not");
         assertEquals(-32020, modernHeaderOnly.body().at("/error/code").asInt());
+    }
+
+    @Test
+    void promptsAreListedAndGivenAndAnUnknownOneIsInvalidParams() throws Exception {
+        JsonNode list = modern(1, "prompts/list", "").body().get("result");
+        assertEquals("complete", list.get("resultType").asText());
+        assertTrue(list.get("ttlMs").asLong() > 0, "a fixed list keeps");
+        assertEquals(3, list.get("prompts").size());
+        JsonNode got = post(
+                        "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"prompts/get\",\"params\":{\"name\":\"explain_selection\"}}",
+                        Map.of())
+                .body();
+        assertTrue(got.at("/result/messages/0/content/text").asText().startsWith("Explain this code"), got.toString());
+        Answer unknown = post(
+                "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"prompts/get\",\"params\":{\"name\":\"nope\"}}", Map.of());
+        assertEquals(JsonRpc.INVALID_PARAMS, unknown.body().at("/error/code").asInt());
     }
 
     private void awaitStreams(int n) throws InterruptedException {

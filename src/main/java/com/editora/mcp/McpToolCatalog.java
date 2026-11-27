@@ -49,10 +49,63 @@ final class McpToolCatalog {
     ObjectNode capabilities() {
         ObjectNode caps = m.createObjectNode();
         caps.putObject("tools");
+        caps.putObject("prompts"); // a fixed list: it never changes while the server runs
         ObjectNode resources = caps.putObject("resources");
         resources.put("subscribe", true);
         resources.put("listChanged", true);
         return caps;
+    }
+
+    // --- prompts/list -----------------------------------------------------------------------------
+
+    /** The prompts, which a client such as Claude Code offers as slash commands ({@code /mcp__editora__<name>}). */
+    ObjectNode promptsListResult() {
+        ArrayNode prompts = m.createArrayNode();
+        prompt(
+                prompts,
+                "review_changes",
+                "Review Changes",
+                "Review the uncommitted changes of the window's Git repository and record each finding as a review"
+                        + " comment on its lines.",
+                "focus",
+                "What to look at most, e.g. security, error handling, tests.");
+        prompt(
+                prompts,
+                "fix_open_comments",
+                "Fix Open Review Comments",
+                "Do what the open review comments of the window's repository ask, and resolve each with a note.",
+                "path",
+                "Only the comments on this file (an absolute path).");
+        prompt(
+                prompts,
+                "explain_selection",
+                "Explain Selection",
+                "Explain the code selected in the editor.",
+                null,
+                null);
+        ObjectNode r = m.createObjectNode();
+        r.set("prompts", prompts);
+        return r;
+    }
+
+    private void prompt(
+            ArrayNode into,
+            String name,
+            String title,
+            String description,
+            @org.jspecify.annotations.Nullable String argument,
+            @org.jspecify.annotations.Nullable String argumentDescription) {
+        ObjectNode p = into.addObject();
+        p.put("name", name);
+        p.put("title", title);
+        p.put("description", description);
+        ArrayNode args = p.putArray("arguments");
+        if (argument != null) {
+            ObjectNode a = args.addObject();
+            a.put("name", argument);
+            a.put("description", argumentDescription);
+            a.put("required", false);
+        }
     }
 
     // --- tools/list -------------------------------------------------------------------------------
