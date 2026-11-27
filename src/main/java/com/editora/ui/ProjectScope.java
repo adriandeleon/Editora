@@ -295,14 +295,16 @@ final class ProjectScope {
     private @Nullable String applied;
 
     /**
-     * What applies here, as one string: root, trust, the values and the language servers' commands, enables and
-     * Bash IDE object. Without those last, a project whose read landed after its first buffer synced told nobody
-     * that its servers' overrides had arrived.
+     * What applies here, as one string: root, trust, the values, the language servers' commands, enables and Bash
+     * IDE object, and the {@code html} object (read untrusted too: the HTML servers take it, its ignored keys are
+     * said). Without those, a project whose read landed after its first buffer synced or page opened told nobody
+     * that its servers' settings had arrived.
      */
     private String signature() {
         ProjectSettings s = settings();
         return root() + "|" + trusted() + "|" + s.valueOverrides() + "|"
                 + s.getLspCommands() + "|" + s.getLspEnabled() + "|" + s.getBashIde() + "|"
+                + s.getHtml() + "|"
                 + toolchain().signature();
     }
 

@@ -69,6 +69,60 @@ class HtmlProjectSettingsAtOpenFxTest {
     }
 
     /**
+     * The flake's cause (CI 2026-11-27): the project file is read off the FX thread, and a page opened before that
+     * read landed handed the HTML servers the user's settings alone. The read's landing told nobody the {@code html}
+     * object had arrived, so the project's settings never applied and its ignored key was never said. Here the read
+     * is held until the page is open.
+     */
+    @Test
+    void aProjectsHtmlSettingsApplyWhenItsFileIsReadAfterThePageOpened(@TempDir Path dir) throws Exception {
+        Path site = Files.createDirectories(dir.resolve("site"));
+        Files.createDirectories(site.resolve(".editora"));
+        Files.writeString(
+                site.resolve(".editora/settings.json"),
+                "{\"html.format.wrapLineLength\": 30, \"html\": {\"format.wrapAtributes\": \"force\"}}");
+        Path page = Files.writeString(site.resolve("wrap.html"), "<div class=\"one\" id=\"two\"><p>x</p></div>\n");
+        FxWindowFixture fixture = FxWindowFixture.create(Files.createDirectories(dir.resolve("config")), shared -> {
+            shared.getSettings().setLspSupport(true);
+            shared.getSettings().setProjectSupport(true);
+        });
+        try (WindowRig w = new WindowRig(fixture)) {
+            LspCoordinator coordinator = w.field("lspCoordinator");
+            java.util.concurrent.ConcurrentLinkedQueue<Runnable> held =
+                    new java.util.concurrent.ConcurrentLinkedQueue<>();
+            FxTestSupport.runOnFx(() -> coordinator.projectScope().reads = held::add);
+            FxTestSupport.runOnFx(() ->
+                    w.controller.setWindowContext(w.fx.windowManager, new Project("site", "site", site.toString())));
+            w.async.awaitFx();
+            w.open(page);
+            w.async.awaitFx();
+            String said = tr("status.html.projectKeysIgnored", "format.wrapAtributes");
+            assertEquals(false, messages(w).contains(said), "nothing of the project's is known before its read");
+
+            for (Runnable read; (read = held.poll()) != null; ) {
+                read.run(); // lands on the FX thread, as a real read does
+            }
+
+            try {
+                w.await(
+                        "the ignored key said when the read landed",
+                        () -> messages(w).contains(said));
+            } catch (AssertionError e) {
+                throw new AssertionError(e.getMessage() + "; " + FxTestSupport.callOnFx(() -> state(w)), e);
+            }
+            LspManager manager = FxTestSupport.field(coordinator, "lspManager");
+            Function<Path, HtmlServerSettings> settings = FxTestSupport.field(manager, "htmlSettings");
+            FxTestSupport.runOnFx(() -> assertEquals(
+                    30,
+                    settings.apply(site)
+                            .formattingOptions(new FormattingIndent(4, true))
+                            .getNumber("wrapLineLength")
+                            .intValue(),
+                    "the project's wrap column once its file is read"));
+        }
+    }
+
+    /**
      * What decides whether the ignored key is said, for a failure's message: the project the window and its servers
      * have, the project file as read, whether the language servers' commands are known yet, and what was said. FX
      * thread.
