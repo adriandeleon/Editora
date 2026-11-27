@@ -56,6 +56,12 @@ class GoToFileFxTest {
             FxTestSupport.runOnFxUnchecked(() -> {});
         }
         assertTrue(FxTestSupport.callOnFx(input::isFocused), "the field has the focus, as in a real window");
+        // On a first open in a window the focus owner can reach the field after the open placed the caret, and the
+        // TextField selects all then (the r/JavaFX re-review saw the # replaced): a late select-all is undone too.
+        FxTestSupport.runOnFxUnchecked(input::selectAll);
+        for (int i = 0; i < 3; i++) {
+            FxTestSupport.runOnFxUnchecked(() -> {});
+        }
         FxTestSupport.runOnFxUnchecked(() -> {
             assertEquals("#", input.getText(), "scoped to files");
             assertEquals(1, input.getCaretPosition(), "the caret after #, so the name typed next keeps it");
