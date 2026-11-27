@@ -9,9 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Review order and walkthrough.** A review of several files lists source first, then tests, configuration, docs and
-  generated files (dimmed), with a heading for each kind. **Diff: Ask Agent for a Review Walkthrough** asks the AI
-  Agent what the change does, where it is risky and in what order to read it.
 - **Slash commands for Claude Code.** Editora's MCP server offers prompts, which Claude Code lists as
   `/mcp__editora__review_changes` (review the uncommitted changes and leave findings as review comments),
   `/mcp__editora__fix_open_comments` (fix and resolve the open review threads) and `/mcp__editora__explain_selection`.
@@ -70,6 +67,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   project's files to it, so breakpoints bind and stops open the files here. Stop takes your breakpoints out and leaves
   the program running. A launch.json `go` configuration with `"mode": "remote"` (and its `substitutePath`) attaches the
   same way.
+- **Review order and walkthrough.** A review of several files lists source first, then tests, configuration, docs and
+  generated files (dimmed), with a heading for each kind. **Diff: Ask Agent for a Review Walkthrough** asks the AI
+  Agent what the change does, where it is risky and in what order to read it.
 - **Remote C, C++ and Rust programs built elsewhere.** Attach to Remote Program… asks for the folder the program was
   built in on that machine, and a launch.json `cppdbg` configuration's `sourceFileMap` is honoured, on GDB and on
   CodeLLDB: breakpoints set in your copy of the sources bind, and stops open the files here.

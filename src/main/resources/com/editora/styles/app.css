@@ -2906,6 +2906,17 @@
    TextFlow). A Label reads -fx-text-fill and ignores -fx-fill; a Text is the other way round. */
 .dirty-name { -fx-text-fill: -state-amber; -fx-fill: -state-amber; -fx-font-style: italic; }
 
+/* A review's files by kind: a small heading over the first of each kind; generated files quieter. */
+.patch-file-group {
+    -fx-font-size: 0.85em;
+    -fx-font-weight: bold;
+    -fx-text-fill: -color-fg-muted;
+    -fx-padding: 4 0 2 0;
+}
+.patch-file-generated .label {
+    -fx-opacity: 0.6;
+}
+
 /* IntelliJ-style tool window stripes + panels. */
 .tool-stripe {
     -fx-background-color: -color-bg-subtle;
@@ -7135,15 +7146,4 @@
 .project-map-trail-editor-note {
     -fx-font-size: 11px;
     -fx-font-style: italic;
-}
-
-/* A review's files by kind: a small heading over the first of each kind; generated files quieter. */
-.patch-file-group {
-    -fx-font-size: 0.85em;
-    -fx-font-weight: bold;
-    -fx-text-fill: -color-fg-muted;
-    -fx-padding: 4 0 2 0;
-}
-.patch-file-generated .label {
-    -fx-opacity: 0.6;
 }
