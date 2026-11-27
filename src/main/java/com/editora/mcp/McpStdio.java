@@ -612,6 +612,7 @@ public final class McpStdio {
                         params == null ? null : params.path("protocolVersion").asText(null));
             case "server/discover" -> catalog.discoverResult();
             case "tools/list" -> catalog.listToolsResult();
+            case "prompts/list" -> catalog.promptsListResult();
             case "tools/call" -> toolError(message(why));
             case "resources/list" -> {
                 ObjectNode r = mapper.createObjectNode();

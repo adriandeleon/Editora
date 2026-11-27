@@ -161,7 +161,7 @@ class McpStdioTest {
                     "the catalog the server serves");
             JsonNode ping = relay.call("{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"ping\"}");
             assertTrue(ping.get("result").isObject());
-            JsonNode other = relay.call("{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"prompts/list\"}");
+            JsonNode other = relay.call("{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"completion/complete\"}");
             assertTrue(other.at("/error/message").asText().contains("Editora is not running"), other.toString());
             String err = relay.err.toString(StandardCharsets.UTF_8);
             assertEquals(1, err.lines().count(), "said once on standard error, not for every message: " + err);

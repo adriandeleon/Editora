@@ -157,7 +157,8 @@ final class McpProtocol {
                 : result.putObject("_meta");
         meta.set(META_SERVER_INFO, serverInfo(m));
         if (CACHEABLE.contains(method)) {
-            boolean stable = method.equals("server/discover") || method.equals("tools/list");
+            boolean stable =
+                    method.equals("server/discover") || method.equals("tools/list") || method.equals("prompts/list");
             result.put("ttlMs", stable ? 300_000 : 0);
             result.put("cacheScope", "private");
         }
@@ -165,13 +166,17 @@ final class McpProtocol {
     }
 
     /** What a {@code subscriptions/listen} asked for, and what this server honours of it. */
-    record Filters(boolean toolsListChanged, boolean resourcesListChanged, List<String> resourceSubscriptions) {
+    record Filters(
+            boolean toolsListChanged,
+            boolean promptsListChanged,
+            boolean resourcesListChanged,
+            List<String> resourceSubscriptions) {
 
-        /** The request's {@code params.notifications}; prompts are not offered, so not honoured. */
+        /** The request's {@code params.notifications}. */
         static Filters of(@Nullable JsonNode params) {
             JsonNode f = params == null ? null : params.get("notifications");
             if (f == null || !f.isObject()) {
-                return new Filters(false, false, List.of());
+                return new Filters(false, false, false, List.of());
             }
             java.util.TreeSet<String> uris = new java.util.TreeSet<>();
             if (f.path("resourceSubscriptions").isArray()) {
@@ -183,6 +188,7 @@ final class McpProtocol {
             }
             return new Filters(
                     f.path("toolsListChanged").asBoolean(false),
+                    f.path("promptsListChanged").asBoolean(false),
                     f.path("resourcesListChanged").asBoolean(false),
                     List.copyOf(uris));
         }
@@ -192,6 +198,9 @@ final class McpProtocol {
             ObjectNode a = m.createObjectNode();
             if (toolsListChanged) {
                 a.put("toolsListChanged", true); // honoured: the tool list is fixed, so it never fires
+            }
+            if (promptsListChanged) {
+                a.put("promptsListChanged", true); // the same: a fixed list
             }
             if (resourcesListChanged) {
                 a.put("resourcesListChanged", true);
