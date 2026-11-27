@@ -245,6 +245,144 @@ final class McpTools {
         return toolResult.path("content").path(0).path("text").asText();
     }
 
+    // --- prompts ----------------------------------------------------------------------------------
+
+    /** A prompt that cannot be given (unknown, or nothing to build it from); answered as invalid params. */
+    static final class PromptUnavailable extends RuntimeException {
+        PromptUnavailable(String message) {
+            super(message);
+        }
+    }
+
+    ObjectNode promptsListResult() {
+        return new McpToolCatalog(m).promptsListResult();
+    }
+
+    /** {@code prompts/get}: the prompt's one user message, built from the window as it is now. */
+    ObjectNode getPromptResult(@Nullable JsonNode params) {
+        String name = text(params, "name");
+        JsonNode args = params == null ? null : params.get("arguments");
+        String text = switch (name == null ? "" : name) {
+            case "review_changes" -> reviewChangesPrompt(text(args, "focus"));
+            case "fix_open_comments" -> fixOpenCommentsPrompt(text(args, "path"));
+            case "explain_selection" -> explainSelectionPrompt();
+            default -> throw new PromptUnavailable("Unknown prompt: " + name);
+        };
+        ObjectNode r = m.createObjectNode();
+        for (JsonNode p : promptsListResult().get("prompts")) {
+            if (p.get("name").asText().equals(name)) {
+                r.put("description", p.get("description").asText());
+            }
+        }
+        ObjectNode message = r.putArray("messages").addObject();
+        message.put("role", "user");
+        ObjectNode content = message.putObject("content");
+        content.put("type", "text");
+        content.put("text", text);
+        return r;
+    }
+
+    private String reviewChangesPrompt(@Nullable String focus) {
+        McpBridge.GitState g = bridge.gitStatus();
+        if (!g.repo()) {
+            throw new PromptUnavailable("The window has no Git repository to review.");
+        }
+        StringBuilder p = new StringBuilder("Review the uncommitted changes in the Git repository at ")
+                .append(g.root())
+                .append(g.branch() == null ? "" : " (branch " + g.branch() + ")")
+                .append(".\n\n");
+        if (g.files().isEmpty()) {
+            p.append("There are no uncommitted changes: say so, and review nothing.\n");
+            return p.toString();
+        }
+        p.append("Changed files (index, worktree):\n");
+        for (McpBridge.GitFileState f : g.files()) {
+            p.append("- ").append(f.index()).append(f.worktree()).append(' ').append(f.path());
+            if (f.origPath() != null) {
+                p.append(" (from ").append(f.origPath()).append(')');
+            }
+            p.append('\n');
+        }
+        p.append("\nRead each change with `git diff` (and `git diff --cached` for the staged ones). First call")
+                .append(" list_review_comments with state \"all\": do not raise again what the user dismissed.")
+                .append(" For each problem you find, call add_review_comment on its lines of the file as it is now,")
+                .append(" with a severity (blocker, important, minor or nit), a category, and a suggestion when you")
+                .append(" can write the fix. Do not edit any file. End with a short summary of what you found.");
+        if (focus != null && !focus.isBlank()) {
+            p.append("\n\nLook most at: ").append(focus.strip()).append('.');
+        }
+        return p.toString();
+    }
+
+    private String fixOpenCommentsPrompt(@Nullable String path) {
+        List<McpBridge.ReviewThreadInfo> threads;
+        try {
+            threads = bridge.listReviews(path, false);
+        } catch (IllegalStateException e) {
+            throw new PromptUnavailable(String.valueOf(e.getMessage()));
+        }
+        if (threads.isEmpty()) {
+            return "There are no open review comments" + (path == null ? "" : " on " + path)
+                    + ". Say so, and change nothing.";
+        }
+        StringBuilder p = new StringBuilder("Do what each of these open review comments asks.\n");
+        for (McpBridge.ReviewThreadInfo t : threads) {
+            p.append("\n## Thread ").append(t.id()).append(": ").append(t.path());
+            p.append(
+                    t.startLine() == t.endLine()
+                            ? ", line " + t.startLine()
+                            : ", lines " + t.startLine() + "-" + t.endLine());
+            if (t.outdated()) {
+                p.append(" (outdated: those lines changed since)");
+            }
+            p.append('\n');
+            if (t.severity() != null) {
+                p.append("Severity: ").append(t.severity());
+                if (t.category() != null) {
+                    p.append(" (").append(t.category()).append(')');
+                }
+                p.append('\n');
+            }
+            for (McpBridge.ReviewCommentInfo c : t.comments()) {
+                p.append(c.authorKind().equals("user") ? "The user" : c.author())
+                        .append(": ")
+                        .append(c.body().strip())
+                        .append('\n');
+                if (c.suggestion() != null) {
+                    p.append("Suggested replacement:\n```\n")
+                            .append(c.suggestion())
+                            .append("\n```\n");
+                }
+            }
+        }
+        p.append("\nFor each thread, change the code to do what it asks, then call resolve_review_comment with its")
+                .append(" thread_id and a note saying what you changed. If you disagree with one, change nothing for")
+                .append(" it and say why with reply_to_review_comment instead.");
+        return p.toString();
+    }
+
+    private String explainSelectionPrompt() {
+        McpBridge.Selection sel = bridge.getSelection();
+        if (sel == null) {
+            throw new PromptUnavailable("No file is open in the editor.");
+        }
+        String code = sel.selectedText();
+        int from = sel.selStartLine();
+        int to = sel.selEndLine();
+        if (code.isEmpty()) {
+            McpBridge.BufferContent b = bridge.readBuffer(sel.path());
+            String[] lines = b == null ? new String[0] : b.text().split("\n", -1);
+            int i = sel.caretLine() - 1;
+            code = i >= 0 && i < lines.length ? lines[i] : "";
+            from = sel.caretLine();
+            to = sel.caretLine();
+        }
+        String where = sel.path() == null ? sel.title() : sel.path();
+        return "Explain this code from " + where + (from == to ? ", line " + from : ", lines " + from + "-" + to)
+                + ":\n\n```\n" + code + "\n```\n\nSay what it does, why it may be written this way, and"
+                + " anything in it that could surprise a reader. Change nothing.";
+    }
+
     // --- review comments --------------------------------------------------------------------------
 
     /** The reviews' JSON resource. */

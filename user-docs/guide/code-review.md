@@ -90,6 +90,11 @@ comments carry its name; a finding it marks with a severity shows that first,
 `◆ IMPORTANT · Off by one`, and its card says the category. You answer, resolve
 or dismiss them as any other thread.
 
+In Claude Code, `/mcp__editora__review_changes` asks it to review your
+uncommitted changes and leave its findings here, and
+`/mcp__editora__fix_open_comments` asks it to work through the open threads
+(see [MCP prompts](/docs/mcp#prompts)).
+
 ## Findings
 
 A finding is a thread an agent marked with a severity: blocker, important,

@@ -24,6 +24,9 @@ class McpToolsTest {
         String editError;
         String saveError;
         Selection selection;
+        /** The text readBuffer answers; null: no such buffer. */
+        String bufferText;
+
         List<Symbol> symbols = List.of();
         GitState gitState = new GitState(false, null, null, null, 0, 0, List.of());
         List<TabInfo> tabs = List.of();
@@ -124,7 +127,7 @@ class McpToolsTest {
         public BufferContent readBuffer(String path) {
             readPath = path;
             reads++;
-            return null;
+            return bufferText == null ? null : new BufferContent(path, "A.java", "java", false, bufferText);
         }
 
         @Override

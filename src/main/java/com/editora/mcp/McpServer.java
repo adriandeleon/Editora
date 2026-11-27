@@ -326,6 +326,8 @@ public final class McpServer {
                     }
                     yield mapper.createObjectNode();
                 }
+                case "prompts/list" -> t.promptsListResult();
+                case "prompts/get" -> t.getPromptResult(params);
                 case "ping" -> mapper.createObjectNode();
                 default -> null;
             };
@@ -335,6 +337,8 @@ public final class McpServer {
                         : JsonRpc.error(mapper, id, JsonRpc.METHOD_NOT_FOUND, "Method not found: " + method);
             }
             return JsonRpc.success(mapper, id, modern ? McpProtocol.modernResult(mapper, method, result) : result);
+        } catch (McpTools.PromptUnavailable e) {
+            return JsonRpc.error(mapper, id, JsonRpc.INVALID_PARAMS, String.valueOf(e.getMessage()));
         } catch (McpTools.ResourceNotFound e) {
             int code = modern ? JsonRpc.INVALID_PARAMS : McpProtocol.LEGACY_RESOURCE_NOT_FOUND;
             return JsonRpc.error(mapper, id, code, String.valueOf(e.getMessage()));
