@@ -172,7 +172,8 @@ class CommandSweepFxTest {
             "preview.exportDocx",
             "preview.exportHtml",
             "preview.exportOdt",
-            "preview.exportPdf");
+            "preview.exportPdf",
+            "project.openDialog"); // the system's folder dialog
 
     private static final String TEXT = String.join(
             "\n",

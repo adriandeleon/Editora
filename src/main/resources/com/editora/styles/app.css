@@ -4877,6 +4877,19 @@
 .welcome-customize-label {
     -fx-text-fill: -color-fg-muted;
 }
+/* First run: which keymap, asked once above Start. A subtle box so it reads as a question, not one more section. */
+.welcome-keymap-card {
+    -fx-background-color: -color-bg-subtle;
+    -fx-background-radius: 8;
+    -fx-border-color: -color-border-default;
+    -fx-border-radius: 8;
+    -fx-padding: 14 16 12 16;
+}
+.welcome-keymap-title {
+    -fx-font-size: 1.15em;
+    -fx-font-weight: bold;
+    -fx-text-fill: -color-fg-default;
+}
 /* Keybinding chord shown right-aligned next to a Start action (periwinkle, as everywhere). */
 .welcome-key {
     -fx-text-fill: -state-key;

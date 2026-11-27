@@ -51,7 +51,10 @@ Java gets code intelligence from Eclipse JDT LS (`jdtls`), runs a compact source
   **Download library sources when a Java project is imported** (off by default;
   Maven only), or run **View: Toggle Downloading Library Sources at Import**
   (`view.toggleJavaDownloadSources`). It applies at the next import; **LSP: Clean Java
-  Workspace and Restart** applies it now.
+  Workspace and Restart** applies it now. The first time a Maven project imports
+  with it off, its Java file offers it once (completion shows `arg0` for a
+  library method's parameters until the sources are there): **Download Sources**
+  turns it on and imports the project afresh; **Not now** leaves it off.
 - **A failed import says why.** When jdtls cannot import the project, the status
   bar names the reason, each of its open files says **Not checked**, and Problems
   lists the build file's own errors. That covers a Gradle build that does not run

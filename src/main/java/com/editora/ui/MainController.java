@@ -1090,6 +1090,13 @@ public class MainController implements com.editora.mcp.McpBridge {
                 () -> com.editora.command.KeymapManager.displayName(
                         config.getSettings().getKeymap()),
                 () -> Themes.label(config.getSettings().getTheme()));
+        pane.setKeymapChoice(
+                () -> !config.getSettings().isKeymapChosen(),
+                editorSettings::applyKeymap, // marks the choice before the switch lands
+                () -> {
+                    config.getSettings().setKeymapChosen(true); // kept the one there is
+                    config.save();
+                });
         welcomePane = pane;
         return pane;
     }
@@ -1671,7 +1678,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         updateWindowTitle();
     }
 
-    /** Toolbar "Open Folder" icon: native folder dialog (the palette/keybinding uses the finder). */
+    /**
+     * {@code project.openDialog}: the system's folder dialog — the toolbar button, and the Welcome page's and the
+     * empty editor's Open Folder, as File: Open… is for a file (the palette and the keys use the finder).
+     */
     @FXML
     void onOpenFolder() {
         DirectoryChooser chooser = new DirectoryChooser();

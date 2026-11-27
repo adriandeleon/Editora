@@ -213,6 +213,20 @@ public final class WelcomePane extends Region implements TabContent {
         this.themeName = themeName;
     }
 
+    /**
+     * Wires the first-run keymap card: shown while {@code offer} answers true, a button per keymap that runs {@code
+     * choose} with its id, and a link that keeps the active one ({@code keep}). Unwired, the page has no card.
+     */
+    public void setKeymapChoice(BooleanSupplier offer, Consumer<String> choose, Runnable keep) {
+        this.keymapOffer = offer;
+        this.keymapChoose = choose;
+        this.keymapKeep = keep;
+    }
+
+    private @Nullable BooleanSupplier keymapOffer;
+    private @Nullable Consumer<String> keymapChoose;
+    private @Nullable Runnable keymapKeep;
+
     /** For tests: the directory written as {@code ~}. */
     void setHomeDirectory(Path home) {
         this.home = home;
@@ -336,6 +350,9 @@ public final class WelcomePane extends Region implements TabContent {
 
         List<Node> nodes = new ArrayList<>();
         nodes.add(header());
+        if (keymapOffer != null && keymapOffer.getAsBoolean()) {
+            nodes.add(keymapCard()); // first run: the keys come before everything the page names a chord for
+        }
         nodes.add(section(tr("welcome.start")));
         nodes.add(startActions());
         if (firstRun) {
@@ -640,6 +657,48 @@ public final class WelcomePane extends Region implements TabContent {
         return row;
     }
 
+    // --- First-run keymap ---
+
+    /**
+     * Which keys the user's fingers know, asked once: a button per keymap and a link that keeps the active one. The
+     * default keymap is Emacs, and a newcomer from IntelliJ or VS Code met C-x C-f on this page before finding the
+     * Keymap row below it (r/JavaFX dry run, 2026-11-27).
+     */
+    private Node keymapCard() {
+        Label title = new Label(tr("welcome.keymapCard.title"));
+        title.getStyleClass().add("welcome-keymap-title");
+        Label caption = caption(tr("welcome.keymapCard.caption"));
+        caption.setWrapText(true);
+        FlowPane choices = new FlowPane(UiZoom.px(8 * zoom), UiZoom.px(8 * zoom));
+        for (String id : KeymapManager.AVAILABLE.keySet()) {
+            Button choice = new Button(KeymapManager.displayName(id));
+            choice.getStyleClass().add("welcome-keymap-choice");
+            choice.setUserData(id);
+            choice.setOnAction(e -> {
+                if (keymapChoose != null) {
+                    keymapChoose.accept(id);
+                }
+                refresh();
+            });
+            if ("cua".equals(id)) {
+                LazyTooltip.install(choice, () -> tr("welcome.keymapCard.cua"));
+            }
+            choices.getChildren().add(choice);
+        }
+        String active = keymap == null ? KeymapManager.DEFAULT : keymap.activeName();
+        Hyperlink keep = new Hyperlink(tr("welcome.keymapCard.keep", KeymapManager.displayName(active)));
+        keep.getStyleClass().add("welcome-link");
+        keep.setOnAction(e -> {
+            if (keymapKeep != null) {
+                keymapKeep.run();
+            }
+            refresh();
+        });
+        VBox card = new VBox(UiZoom.px(8 * zoom), title, caption, choices, keep);
+        card.getStyleClass().add("welcome-keymap-card");
+        return card;
+    }
+
     // --- Customize ---
 
     private void addCustomize(List<Node> nodes) {
@@ -769,7 +828,9 @@ public final class WelcomePane extends Region implements TabContent {
         // which opens a file too, so that is the chord to learn there.
         box.getChildren().add(action(Icons.open(), tr("welcome.openFile"), "file.open", "file.find"));
         if (projectsEnabled.getAsBoolean()) {
-            box.getChildren().add(action(Icons.openFolder(), tr("welcome.openFolder"), "project.open", null));
+            // A click opens the system's folder dialog, as Open File's does; the chord shown is the finder's.
+            box.getChildren()
+                    .add(action(Icons.openFolder(), tr("welcome.openFolder"), "project.openDialog", "project.open"));
         }
         if (gitEnabled.getAsBoolean()) {
             box.getChildren().add(action(Icons.git(), tr("welcome.clone"), "git.clone", null));

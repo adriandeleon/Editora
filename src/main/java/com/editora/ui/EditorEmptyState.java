@@ -73,7 +73,7 @@ final class EditorEmptyState {
         int r = 0;
         r = row(r, tr("welcome.openFile"), "file.open", "file.find");
         if (projectsEnabled.getAsBoolean()) {
-            r = row(r, tr("welcome.openFolder"), "project.open", null);
+            r = row(r, tr("welcome.openFolder"), "project.openDialog", "project.open"); // as Open File: a dialog
         }
         r = row(r, tr("command.palette.show"), "palette.show", null);
         row(r, tr("welcome.page"), "view.welcome", null);

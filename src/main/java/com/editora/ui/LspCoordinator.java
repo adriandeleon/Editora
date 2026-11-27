@@ -312,6 +312,9 @@ final class LspCoordinator {
     /** Folder trust for the lemminx servers: which pom may reach lemminx-maven, and Trust Folder (E1, C6). */
     private final XmlFolderTrust xmlTrust;
 
+    /** The one-time offer to download Java library sources (javadoc and parameter names). */
+    private final LibrarySourcesOffer sourcesOffer;
+
     final HtmlLspAids html; // HTML links, the markup check and colour swatches (HTML review B6, D5, D9)
     final EslintCoordinator eslint; // a JS/TS project's own ESLint: problems, fixes, Fix All (JS review F)
     final JsFormatCoordinator jsFormat; // its Prettier/Biome for Format Document, and JS/TS actions on save (F)
@@ -380,6 +383,8 @@ final class LspCoordinator {
             }
         });
         this.xmlTrust = new XmlFolderTrust(this, host, lspManager, ops);
+        this.sourcesOffer =
+                new LibrarySourcesOffer(host, lspManager, this::applyOnTypeFormatting, this::cleanJavaWorkspace);
         this.html = new HtmlLspAids(host, lspManager, ops);
         // So are the HTML servers their project's html object, its ignored keys said: a page opened before the read
         // landed was given the user's settings alone, and nothing applied the project's later.
@@ -1360,6 +1365,13 @@ final class LspCoordinator {
     private void noteNonProjectFile(Path file, List<LspDiagnostic> diagnostics) {
         Path root = file.toString().endsWith(".java") ? lspManager.javaSessionRoot(file) : null;
         if (root == null) {
+            return;
+        }
+        if (lspManager.buildNotLoaded(file)) {
+            // jdtls started without the folder's build because the folder is not trusted yet, so every file is "a
+            // non-project file": the Trust Folder notice on the file says why. Reporting "the project did not
+            // import" (an error, with its red count) beside that notice read as a broken project (r/JavaFX dry run,
+            // 2026-11-27).
             return;
         }
         // The build folder is looked for off the FX thread (PERF-01, Pauta 6.2.0), once per folder: every typing
@@ -4177,6 +4189,9 @@ final class LspCoordinator {
                                 : tr("status.lsp.server", server, line.text()));
                 if (line.ready()) {
                     updateStatusBar(); // the segment names the TypeScript the server said it runs (JS review B109)
+                    if (LspServerRegistry.JAVA_SERVER_ID.equals(serverId)) {
+                        sourcesOffer.atReady(root); // a healthy import: offer the library sources, once
+                    }
                 }
             }
         }

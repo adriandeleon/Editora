@@ -2088,6 +2088,73 @@ class LspCoordinatorCommandsFxTest {
     }
 
     /**
+     * Regression (r/JavaFX dry run, 2026-11-27): completion named a JavaFX method's parameters {@code arg0} because no
+     * library sources were downloaded. A Maven project's first healthy import offers them once; Download Sources turns
+     * the download on.
+     */
+    @Test
+    void aMavenProjectsFirstImportOffersLibrarySourcesOnce() throws Exception {
+        java.nio.file.Files.writeString(
+                root.resolve("pom.xml"),
+                "<project><modelVersion>4.0.0</modelVersion><groupId>demo</groupId><artifactId>a</artifactId><version>1</version></project>");
+        EditorBuffer b = fx.open("A.java", SOURCE);
+        fx.run(() -> fx.coordinator.onServerStatus("java", root, "ServiceReady", "ServiceReady"));
+        awaitStatus(tr("status.lsp.ready", "jdtls"));
+        fx.settle();
+        assertEquals(
+                tr("lsp.sourcesOffer.notice"),
+                FxTestSupport.callOnFx(b::fileNoticeText),
+                "statuses " + fx.host.statuses + " error " + fx.host.lastError());
+        assertTrue(fx.host.settings.isJavaSourcesOffered(), "offered once");
+
+        FxTestSupport.runOnFx(() -> b.fireFileNoticeForTest(false));
+        assertTrue(fx.host.settings.isJavaDownloadSources(), "Download Sources turns the download on");
+        assertNull(FxTestSupport.callOnFx(b::fileNoticeText));
+
+        FxTestSupport.runOnFx(b::hideFileNotice);
+        fx.host.settings.setJavaDownloadSources(false);
+        fx.run(() -> fx.coordinator.onServerStatus("java", root, "ServiceReady", "ServiceReady"));
+        fx.settle();
+        assertNull(FxTestSupport.callOnFx(b::fileNoticeText), "never offered twice");
+    }
+
+    /**
+     * Regression (r/JavaFX dry run, 2026-11-27): before the folder is trusted jdtls runs without its build, so every
+     * file is "a non-project file". That is what the Trust Folder notice says, not an import failure: no error.
+     */
+    @Test
+    void aNonProjectFileWhileTheBuildWaitsForTrustIsNoImportFailure() throws Exception {
+        java.nio.file.Files.writeString(
+                root.resolve("pom.xml"), "<project><modelVersion>4.0.0</modelVersion></project>");
+        java.nio.file.Files.createDirectories(root.resolve("src/main/java/demo"));
+        EditorBuffer b = fx.open("src/main/java/demo/A.java", "package demo;\n\nclass A {}\n");
+        LspTestHooks.startedUntrusted(fx.manager, b.getPath(), true);
+        var warning = new com.editora.text.LspDiagnostic(
+                0,
+                0,
+                0,
+                1,
+                com.editora.text.LspDiagnostic.Severity.WARNING,
+                "A.java is a non-project file, only syntax errors are reported",
+                null,
+                "jdtls");
+        publish(b.getPath(), List.of(warning));
+        fx.run(() -> fx.coordinator.onServerStatus("java", root, "ServiceReady", "ServiceReady"));
+        // The ready line, and whatever the non-project look says after it (both land a moment later).
+        String ready = tr("status.lsp.ready", "jdtls");
+        String notImported = tr("status.lsp.readyNotImported", "jdtls");
+        OnFx.holdsWithin(
+                () -> ready.equals(fx.host.lastStatus()) || notImported.equals(fx.host.lastStatus()),
+                Duration.ofSeconds(10));
+        OnFx.holdsWithin(() -> fx.host.lastError() != null, Duration.ofSeconds(2)); // an error, if one comes
+        fx.settle();
+        String said = fx.host.lastError();
+        String failed = tr("status.lsp.importProblemWhy", "jdtls", "").replaceFirst(":.*", "");
+        assertTrue(said == null || !said.startsWith(failed), "no import failure before trust: " + said);
+        assertEquals(ready, fx.host.lastStatus(), "not \"loaded, but the project did not import\"");
+    }
+
+    /**
      * A window that joins after a failed import gets the project's diagnostic before the import's line, both replayed:
      * the failure is one error, not two (tenth review CP3).
      */

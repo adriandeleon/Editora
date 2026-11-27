@@ -173,6 +173,33 @@ class UntrustedBuildTrustFxTest {
         assertEquals(tr("lsp.trust.trustedBuild", "app", coordinator.serverLabel("java")), host.lastStatus);
     }
 
+    /**
+     * Regression (r/JavaFX dry run, 2026-11-27): the notice's Trust Folder was followed by the trust question, two
+     * steps for one decision. The button trusts at once; its "What does trusting allow?" link asks the question.
+     */
+    @Test
+    void theNoticesButtonTrustsAtOnceAndItsLinkAsksTheQuestion() throws Exception {
+        EditorBuffer java = open(project.resolve("src/main/java/App.java"), "class App {}\n");
+        FxTestSupport.runOnFx(() -> coordinator.syncBuffer(java));
+        LspTestHooks.startedUntrusted(manager, java.getPath(), true);
+        FxTestSupport.runOnFx(() -> trust.afterSync(java));
+        assertEquals(tr("lsp.trust.javaNotice"), FxTestSupport.callOnFx(java::fileNoticeText));
+
+        List<Path> asked = new ArrayList<>();
+        trust.confirmer = (owner, root) -> {
+            asked.add(root);
+            return false; // Cancel
+        };
+        FxTestSupport.runOnFx(() -> java.fireFileNoticeForTest(true));
+        assertEquals(List.of(project), asked, "the link asks the question in full");
+        assertFalse(config.getTrustStore().isTrusted(project), "Cancel trusts nothing");
+
+        FxTestSupport.runOnFx(() -> java.fireFileNoticeForTest(false));
+        assertEquals(List.of(project), asked, "the button asks nothing more");
+        assertTrue(config.getTrustStore().isTrusted(project), "the button is the decision");
+        assertEquals(tr("lsp.trust.trustedBuild", "app", coordinator.serverLabel("java")), host.lastStatus);
+    }
+
     @Test
     void aJavaServerWithNoBuildToLoadOffersNothing() throws Exception {
         EditorBuffer java = open(project.resolve("Scratch.java"), "class Scratch {}\n");

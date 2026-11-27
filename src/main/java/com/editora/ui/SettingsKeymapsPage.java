@@ -66,6 +66,7 @@ final class SettingsKeymapsPage {
                 return;
             }
             KeymapLayers.switchKeymap(config.getSettings(), now);
+            config.getSettings().setKeymapChosen(true); // a choice: the Welcome page stops offering the five
             config.save();
             if (w.onKeymapChanged != null) {
                 w.onKeymapChanged.run(); // reload the shared keymap live across all windows

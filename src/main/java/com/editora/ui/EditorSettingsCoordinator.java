@@ -516,6 +516,7 @@ final class EditorSettingsCoordinator {
         if (id == null) {
             return;
         }
+        host.config().getSettings().setKeymapChosen(true); // a choice: the Welcome page stops offering the five
         // The keymaps are parsed off the FX thread (PERF-01, Pauta 6.2.0): the switch waits for them.
         com.editora.command.KeymapManager.whenParsed(() -> {
             KeymapLayers.switchKeymap(host.config().getSettings(), id);
