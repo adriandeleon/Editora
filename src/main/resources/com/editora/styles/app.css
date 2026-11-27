@@ -7136,3 +7136,8 @@
     -fx-font-size: 11px;
     -fx-font-style: italic;
 }
+
+/* Viewed files in a review: a viewed row is quieter. */
+.patch-file-row-viewed .label, .pr-review-file-viewed .hyperlink {
+    -fx-opacity: 0.6;
+}

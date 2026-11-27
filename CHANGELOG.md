@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Viewed files.** Mark each file of a review viewed: the count shows how far you are, and marking the file you read
+  moves on to the next. A Git review remembers its marks per repository until a file changes; a pull request uses
+  GitHub's own viewed marks. **Changes since your last review** opens what changed in a pull request since the
+  commit you last reviewed.
 - **Line comments on GitHub pull requests.** A pull request's file diff marks its review threads on their side and
   line; a card reads one, replies, resolves or reopens it. **Add Review Comment** on lines of either side drafts a
   comment (a ```` ```suggestion ```` block is a suggested change), and **Submit review…** sends the drafts with the

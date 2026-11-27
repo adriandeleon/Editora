@@ -13,9 +13,11 @@ import javafx.scene.control.SplitPane;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
+import com.editora.editor.LazyTooltip;
 import com.editora.editor.TabContent;
 import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
@@ -30,6 +32,31 @@ final class PatchReviewPane implements TabContent {
             this(label, "", additions, deletions, pane);
         }
     }
+
+    /** Which files of the review are viewed: in memory by default, kept per repository for a Git review. */
+    interface Viewed {
+        boolean viewed(int index);
+
+        void set(int index, boolean viewed);
+    }
+
+    /** Viewed state for this tab only. */
+    static final class TabViewed implements Viewed {
+        private final java.util.BitSet bits = new java.util.BitSet();
+
+        @Override
+        public boolean viewed(int index) {
+            return bits.get(index);
+        }
+
+        @Override
+        public void set(int index, boolean viewed) {
+            bits.set(index, viewed);
+        }
+    }
+
+    private Viewed viewed = new TabViewed();
+    private final Label progress = new Label();
 
     private final String title;
     private final List<Entry> entries;
@@ -48,6 +75,7 @@ final class PatchReviewPane implements TabContent {
         files.getStyleClass().add("patch-file-list");
         files.setAccessibleText(title); // the list of the review's files, named for a screen reader (ACC-01)
         files.setCellFactory(v -> new FileCell());
+        progress.getStyleClass().add("diff-summary");
         UiZoom.prefWidth(files, 245);
         UiZoom.minWidth(files, 170);
         files.getSelectionModel().selectedIndexProperty().addListener((o, old, next) -> show(next.intValue()));
@@ -56,8 +84,11 @@ final class PatchReviewPane implements TabContent {
         Button next = button(Icons.arrowDown(), tr("diff.nextFile"), () -> selectRelative(1));
         FocusCommands.press(root, "diff.previousFile", previous); // the review's file list, from the keyboard
         FocusCommands.press(root, "diff.nextFile", next);
+        FocusCommands.bind(root, "diff.toggleViewed", this::toggleViewedOfShown); // the shown file, viewed or not
         position.getStyleClass().add("diff-summary");
-        HBox nav = UiZoom.spacing(new HBox(position, previous, next), 3);
+        Region gap = new Region();
+        HBox.setHgrow(gap, Priority.ALWAYS);
+        HBox nav = UiZoom.spacing(new HBox(position, gap, progress, previous, next), 3);
         nav.setAlignment(Pos.CENTER_LEFT);
         UiZoom.padding(nav, 4, 6, 4, 6);
         nav.getStyleClass().add("diff-toolbar");
@@ -70,6 +101,58 @@ final class PatchReviewPane implements TabContent {
         if (!entries.isEmpty()) {
             files.getSelectionModel().select(0);
         }
+        refreshProgress();
+    }
+
+    /** Where the viewed state is kept (a Git review keeps it per repository, so a reopened review remembers it). */
+    void setViewed(Viewed keeper) {
+        this.viewed = keeper;
+        files.refresh();
+        refreshProgress();
+    }
+
+    /** Whether file {@code index} is marked viewed. */
+    boolean isViewed(int index) {
+        return viewed.viewed(index);
+    }
+
+    /**
+     * Marks file {@code index} viewed or not; a file marked viewed while shown moves the review on to the next file
+     * not viewed yet, as on GitHub.
+     */
+    void markViewed(int index, boolean now) {
+        if (index < 0 || index >= entries.size()) {
+            return;
+        }
+        viewed.set(index, now);
+        files.refresh();
+        refreshProgress();
+        if (now && index == files.getSelectionModel().getSelectedIndex()) {
+            for (int step = 1; step < entries.size(); step++) {
+                int i = (index + step) % entries.size();
+                if (!viewed.viewed(i)) {
+                    files.getSelectionModel().select(i);
+                    files.scrollTo(i);
+                    return;
+                }
+            }
+        }
+    }
+
+    /** Toggles the viewed mark of the file shown (the {@code diff.toggleViewed} command). */
+    void toggleViewedOfShown() {
+        int i = files.getSelectionModel().getSelectedIndex();
+        markViewed(i, !viewed.viewed(i));
+    }
+
+    private void refreshProgress() {
+        int n = 0;
+        for (int i = 0; i < entries.size(); i++) {
+            if (viewed.viewed(i)) {
+                n++;
+            }
+        }
+        progress.setText(entries.isEmpty() ? "" : tr("diff.viewedProgress", n, entries.size()));
     }
 
     /**
@@ -174,7 +257,7 @@ final class PatchReviewPane implements TabContent {
         return "diff.applyResult";
     }
 
-    private static final class FileCell extends ListCell<Entry> {
+    private final class FileCell extends ListCell<Entry> {
         @Override
         protected void updateItem(Entry entry, boolean empty) {
             super.updateItem(entry, empty);
@@ -192,7 +275,17 @@ final class PatchReviewPane implements TabContent {
             status.getStyleClass().add("patch-file-status");
             status.setVisible(!entry.status().isBlank());
             status.setManaged(!entry.status().isBlank());
-            HBox row = UiZoom.spacing(new HBox(status, name, stat), 8);
+            int index = getIndex();
+            javafx.scene.control.CheckBox box = new javafx.scene.control.CheckBox();
+            box.getStyleClass().add("patch-file-viewed");
+            box.setSelected(viewed.viewed(index));
+            box.setAccessibleText(tr("diff.viewedFile", entry.label()));
+            box.setOnAction(e -> markViewed(index, box.isSelected()));
+            LazyTooltip.install(box, () -> tr("diff.viewed"));
+            HBox row = UiZoom.spacing(new HBox(box, status, name, stat), 8);
+            if (box.isSelected()) {
+                row.getStyleClass().add("patch-file-row-viewed");
+            }
             row.setAlignment(Pos.CENTER_LEFT);
             setGraphic(row);
             setText(null);

@@ -100,6 +100,11 @@ final class DiffCoordinator {
         /** Applies window-specific affordances to every diff pane, including panes nested in a review. */
         default void prepareDiffPane(DiffViewerPane pane) {}
 
+        /** Where a Git review keeps its viewed marks; null for a host with no config (a test's). */
+        default com.editora.config.@Nullable SharedConfig sharedConfig() {
+            return null;
+        }
+
         /** A diff whose editable side is the local file {@code target}: its review threads can be shown there. */
         default void prepareReview(DiffViewerPane pane, Path target) {}
 
@@ -906,6 +911,68 @@ final class DiffCoordinator {
                 });
     }
 
+    /**
+     * One review tab of {@code files} (patch sections: the hunks only, numbered as the patch numbers them), read-only:
+     * what changed in a pull request since your last review. Each file is diffed on the diff's own thread; a file
+     * with no text (a rename, a binary) is left out. Runs {@code done} with how many files the tab shows (0: none).
+     */
+    void openFilePatchReview(
+            String title,
+            String headerLeft,
+            String headerRight,
+            List<PatchParser.FilePatch> files,
+            java.util.function.IntConsumer done) {
+        List<PatchParser.FilePatch> withText = files.stream()
+                .filter(fp -> !(fp.oldLines().isEmpty() && fp.newLines().isEmpty()))
+                .toList();
+        if (withText.isEmpty()) {
+            done.accept(0);
+            return;
+        }
+        List<PatchReviewPane.Entry> entries = new ArrayList<>(Collections.nCopies(withText.size(), null));
+        AtomicInteger remaining = new AtomicInteger(withText.size());
+        for (int i = 0; i < withText.size(); i++) {
+            int index = i;
+            PatchParser.FilePatch fp = withText.get(i);
+            String[] names = patchNames(fp, title);
+            diffService.compute(
+                    () -> patchText(fp.oldLines(), fp.oldFinalNewline()),
+                    () -> patchText(fp.newLines(), fp.newFinalNewline()),
+                    lastDiffOptions,
+                    renumbered(fp.oldLineNumbers(), fp.newLineNumbers()),
+                    built -> {
+                        DiffModels.DiffModel model = built.model();
+                        if (model != null) {
+                            entries.set(
+                                    index,
+                                    new PatchReviewPane.Entry(
+                                            names[1],
+                                            fp.additions(),
+                                            fp.deletions(),
+                                            patchPane(
+                                                    names[1],
+                                                    headerLeft,
+                                                    headerRight,
+                                                    names[1],
+                                                    fp,
+                                                    model,
+                                                    built.left(),
+                                                    built.right())));
+                        }
+                        if (remaining.decrementAndGet() > 0) {
+                            return;
+                        }
+                        List<PatchReviewPane.Entry> shown = entries.stream()
+                                .filter(java.util.Objects::nonNull)
+                                .toList();
+                        if (!shown.isEmpty()) {
+                            ops.addDiffTab(new PatchReviewPane(title, shown));
+                        }
+                        done.accept(shown.size());
+                    });
+        }
+    }
+
     /** A model numbered as a patch numbers its sides: applied on the diff's own thread. */
     private static UnaryOperator<DiffModels.DiffModel> renumbered(List<Integer> left, List<Integer> right) {
         List<Integer> l = new ArrayList<>(left);
@@ -1597,13 +1664,13 @@ final class DiffCoordinator {
                     result -> {
                         built.set(index, result);
                         if (remaining.decrementAndGet() == 0) {
-                            openGitReview(staged, targets, built);
+                            openGitReview(root, staged, targets, built);
                         }
                     });
         }
     }
 
-    private void openGitReview(boolean staged, List<GitReviewTarget> targets, List<BuiltDiff> built) {
+    private void openGitReview(Path root, boolean staged, List<GitReviewTarget> targets, List<BuiltDiff> built) {
         List<PatchReviewPane.Entry> entries = new ArrayList<>();
         for (int i = 0; i < targets.size(); i++) {
             BuiltDiff result = built.get(i);
@@ -1622,8 +1689,25 @@ final class DiffCoordinator {
             return;
         }
         String title = tr(staged ? "diff.title.gitStagedReview" : "diff.title.gitWorkingReview", entries.size());
-        ops.addDiffTab(new PatchReviewPane(title, entries));
+        ops.addDiffTab(keepViewed(new PatchReviewPane(title, entries), root, entries));
         host.setStatus(tr("status.diff.reviewOpened", entries.size()));
+    }
+
+    /** Keeps {@code review}'s viewed marks for the repository at {@code root} (entries are labelled by path). */
+    private PatchReviewPane keepViewed(
+            PatchReviewPane review, @Nullable Path root, List<PatchReviewPane.Entry> entries) {
+        com.editora.config.SharedConfig shared = ops.sharedConfig();
+        if (shared == null || root == null) {
+            return review;
+        }
+        List<String> paths = new ArrayList<>();
+        List<String> digests = new ArrayList<>();
+        for (PatchReviewPane.Entry e : entries) {
+            paths.add(e.label() == null ? "" : e.label());
+            digests.add(StoredViewed.digest(e.pane().shownLeftText(), e.pane().shownRightText()));
+        }
+        review.setViewed(new StoredViewed(shared, com.editora.review.ReviewKeys.repoKey(root), paths, digests));
+        return review;
     }
 
     /**
@@ -1684,7 +1768,7 @@ final class DiffCoordinator {
                             }
                         }
                         if (!entries.isEmpty()) {
-                            ops.addDiffTab(new PatchReviewPane(title, entries));
+                            ops.addDiffTab(keepViewed(new PatchReviewPane(title, entries), root, entries));
                             host.setStatus(tr("status.diff.reviewOpened", entries.size()));
                         }
                     });
