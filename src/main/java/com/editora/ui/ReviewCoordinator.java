@@ -354,6 +354,17 @@ final class ReviewCoordinator {
         EditorBuffer buffer = host.activeBuffer();
         if (buffer == null) {
             DiffViewerPane pane = ops.activeDiffPane();
+            DiffViewerPane.LineHook prLines = pane == null ? null : pane.lineHook();
+            if (pane != null && prLines != null) {
+                // A pull request's file diff: a draft line comment for its review, on the focused side.
+                int[] picked = pane.focusedLines();
+                if (picked == null) {
+                    host.setStatus(tr("status.review.diffSide"));
+                } else {
+                    prLines.comment(picked[0] == 1, picked[1], picked[2]);
+                }
+                return;
+            }
             Path target = pane == null ? null : diffTargets.get(pane);
             if (pane != null && target != null) {
                 startDiffThread(pane, target, suggest);

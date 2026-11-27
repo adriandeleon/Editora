@@ -876,6 +876,17 @@ final class DiffCoordinator {
      */
     void openPatchFileDiff(
             String title, String headerLeft, String headerRight, String fallback, PatchParser.FilePatch fp) {
+        openPatchFileDiff(title, headerLeft, headerRight, fallback, fp, pane -> {});
+    }
+
+    /** As above; {@code configure} sees the pane before its tab opens (a pull request's line comments). */
+    void openPatchFileDiff(
+            String title,
+            String headerLeft,
+            String headerRight,
+            String fallback,
+            PatchParser.FilePatch fp,
+            Consumer<DiffViewerPane> configure) {
         // The two sides are joined, diffed and numbered on the diff's own thread (PERF-01, Pauta 6.2.0).
         diffService.compute(
                 () -> patchText(fp.oldLines(), fp.oldFinalNewline()),
@@ -888,8 +899,10 @@ final class DiffCoordinator {
                         host.setStatus(tr("status.diff.tooLarge"));
                         return;
                     }
-                    ops.addDiffTab(
-                            patchPane(title, headerLeft, headerRight, fallback, fp, model, done.left(), done.right()));
+                    DiffViewerPane pane =
+                            patchPane(title, headerLeft, headerRight, fallback, fp, model, done.left(), done.right());
+                    configure.accept(pane);
+                    ops.addDiffTab(pane);
                 });
     }
 

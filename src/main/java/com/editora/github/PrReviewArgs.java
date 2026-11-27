@@ -89,6 +89,29 @@ public final class PrReviewArgs {
      */
     public static GhInvocation invocation(
             int number, ReviewAction action, @Nullable String body, @Nullable String commitId, @Nullable String prUrl) {
+        return invocation(number, action, body, commitId, prUrl, List.of());
+    }
+
+    /**
+     * Whether a review with {@code drafts} can be sent: line comments go only with the pinned call (a commit and the
+     * pull request's address), never through {@code gh pr review}, which has no way to carry them. Pure.
+     */
+    public static boolean canCarryDrafts(@Nullable String commitId, @Nullable String prUrl, int number) {
+        return commitId != null && !commitId.isBlank() && target(prUrl, number) != null;
+    }
+
+    /**
+     * The review call, with {@code drafts} as its line {@code comments} (path, side, line and, for a range,
+     * {@code start_line}/{@code start_side}). Drafts need the pinned call ({@link #canCarryDrafts}); without it they
+     * are left out, so check first.
+     */
+    public static GhInvocation invocation(
+            int number,
+            ReviewAction action,
+            @Nullable String body,
+            @Nullable String commitId,
+            @Nullable String prUrl,
+            List<PrLineDraft> drafts) {
         String b = body == null ? "" : body;
         Target target = commitId == null || commitId.isBlank() ? null : target(prUrl, number);
         if (target == null || commitId == null) {
@@ -100,6 +123,24 @@ public final class PrReviewArgs {
         json.put("event", action.event());
         if (!b.isBlank()) {
             json.put("body", b);
+        }
+        com.fasterxml.jackson.databind.node.ArrayNode comments = null;
+        for (PrLineDraft d : drafts) {
+            if (d.body().isBlank()) {
+                continue;
+            }
+            if (comments == null) {
+                comments = json.putArray("comments");
+            }
+            ObjectNode c = comments.addObject();
+            c.put("path", d.path());
+            c.put("body", d.body());
+            c.put("side", d.side());
+            c.put("line", d.line());
+            if (d.startLine() < d.line()) {
+                c.put("start_line", d.startLine());
+                c.put("start_side", d.side());
+            }
         }
         return new GhInvocation(
                 List.of(
