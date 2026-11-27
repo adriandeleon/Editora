@@ -143,6 +143,25 @@ public final class DiffViewerPane implements TabContent {
     }
 
     private EditableSide editableSide = EditableSide.NONE;
+
+    /**
+     * What a diff's local file side offers for review comments ({@code ReviewCoordinator}): which of the file's lines
+     * carry a thread, marked in that side's gutter, and what a click on a mark does.
+     */
+    public interface ReviewHook {
+        /** The 0-based lines of the local file after which an open review thread ends. */
+        java.util.Set<Integer> commentedLines();
+
+        /** A click on the mark of 0-based line {@code line}. */
+        void open(int line);
+    }
+
+    private @Nullable ReviewHook reviewHook;
+
+    /** The side-by-side panes' source line numbers (1-based, -1 for a filler row), by displayed row. */
+    private int[] leftLineNos = new int[0];
+
+    private int[] rightLineNos = new int[0];
     /** Receives the editable side's full new text and reports after the controller has applied it. */
     private java.util.function.BiConsumer<String, java.util.function.Consumer<Boolean>> onApply =
             (text, done) -> done.accept(false);
@@ -1643,6 +1662,8 @@ public final class DiffViewerPane implements TabContent {
         String right = layout.right();
         int[] leftNos = layout.leftNos();
         int[] rightNos = layout.rightNos();
+        leftLineNos = leftNos;
+        rightLineNos = rightNos;
         List<int[]> leftWordAbs = layout.leftWords();
         List<int[]> rightWordAbs = layout.rightWords();
 
@@ -2399,6 +2420,62 @@ public final class DiffViewerPane implements TabContent {
         };
     }
 
+    /** Marks the local file's review threads in its side's gutter, or (null) no longer. */
+    public void setReviewHook(@Nullable ReviewHook hook) {
+        this.reviewHook = hook;
+        refreshReviewMarks();
+    }
+
+    /** Draws the review marks again: a thread was added, answered or resolved. */
+    public void refreshReviewMarks() {
+        if (!unified && leftArea != null && rightArea != null) {
+            installGutter(leftArea, leftLineNos, sideSourceRows, false);
+            installGutter(rightArea, rightLineNos, sideSourceRows, canMutate() && !resultEditing);
+        }
+    }
+
+    /** The side-by-side area showing the local file, or null (a read-only diff, or the unified view). */
+    private @Nullable CodeArea localArea() {
+        if (unified) {
+            return null;
+        }
+        return editableSide == EditableSide.RIGHT ? rightArea : editableSide == EditableSide.LEFT ? leftArea : null;
+    }
+
+    /**
+     * The local file's 0-based lines {@code {first, last}} the selection (or the caret) covers on its side, or null
+     * when the focus is not on that side or only on filler rows. Pure over the pane's state.
+     */
+    public int @Nullable [] localSelectionLines() {
+        CodeArea area = localArea();
+        if (area == null || !area.isFocused()) {
+            return null;
+        }
+        int[] nos = area == rightArea ? rightLineNos : leftLineNos;
+        int from = area.offsetToPosition(
+                        area.getSelection().getStart(), org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
+                .getMajor();
+        int end = area.getSelection().getLength() == 0
+                ? area.getSelection().getEnd()
+                : Math.max(area.getSelection().getStart(), area.getSelection().getEnd() - 1);
+        int to = area.offsetToPosition(end, org.fxmisc.richtext.model.TwoDimensional.Bias.Backward)
+                .getMajor();
+        return sourceLines(nos, from, to);
+    }
+
+    /** The first and last 0-based source lines of displayed rows {@code from..to}, skipping fillers; null if none. */
+    static int @Nullable [] sourceLines(int[] nos, int from, int to) {
+        int first = -1;
+        int last = -1;
+        for (int i = Math.max(0, from); i <= to && i < nos.length; i++) {
+            if (nos[i] > 0) {
+                first = first < 0 ? nos[i] - 1 : first;
+                last = nos[i] - 1;
+            }
+        }
+        return first < 0 ? null : new int[] {first, last};
+    }
+
     /** A right-aligned original-line-number gutter; filler lines (-1) show blank. When {@code showApply}
      *  is true, each change block's first row also gets an "apply change" chevron that copies that hunk
      *  into the editable side. The right pane owns this action gutter so it remains at the center seam. */
@@ -2407,8 +2484,10 @@ public final class DiffViewerPane implements TabContent {
         List<Row> rows = model.rows();
         boolean right = editableSide == EditableSide.RIGHT;
         Set<Integer> blockStarts = apply ? new HashSet<>(model.changeBlockStarts()) : Set.of();
+        ReviewHook hook = area == localArea() ? reviewHook : null;
+        Set<Integer> commented = hook == null ? Set.of() : hook.commentedLines();
         // Always render a gutter when apply arrows are needed, even if line numbers are off.
-        if (!showLineNumbers && !apply) {
+        if (!showLineNumbers && !apply && hook == null) {
             return;
         }
         int width = Math.max(2, String.valueOf(maxOf(lineNos)).length());
@@ -2454,6 +2533,16 @@ public final class DiffViewerPane implements TabContent {
                         tr("diff.applyLine"),
                         () -> applyRow(sourceRow));
                 gutter = new HBox(hunkSlot, lineSlot, changeSign, num);
+            }
+            if (hook != null) {
+                int line = i < lineNos.length ? lineNos[i] - 1 : -1;
+                gutter.getChildren()
+                        .add(
+                                0,
+                                arrowSlot(
+                                        line >= 0 && commented.contains(line) ? Icons.review() : null,
+                                        tr("review.diff.open"),
+                                        () -> hook.open(line)));
             }
             // The "lineno" class gives the gutter the editor's opaque (theme-aware) background, so text
             // scrolled horizontally never bleeds under the line numbers.

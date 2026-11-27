@@ -70,17 +70,23 @@ class SettingsGitPageFxTest {
                         .findFirst()
                         .orElseThrow()
                         .getValue();
-                // The page's switches, in order: Enable Git, blame, fetch automatically.
+                // The page's switches, in order: Enable Git, blame, review comments in the project, fetch
+                // automatically.
                 var switches = SettingsRemoteSitesFxTest.all(page, SettingSwitch.class, new java.util.ArrayList<>());
-                assertEquals(3, switches.size());
+                assertEquals(4, switches.size());
                 Spinner<?> minutes = SettingsRig.control(w, "gitAutoFetchSpinner");
                 git.setSelected(true);
                 assertFalse(pull.isDisabled(), "pull mode on");
-                assertFalse(switches.get(1).isDisabled() || switches.get(2).isDisabled(), "blame, fetch on");
+                assertFalse(
+                        switches.get(1).isDisabled()
+                                || switches.get(2).isDisabled()
+                                || switches.get(3).isDisabled(),
+                        "blame, review comments, fetch on");
                 git.setSelected(false);
                 assertTrue(pull.isDisabled(), "pull mode");
                 assertTrue(switches.get(1).isDisabled(), "blame");
-                assertTrue(switches.get(2).isDisabled(), "fetch automatically");
+                assertTrue(switches.get(2).isDisabled(), "review comments in the project");
+                assertTrue(switches.get(3).isDisabled(), "fetch automatically");
                 assertTrue(minutes.isDisabled(), "minutes");
                 assertFalse(switches.get(0).isDisabled(), "Enable Git itself");
                 assertFalse(SettingsRig.<TextField>control(w, "gitPathField").isDisabled(), "the path stays editable");

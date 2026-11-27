@@ -67,6 +67,13 @@ final class PanelRowCommands {
                     mc.notesToolWindow,
                     () -> mc.notesCoordinator.panel().runMenuRow(id));
         }
+        for (String id : List.of("review.openSelected", "review.toggleSelectedResolved", "review.deleteSelected")) {
+            menuRow(
+                    mc,
+                    id,
+                    mc.reviewsToolWindow,
+                    () -> mc.reviewCoordinator.panel().runMenuRow(id));
+        }
         for (String id : List.of("test.goToSelected", "test.rerunSelected", "test.debugSelected")) {
             menuRow(
                     mc,

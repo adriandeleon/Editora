@@ -241,6 +241,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     ToolWindow structureToolWindow;
     ToolWindow bookmarksToolWindow;
     ToolWindow notesToolWindow;
+    ToolWindow reviewsToolWindow;
     ToolWindow fileInfoToolWindow;
     /** The File Information / Undo History / Structure panels; each null until its accessor builds it. */
     @Nullable
@@ -516,6 +517,39 @@ public class MainController implements com.editora.mcp.McpBridge {
         return mcpBridge.todoScan();
     }
 
+    @Override
+    public java.util.Map<String, Long> bufferStamps() {
+        return mcpBridge.bufferStamps(); // the resource watch: without this, the default (every file at 0)
+    }
+
+    @Override
+    public java.util.List<ReviewThreadInfo> listReviews(@Nullable String path, boolean all) {
+        return mcpBridge.listReviews(path, all);
+    }
+
+    @Override
+    public ReviewAdded addReview(
+            String path,
+            int startLine,
+            int endLine,
+            String body,
+            @Nullable String suggestion,
+            @Nullable String severity,
+            @Nullable String category,
+            String agent) {
+        return mcpBridge.addReview(path, startLine, endLine, body, suggestion, severity, category, agent);
+    }
+
+    @Override
+    public @Nullable String replyReview(String threadId, String body, @Nullable String suggestion, String agent) {
+        return mcpBridge.replyReview(threadId, body, suggestion, agent);
+    }
+
+    @Override
+    public @Nullable String resolveReview(String threadId, String note, String agent) {
+        return mcpBridge.resolveReview(threadId, note, agent);
+    }
+
     public void openInitialBuffer() {
         sessions.openInitialBuffer();
     }
@@ -600,6 +634,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         });
         // Built here (not as a field initializer) because NotesPanel's constructor reads config.getNotes().
         this.notesCoordinator = new NotesCoordinator(coordinatorHost, new NotesOpsHost(this));
+        this.reviewCoordinator = new ReviewCoordinator(coordinatorHost, config.shared(), new ReviewOpsHost(this));
         // Built here (not as a field initializer) because BookmarksPanel's constructor reads config.getBookmarks().
         this.bookmarkCoordinator = new BookmarkCoordinator(coordinatorHost, new BookmarkOpsHost(this));
         // Record every executed command into an in-progress macro (the service no-ops unless recording).
@@ -2226,6 +2261,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         bookmarksToolWindow =
                 toolWindow("bookmarks", ToolWindow.Side.RIGHT, Icons::bookmark, bookmarkCoordinator::panel);
         notesToolWindow = toolWindow("notes", ToolWindow.Side.RIGHT, Icons::notes, notesCoordinator::panel);
+        reviewsToolWindow = toolWindow("reviews", ToolWindow.Side.RIGHT, Icons::review, reviewCoordinator::panel);
         fileInfoToolWindow = toolWindow(
                 "file-information",
                 "toolwindow.file-information",
@@ -2335,6 +2371,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         toolWindows.register(structureToolWindow);
         toolWindows.register(bookmarksToolWindow);
         toolWindows.register(notesToolWindow);
+        toolWindows.register(reviewsToolWindow, false); // stripe off by default: opened from its command or a thread
         toolWindows.register(commitToolWindow);
         toolWindows.register(gitLogToolWindow);
         toolWindows.register(githubToolWindow, false); // stripe off by default; available inside a GitHub repo
@@ -2958,6 +2995,9 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Personal Notes feature; owns the panel/jump-pickers/persistence. Built in {@link #init} (needs config). */
     NotesCoordinator notesCoordinator;
+
+    /** Local code review: the threads on the open files, their cards, the Review Comments window. */
+    ReviewCoordinator reviewCoordinator;
 
     // --- HTTP Client (.http request runner + response tool window) -----------------------------------
 
@@ -3783,6 +3823,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         });
         NoUndoGuard.install(buffer, noUndoGuard);
         buffer.setNoteMarkerClick(notesCoordinator::onNoteMarkerClick);
+        reviewCoordinator.wire(buffer);
         buffer.setGutterBlameClick(git::onGutterBlameClick);
         todoCoordinator.applyToBuffer(buffer); // push the compiled TODO/highlight matcher (on by default)
         // No-project window: the TODO window shows only the active tab and hides while it has no TODOs.
@@ -4969,6 +5010,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             toolWindows.setAvailable(undoHistoryToolWindow, buffer);
         }
         updateTodoToolWindow();
+        reviewCoordinator.activeBufferChanged(); // the Review Comments window follows the active file's repository
         previews.activeBufferChanged(b); // the Markdown Lint window follows the active tab
         indexCoordinator.backlinks.activeBufferChanged(b);
         if (externalToolToolWindow != null) {
@@ -5327,6 +5369,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         bookmarkCoordinator.restoreBookmarks(buffer);
         debugCoordinator.restoreBreakpoints(buffer);
         notesCoordinator.restoreNotes(buffer);
+        reviewCoordinator.restore(buffer);
         restoreReadOnly(buffer);
     }
 

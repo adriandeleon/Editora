@@ -150,6 +150,54 @@ final class McpToolCatalog {
                 "Scan the active project (and open buffers' unsaved text) for TODO/FIXME-style highlight"
                         + " patterns; returns each match's file, line/col, keyword, tag, priority, and line text.",
                 obj()));
+        ObjectNode listReviews = obj();
+        listReviews.set("path", strProp("Absolute path of a file: only its threads. Omit for the whole repository."));
+        listReviews.set("state", strProp("\"open\" (default) or \"all\" (resolved and dismissed too)."));
+        tools.add(tool(
+                "list_review_comments",
+                "List the review threads of the window's Git repository: each thread's file, its lines where they are"
+                        + " now (1-based; outdated when they changed since), its state, an agent finding's severity"
+                        + " and category, and its comments. Open threads only unless state is \"all\".",
+                listReviews));
+        ObjectNode addReview = obj();
+        addReview.set("path", strProp("Absolute path of a file of the window's repository and project."));
+        addReview.set("start_line", intProp("First line the comment is on (1-based)."));
+        addReview.set("end_line", intProp("Last line (1-based, inclusive); omit for start_line alone."));
+        addReview.set("body", strProp("The comment, in Markdown."));
+        addReview.set(
+                "suggestion",
+                strProp("Optional replacement text for those lines, which the user can apply with one click."));
+        addReview.set("severity", strProp("For a finding: blocker, important, minor or nit."));
+        addReview.set("category", strProp("For a finding: what kind, e.g. correctness, performance, security."));
+        tools.add(toolReq(
+                "add_review_comment",
+                "Start a review thread on lines of a file, shown to the user after those lines in the editor and"
+                        + " in the Review Comments window. Use it for review findings the user should read and act"
+                        + " on; it changes no file. Returns the thread's id.",
+                addReview,
+                "path",
+                "start_line",
+                "body"));
+        ObjectNode reply = obj();
+        reply.set("thread_id", strProp("The thread's id, from list_review_comments or add_review_comment."));
+        reply.set("body", strProp("The reply, in Markdown."));
+        reply.set("suggestion", strProp("Optional replacement text for the thread's lines."));
+        tools.add(toolReq(
+                "reply_to_review_comment",
+                "Reply to a review thread, e.g. to answer the user's comment. Replying reopens a resolved thread.",
+                reply,
+                "thread_id",
+                "body"));
+        ObjectNode resolve = obj();
+        resolve.set("thread_id", strProp("The thread's id."));
+        resolve.set("note", strProp("What resolved it, e.g. \"Fixed: the loop now stops at size - 1\"."));
+        tools.add(toolReq(
+                "resolve_review_comment",
+                "Resolve an open review thread once what it asks is done, saying what was done. The note is kept"
+                        + " with the thread for the user.",
+                resolve,
+                "thread_id",
+                "note"));
         for (com.fasterxml.jackson.databind.JsonNode t : tools) {
             annotate((ObjectNode) t);
         }
@@ -190,6 +238,10 @@ final class McpToolCatalog {
             case "git_status" -> new Info("Git Status", Kind.READ);
             case "list_tabs" -> new Info("List Tabs", Kind.READ);
             case "todo_scan" -> new Info("Scan TODOs", Kind.READ);
+            case "list_review_comments" -> new Info("List Review Comments", Kind.READ);
+            case "add_review_comment" -> new Info("Add Review Comment", Kind.EDIT);
+            case "reply_to_review_comment" -> new Info("Reply to Review Comment", Kind.EDIT);
+            case "resolve_review_comment" -> new Info("Resolve Review Comment", Kind.EDIT);
             default -> throw new IllegalStateException("No annotations for tool " + name);
         };
         tool.put("title", info.title());

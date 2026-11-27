@@ -14,13 +14,14 @@ and guarded by a security-notice dialog; enable it in **Settings → MCP Server*
 ## What it exposes
 
 A **loopback-only** HTTP/JSON-RPC server with **bearer-token auth** exposes
-fourteen tools, in three groups:
+eighteen tools, in four groups:
 
 | Group | Tools |
 | --- | --- |
 | **Reads** | `list_open_files`, `list_tabs`, `read_buffer`, `get_selection`, `get_diagnostics`, `document_symbols`, `git_status`, `todo_scan`, `find_in_files`, `list_commands` |
 | **Writes** | `edit_buffer` (undoable str-replace edits), `save_buffer` |
 | **Actions** | `open_file`, `execute_command` |
+| **Review** | `list_review_comments`, `add_review_comment`, `reply_to_review_comment`, `resolve_review_comment` |
 
 So an agent can observe live state, make **undoable edits**, and drive the editor
 through the same command registry the palette uses. It runs on the JDK's built-in
@@ -41,6 +42,7 @@ and watch:
 | --- | --- |
 | `file:///…` | The live text of each file open in the window, unsaved changes included |
 | `editora://diagnostics` | The language-server diagnostics of every open file, by path (JSON) |
+| `editora://reviews` | The open [review threads](/docs/code-review) of the window's repository (JSON) |
 | `editora://git/status` | The window's Git status: branch, upstream, ahead/behind, changed files (JSON) |
 
 Only open files are resources: a file that isn't open in Editora can't be read
@@ -72,6 +74,24 @@ editor's undo history. Nothing is written to disk until `save_buffer`.
 on disk, and an error when the save was refused, failed, or is still pending.
 `execute_command` reports only that a command ran, so an agent that needs to
 know a save reached the disk uses `save_buffer` rather than running `file.save`.
+
+### Review comments
+
+An agent can take part in [code review](/docs/code-review) in the window's Git
+repository:
+
+- `list_review_comments` lists the threads (of one file, with `path`), each
+  with its lines where they are now, its state, and its comments.
+- `add_review_comment` starts a thread on lines of a file, with an optional
+  `suggestion`, and for a finding a `severity` (`blocker`, `important`,
+  `minor`, `nit`) and a `category`. It shows after those lines in the editor,
+  like any review comment, marked as the agent's.
+- `reply_to_review_comment` answers a thread.
+- `resolve_review_comment` resolves an open thread, with a note saying what
+  was done; the note is kept, naming the agent.
+
+These tools change no file: they write only the review threads. A comment goes
+only on a file the agent may open (see below), and none reaches GitHub.
 
 ### Which files an agent can reach
 
