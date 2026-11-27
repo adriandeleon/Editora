@@ -22,6 +22,26 @@ final class WindowMcpHost implements WindowMcpBridge.Host {
     }
 
     @Override
+    public boolean editsNeedApproval() {
+        return mc.config.getSettings().isMcpEditsNeedApproval();
+    }
+
+    @Override
+    public void openProposal(
+            EditorBuffer buffer,
+            String before,
+            String after,
+            com.editora.diff.DiffModels.DiffModel model,
+            @Nullable String why,
+            String agent,
+            java.util.concurrent.CompletableFuture<ProposalPane.Decision> decided) {
+        ProposalPane pane =
+                ProposalTabs.build(buffer, before, after, model, why, agent, decided, mc.config.getSettings());
+        Tab tab = mc.addContentTab(pane, true);
+        ProposalTabs.closeWhenDecided(tab, pane, mc.editorArea::contains, mc::closeTab);
+    }
+
+    @Override
     public ReviewCoordinator reviewCoordinator() {
         return mc.reviewCoordinator;
     }

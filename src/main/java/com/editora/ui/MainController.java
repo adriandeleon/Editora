@@ -488,6 +488,23 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     @Override
+    public ProposalOutcome proposeEdit(
+            @Nullable String path,
+            @Nullable String oldText,
+            String newText,
+            boolean replaceAll,
+            boolean wholeBuffer,
+            @Nullable String why,
+            String agent) {
+        return mcpBridge.proposeEdit(path, oldText, newText, replaceAll, wholeBuffer, why, agent);
+    }
+
+    @Override
+    public boolean editsNeedApproval() {
+        return mcpBridge.editsNeedApproval();
+    }
+
+    @Override
     public @Nullable String saveBuffer(@Nullable String path) {
         return mcpBridge.saveBuffer(path);
     }

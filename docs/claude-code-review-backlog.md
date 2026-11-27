@@ -78,6 +78,8 @@ Instead of writing, the agent proposes: Editora opens the proposal in `DiffViewe
 Result editor, and the user accepts, edits or rejects. The tool result reports what happened
 (`accepted`, `accepted_with_changes` + final text, `rejected` + optional reason). Long waits use a long
 timeout first, MCP Tasks later. A setting picks "agent writes directly" or "agent proposes".
+*Status:* built (`propose_edit`, `mcpEditsNeedApproval`). Not built: `accepted_with_changes` (editing the
+proposal before Accept; you accept, then edit the buffer) and MCP Tasks for waits past 4 minutes.
 
 **6. Review comment model (M)**
 `ReviewComment`: file, side (old/new), line range, anchor (the line texts plus a digest, so a comment

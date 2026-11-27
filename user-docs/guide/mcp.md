@@ -14,12 +14,12 @@ and guarded by a security-notice dialog; enable it in **Settings → MCP Server*
 ## What it exposes
 
 A **loopback-only** HTTP/JSON-RPC server with **bearer-token auth** exposes
-eighteen tools, in four groups:
+nineteen tools, in four groups:
 
 | Group | Tools |
 | --- | --- |
 | **Reads** | `list_open_files`, `list_tabs`, `read_buffer`, `get_selection`, `get_diagnostics`, `document_symbols`, `git_status`, `todo_scan`, `find_in_files`, `list_commands` |
-| **Writes** | `edit_buffer` (undoable str-replace edits), `save_buffer` |
+| **Writes** | `edit_buffer` (undoable str-replace edits), `propose_edit` (the same edit, shown to you to accept or reject first), `save_buffer` |
 | **Actions** | `open_file`, `execute_command` |
 | **Review** | `list_review_comments`, `add_review_comment`, `reply_to_review_comment`, `resolve_review_comment` |
 
@@ -69,6 +69,27 @@ editor's undo history. Nothing is written to disk until `save_buffer`.
   `old_text` is rejected, never widened to the whole buffer. A whole-buffer
   replacement is also refused when the buffer changed since the agent last read
   it with `read_buffer`; it reads the buffer again and retries.
+
+### Proposed edits
+
+`propose_edit` takes `edit_buffer`'s arguments and an optional `reason`, and
+shows you the edit before it lands: a **Proposed** tab with a diff of the
+buffer now and after, the agent's reason, **Reject** and **Accept**. The agent
+waits for your answer, up to 4 minutes.
+
+- **Accept** applies the edit as one undoable step. Nothing is saved.
+- **Reject** sends the agent what you typed in the field next to it, if
+  anything, so it can try something else. Closing the tab also rejects.
+- With no answer in 4 minutes the tab closes and nothing changes; the agent is
+  told it timed out.
+- If you type in the file while the proposal is open, Accept applies nothing
+  and the agent is told to read the file again: your typing is never
+  overwritten.
+
+To have every agent edit proposed this way, turn on **Settings → MCP Server →
+Ask before applying an agent's edits** (or run **MCP: Ask Before Applying
+Agent Edits** from the palette). `edit_buffer` then waits for your answer too,
+and a rejection comes back to the agent as an error with your reason.
 
 `save_buffer` waits for the write. Its result is `saved` only when the file is
 on disk, and an error when the save was refused, failed, or is still pending.

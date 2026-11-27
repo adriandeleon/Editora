@@ -3049,6 +3049,16 @@ final class WindowCommandRegistrar {
                                         () -> host.config().getSettings().isGitAutoFetch(),
                                         v -> host.config().getSettings().setGitAutoFetch(v),
                                         host.git()::applySupport)));
+        // Whether an MCP agent's edits are proposed for approval (a diff to accept or reject) or applied at once.
+        host.registry()
+                .register(Command.of(
+                        "mcp.toggleEditApproval",
+                        () -> host.editorSettings()
+                                .toggleSetting(
+                                        "mcp.toggleEditApproval",
+                                        () -> host.config().getSettings().isMcpEditsNeedApproval(),
+                                        v -> host.config().getSettings().setMcpEditsNeedApproval(v),
+                                        () -> {})));
         // Where review threads are kept: the config folder, or each repository's .editora/reviews.json.
         host.registry()
                 .register(Command.of(
