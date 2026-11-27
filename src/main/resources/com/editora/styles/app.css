@@ -986,6 +986,11 @@
 .markdown-preview .md-table-dense .md-table-header { -fx-padding: 2 3 2 3; }
 .markdown-preview .md-table-header .md-text { -fx-font-weight: bold; }
 
+/* Viewed files in a review: a viewed row is quieter. */
+.patch-file-row-viewed .label, .pr-review-file-viewed .hyperlink {
+    -fx-opacity: 0.6;
+}
+
 /* YAML front matter: a muted key/value table at the top of the document. */
 .markdown-preview .md-frontmatter {
     -fx-background-color: -color-bg-subtle;
@@ -7135,9 +7140,4 @@
 .project-map-trail-editor-note {
     -fx-font-size: 11px;
     -fx-font-style: italic;
-}
-
-/* Viewed files in a review: a viewed row is quieter. */
-.patch-file-row-viewed .label, .pr-review-file-viewed .hyperlink {
-    -fx-opacity: 0.6;
 }
