@@ -180,6 +180,22 @@ If Claude Code starts before Editora, or the server is off, it still sees the
 tools, and each call answers that Editora has to be started with its MCP server
 on.
 
+### The Claude Code plugin
+
+Instead of `claude mcp add`, you can install Editora's Claude Code plugin. It sets
+up `editora mcp` for you and adds two skills: one for reviewing a change and leaving
+the findings as [review comments](/docs/code-review), one for editing the files you
+have open without losing unsaved changes. From the root of an Editora checkout:
+
+```bash
+claude plugin marketplace add ./integrations/claude-code
+claude plugin install editora@editora
+```
+
+If `editora` is not on your `PATH`, add `--config editora_bin=` and the launcher
+**Copy Connect Command** shows. The skills pre-approve only Editora's read-only
+tools: Claude Code still asks before one that changes something.
+
 ### Connecting over HTTP
 
 For an agent that connects to a URL instead of starting a program, **Copy HTTP
