@@ -102,6 +102,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Kotlin call stacks name a lowercase or hyphenated file's functions after the file.** A frame in `hello.kt` read
+  `HelloKt.main` (and its lambdas `HelloKt.main { lambda }`) instead of `hello.main`, because the debugger did not
+  capitalise the file name or turn `-` into `_` the way kotlinc names the file's class.
 - **A trusted project's language-server commands and switches apply even when its first file opens before the
   settings file is read.** The project's `lspCommands` and `lspEnabled` waited for the next Settings change instead.
 - **A project's HTML settings apply even when its page opens before the settings file is read.** The project's

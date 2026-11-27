@@ -179,6 +179,21 @@ class JvmSourceMapTest {
     }
 
     @Test
+    void aKotlinFileReadsAsItsNameWhateverTheFacadeKotlincMadeOfIt() {
+        assertEquals("hello.main", JvmSourceMap.frameName("demo.HelloKt", "main", "hello.kt"), "capitalised");
+        assertEquals("hello.main { lambda }", JvmSourceMap.frameName("demo.HelloKt", "main$lambda$0", "hello.kt"));
+        assertEquals("hello.main { lambda }", JvmSourceMap.frameName("demo.HelloKt$main$1", "invoke", "hello.kt"));
+        assertEquals("my-file.run", JvmSourceMap.frameName("My_fileKt", "run", "my-file.kt"), "- becomes _");
+        assertEquals("my-file.run { lambda }", JvmSourceMap.frameName("My_fileKt$run$1", "invoke", "my-file.kt"));
+        assertEquals("1st.go", JvmSourceMap.frameName("_1stKt", "go", "1st.kt"), "a digit cannot start a class");
+        assertEquals("Hello.main", JvmSourceMap.frameName("HelloKt", "main", "Hello.kt"), "already capitalised");
+        assertEquals("helloKt.main", JvmSourceMap.frameName("helloKt", "main", "hello.kt"), "not the facade");
+        assertEquals("Hello", JvmSourceMap.kotlinFacadePrefix("hello"));
+        assertEquals("My_file_v2", JvmSourceMap.kotlinFacadePrefix("my-file.v2"));
+        assertEquals("_", JvmSourceMap.kotlinFacadePrefix(""));
+    }
+
+    @Test
     void absolutePathsOnEveryPlatformAndFilesWithoutAName() {
         assertTrue(JvmSourceMap.isAbsolute("/work/x.clj"));
         assertTrue(JvmSourceMap.isAbsolute("\\\\server\\share\\x.clj"));
