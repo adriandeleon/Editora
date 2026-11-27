@@ -110,6 +110,25 @@ class McpProposeEditFxTest {
         assertEquals(TEXT, onFx(b::getContent), "one undo takes it back");
     }
 
+    /** Regression: Claude Code writes the file after FILE_SAVED, so an accepted review applying it too wrote it twice. */
+    @Test
+    void anAcceptedReviewOnlyAnswersAndLeavesTheBufferAlone() throws Exception {
+        EditorBuffer b = open("Review.java");
+        CompletableFuture<McpBridge.ProposalOutcome> answer = CompletableFuture.supplyAsync(
+                () -> mcp.reviewProposal(b.getPath().toString(), "// new\n" + TEXT, "edit A", "Claude Code"));
+        Await.until(
+                () -> onFx(() -> fx.controller.editorArea.selectedTab() != null
+                        && fx.controller.editorArea.selectedTab().getUserData() instanceof ProposalPane),
+                "the proposal tab opened");
+        Tab tab = onFx(() -> fx.controller.editorArea.selectedTab());
+        FxTestSupport.runOnFx(((ProposalPane) tab.getUserData())::accept);
+        assertEquals(
+                "accepted",
+                answer.get(10, java.util.concurrent.TimeUnit.SECONDS).outcome());
+        assertEquals(TEXT, onFx(b::getContent), "the agent writes it, not Editora");
+        assertTrue(!onFx(b::isDirty));
+    }
+
     @Test
     void rejectSendsTheReasonAndClosingTheTabRejects() throws Exception {
         EditorBuffer b = open("Reject.java");

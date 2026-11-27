@@ -13,7 +13,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 /**
  * The IDE tools Claude Code calls over its IDE connection, with the names, arguments and answers the editor plugins
  * use (see {@link ClaudeIdeServer}), answered through the window's {@link McpBridge}. {@code openDiff} is a
- * {@code propose_edit} of the whole file: it waits for Accept (then saves, and answers {@code FILE_SAVED}) or Reject
+ * proposal of the whole file that only asks: Accept answers {@code FILE_SAVED} (Claude Code then writes the file) and Reject
  * ({@code DIFF_REJECTED}).
  */
 final class ClaudeIdeTools {
@@ -109,14 +109,12 @@ final class ClaudeIdeTools {
                 return error(refused);
             }
         }
-        McpBridge.ProposalOutcome o = bridge.proposeEdit(
-                path, null, contents, false, true, args.path("tab_name").asText(""), "Claude Code");
+        // Claude Code writes the file itself once told FILE_SAVED (with the text it is given back): the proposal
+        // only asks. Applying it here as well wrote the change twice.
+        McpBridge.ProposalOutcome o =
+                bridge.reviewProposal(path, contents, args.path("tab_name").asText(""), "Claude Code");
         if (!"accepted".equals(o.outcome())) {
             return text("DIFF_REJECTED");
-        }
-        String notSaved = bridge.saveBuffer(path); // Claude Code reads the file from disk after FILE_SAVED
-        if (notSaved != null) {
-            return error("Accepted, but not saved: " + notSaved);
         }
         ObjectNode r = text("FILE_SAVED");
         r.withArray("content").addObject().put("type", "text").put("text", contents);

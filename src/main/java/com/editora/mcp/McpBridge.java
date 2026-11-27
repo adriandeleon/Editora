@@ -103,6 +103,15 @@ public interface McpBridge {
         return new ProposalOutcome("refused", "Proposed edits are not available.");
     }
 
+    /**
+     * As {@link #proposeEdit} for the whole text of {@code path}, but only asks: {@code accepted} applies nothing,
+     * because the agent writes the file itself once told (Claude Code's IDE {@code openDiff}: it writes after the
+     * answer, so an editor that applied the change too wrote it twice). Default: refused.
+     */
+    default ProposalOutcome reviewProposal(@Nullable String path, String newText, @Nullable String why, String agent) {
+        return new ProposalOutcome("refused", "Proposed edits are not available.");
+    }
+
     /** Whether the user wants every agent edit proposed for approval (the {@code mcpEditsNeedApproval} setting). */
     default boolean editsNeedApproval() {
         return false;

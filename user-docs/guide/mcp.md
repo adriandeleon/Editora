@@ -269,8 +269,8 @@ together with the MCP server switch:
 - In Claude Code, run `/ide` and pick Editora. A `claude` started in one of
   Editora's terminals finds the window by itself.
 - When Claude Code proposes a change, the file opens as a **Proposed** diff
-  tab. **Accept** applies the change and saves the file; **Reject** turns it
-  down.
+  tab. **Accept** lets Claude Code write the change, and your open file shows
+  it; **Reject** turns it down.
 - **Claude Code: Send Selection** sends the selected lines to Claude Code as an
   @-mention. Claude Code can also ask for the open files, the selection, the
   diagnostics and the dirty state, and it can open and save files.
