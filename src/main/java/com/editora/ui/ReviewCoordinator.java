@@ -828,10 +828,6 @@ final class ReviewCoordinator {
         return first == last ? tr("review.line", first + 1) : tr("review.lines", first + 1, last + 1);
     }
 
-    /**
-     * Where the card goes for lines {@code first…last}: {@code {x, belowY, aboveY}} in scene coordinates, from the
-     * part of them that is on screen; {@code null} when none of it is (as {@code GitHunkCoordinator} places its card).
-     */
     /** Where a card goes for a thread's lines; a seam so a test can have them never laid out. */
     interface LineAnchor {
         double @Nullable [] find(CodeArea area, int first, int last);
@@ -853,6 +849,10 @@ final class ReviewCoordinator {
         return new double[] {b.getMinX() + 48, b.getMinY() + Math.min(b.getHeight(), 24), b.getMinY()};
     }
 
+    /**
+     * Where the card goes for lines {@code first…last}: {@code {x, belowY, aboveY}} in scene coordinates, from the
+     * part of them that is on screen; {@code null} when none of it is (as {@code GitHunkCoordinator} places its card).
+     */
     private static double @Nullable [] anchor(CodeArea area, int first, int last) {
         try {
             int top = Math.max(first, area.firstVisibleParToAllParIndex());
