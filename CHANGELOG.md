@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Line comments on GitHub pull requests.** A pull request's file diff marks its review threads on their side and
+  line; a card reads one, replies, resolves or reopens it. **Add Review Comment** on lines of either side drafts a
+  comment (a ```` ```suggestion ```` block is a suggested change), and **Submit review…** sends the drafts with the
+  review as its line comments, pinned to the commit the tab showed. Closing the tab with drafts asks first.
 - **Review findings.** The Review Comments window's **Findings** lists agent findings of every file, the most severe
   first. **Fix with Agent** sends a thread, its lines as they are now and its suggestion to the AI Agent panel, and
   **Copy Fix Prompt** copies the same for Claude Code in a terminal; both also work on the thread at the caret. A

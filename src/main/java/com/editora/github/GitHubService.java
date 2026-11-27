@@ -811,6 +811,14 @@ public final class GitHubService {
     }
 
     /**
+     * A pull request's review threads: read, replied to, resolved ({@link PrThreads}); posts the raw result (the
+     * GraphQL answer on stdout). A reply's body goes on standard input.
+     */
+    public void prThreads(Path dir, GhInvocation invocation, Consumer<ProcessRunner.Result> onResult) {
+        run(dir, NETWORK, onResult, invocation);
+    }
+
+    /**
      * The current branch's pull request and its checks.
      *
      * @param ok whether the branch has a pull request ({@code false}: none, or {@code gh} failed)
