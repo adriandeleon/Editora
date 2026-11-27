@@ -508,6 +508,17 @@ final class McpTools {
             case "save_buffer" -> saveBufferResult(text(args, "path"));
             case "get_selection" -> selectionResult();
             case "document_symbols" -> symbolsResult(text(args, "path"));
+            case "lsp_definition" ->
+                reviewTool(() -> locations(
+                        bridge.navigate(text(args, "path"), place(args, "line"), place(args, "column"), false)));
+            case "lsp_references" ->
+                reviewTool(() -> locations(
+                        bridge.navigate(text(args, "path"), place(args, "line"), place(args, "column"), true)));
+            case "lsp_hover" ->
+                reviewTool(() -> textResult(m.createObjectNode()
+                        .put("hover", bridge.hover(text(args, "path"), place(args, "line"), place(args, "column")))));
+            case "workspace_symbols" -> reviewTool(() -> workspaceSymbolsResult(req(args, "query")));
+            case "local_history" -> reviewTool(() -> localHistoryResult(args));
             case "git_status" -> gitStatusResult();
             case "list_tabs" -> tabsResult();
             case "todo_scan" -> todoScanResult();
@@ -763,6 +774,53 @@ final class McpTools {
         return textResult(o);
     }
 
+    private ObjectNode locations(List<McpBridge.Location> found) {
+        ArrayNode arr = m.createArrayNode();
+        for (McpBridge.Location l : found) {
+            arr.add(m.createObjectNode()
+                    .put("path", l.path())
+                    .put("line", l.line())
+                    .put("column", l.column()));
+        }
+        return textResult(arr);
+    }
+
+    private ObjectNode workspaceSymbolsResult(String query) {
+        ArrayNode arr = m.createArrayNode();
+        for (McpBridge.WorkspaceSymbol s : bridge.workspaceSymbols(query)) {
+            ObjectNode o = m.createObjectNode().put("name", s.name());
+            if (!s.container().isEmpty()) {
+                o.put("container", s.container());
+            }
+            o.put("kind", s.kind()).put("path", s.path()).put("line", s.line());
+            arr.add(o);
+        }
+        return textResult(arr);
+    }
+
+    private ObjectNode localHistoryResult(@Nullable JsonNode args) {
+        String path = req(args, "path");
+        if (args != null && args.hasNonNull("revision")) {
+            return textResult(m.createObjectNode()
+                    .put("revision", args.get("revision").asInt())
+                    .put(
+                            "text",
+                            bridge.localHistoryText(path, args.get("revision").asInt())));
+        }
+        ArrayNode arr = m.createArrayNode();
+        for (McpBridge.HistoryEntry e : bridge.localHistory(path)) {
+            ObjectNode o = m.createObjectNode()
+                    .put("index", e.index())
+                    .put("time", java.time.Instant.ofEpochMilli(e.epochMillis()).toString())
+                    .put("reason", e.reason());
+            if (!e.label().isBlank()) {
+                o.put("label", e.label());
+            }
+            arr.add(o.put("size", e.size()));
+        }
+        return textResult(arr);
+    }
+
     private ObjectNode symbolsResult(@Nullable String path) {
 
         return textResult(symbolArray(bridge.documentSymbols(path)));
@@ -947,6 +1005,15 @@ final class McpTools {
 
     private static boolean bool(@Nullable JsonNode args, String field) {
         return args != null && args.hasNonNull(field) && args.get(field).asBoolean(false);
+    }
+
+    /** A required 1-based line or column; anything below 1 is a tool error. */
+    private static int place(@Nullable JsonNode args, String field) {
+        int v = intArg(args, field);
+        if (v < 1) {
+            throw new IllegalStateException(field + " is 1-based: it must be 1 or more.");
+        }
+        return v;
     }
 
     /** Reads an optional integer argument; 0 when absent (callers treat {@code <= 0} as "not given"). */

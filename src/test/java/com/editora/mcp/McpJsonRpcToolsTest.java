@@ -70,6 +70,30 @@ class McpJsonRpcToolsTest {
         }
 
         @Override
+        public List<Location> navigate(String path, int line, int column, boolean references) {
+            record("navigate " + path + " " + line + ":" + column + " " + references);
+            return List.of();
+        }
+
+        @Override
+        public String hover(String path, int line, int column) {
+            record("hover " + path + " " + line + ":" + column);
+            return "";
+        }
+
+        @Override
+        public List<WorkspaceSymbol> workspaceSymbols(String query) {
+            record("workspaceSymbols " + query);
+            return List.of();
+        }
+
+        @Override
+        public List<HistoryEntry> localHistory(String path) {
+            record("localHistory " + path);
+            return List.of();
+        }
+
+        @Override
         public List<OpenFile> listOpenFiles() {
             record("listOpenFiles");
             return openFiles;
@@ -347,6 +371,11 @@ class McpJsonRpcToolsTest {
                         "save_buffer",
                         "get_selection",
                         "document_symbols",
+                        "lsp_definition",
+                        "lsp_references",
+                        "lsp_hover",
+                        "workspace_symbols",
+                        "local_history",
                         "git_status",
                         "list_tabs",
                         "todo_scan",

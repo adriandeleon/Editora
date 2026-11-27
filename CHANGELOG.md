@@ -72,6 +72,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   graphics driver updated without a reboot) it falls back to software rendering and the whole window lags. The
   status bar now says so once, Doctor gains a Graphics Rendering row with the reason and the fix, and menus drop
   their shadow in that mode, since redrawing the blur at every hover is what made them lag.
+- **More for agents to read.** MCP tools for the language server's definitions, references and hover at a place,
+  the project's symbols, and a file's Local History (`lsp_definition`, `lsp_references`, `lsp_hover`,
+  `workspace_symbols`, `local_history`), all read-only.
 - **Attach to a remote Go program.** Debug: Attach to Remote Delve… (also in Run ▸ Launch and Attach) debugs a Go
   program under Delve's headless server (`dlv debug --headless --listen=:2345`) on another machine, in a container or
   here, with no Delve needed on this machine. Give the folder it was built from over there and Delve maps your

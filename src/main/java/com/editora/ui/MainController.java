@@ -505,6 +505,31 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     @Override
+    public java.util.List<Location> navigate(@Nullable String path, int line, int column, boolean references) {
+        return mcpBridge.navigate(path, line, column, references);
+    }
+
+    @Override
+    public String hover(@Nullable String path, int line, int column) {
+        return mcpBridge.hover(path, line, column);
+    }
+
+    @Override
+    public java.util.List<WorkspaceSymbol> workspaceSymbols(String query) {
+        return mcpBridge.workspaceSymbols(query);
+    }
+
+    @Override
+    public java.util.List<HistoryEntry> localHistory(String path) {
+        return mcpBridge.localHistory(path);
+    }
+
+    @Override
+    public String localHistoryText(String path, int index) {
+        return mcpBridge.localHistoryText(path, index);
+    }
+
+    @Override
     public @Nullable String saveBuffer(@Nullable String path) {
         return mcpBridge.saveBuffer(path);
     }
