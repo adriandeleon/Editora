@@ -90,6 +90,26 @@ comments carry its name; a finding it marks with a severity shows that first,
 `◆ IMPORTANT · Off by one`, and its card says the category. You answer, resolve
 or dismiss them as any other thread.
 
+## Findings
+
+A finding is a thread an agent marked with a severity: blocker, important,
+minor or nit. **Findings** in the Review Comments window
+(`review.toggleFindings`) lists only those, of every file together, the most
+severe first. Each row's menu, like the card, has:
+
+| Row | What it does |
+| --- | --- |
+| **Fix with Agent** | Sends the [AI Agent](/docs/ai#ai-agent) panel what to fix: the file and its lines as they are now, every comment, and the suggestion if there is one. Resolve the thread once it is done. |
+| **Copy Fix Prompt** | Copies the same text, to paste into an agent in a terminal, such as Claude Code. It includes the thread's id, so an agent with Editora's MCP tools can resolve the thread itself. |
+| **Dismiss…** | Closes the finding with your reason. |
+
+**Fix Review Thread with Agent** (`review.fixWithAgent`) and **Copy Fix
+Prompt** (`review.copyFixPrompt`) do the same for the thread at the caret.
+They work on any thread, a comment of yours too.
+
+A dismissed finding stays dismissed: an agent that tries to add a finding on
+the same lines again is refused and told your reason.
+
 ## Keeping threads in the project
 
 Threads are kept in `reviews.json` in Editora's

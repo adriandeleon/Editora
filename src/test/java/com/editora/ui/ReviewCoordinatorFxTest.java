@@ -57,6 +57,9 @@ class ReviewCoordinatorFxTest {
     private ReviewCoordinator coordinator;
     private EditorBuffer active;
     private DiffViewerPane activeDiff;
+    private boolean agentOn = true;
+    private final List<String> sent = new ArrayList<>();
+    private final List<String> copied = new ArrayList<>();
     private final List<EditorBuffer> created = new ArrayList<>();
     private final List<String> events = new ArrayList<>();
     private String promptAnswer = "";
@@ -122,6 +125,21 @@ class ReviewCoordinatorFxTest {
         public DiffViewerPane activeDiffPane() {
             return activeDiff;
         }
+
+        @Override
+        public boolean agentEnabled() {
+            return agentOn;
+        }
+
+        @Override
+        public void sendToAgent(String prompt) {
+            sent.add(prompt);
+        }
+
+        @Override
+        public void copyText(String text) {
+            copied.add(text);
+        }
     };
 
     @BeforeAll
@@ -150,6 +168,9 @@ class ReviewCoordinatorFxTest {
         shared.load();
         events.clear();
         settings.setReviewsInProject(false);
+        agentOn = true;
+        sent.clear();
+        copied.clear();
         coordinator = FxTestSupport.callOnFx(() -> new ReviewCoordinator(host, shared, ops));
     }
 
@@ -512,5 +533,88 @@ class ReviewCoordinatorFxTest {
         com.editora.testkit.Await.until(() -> onFxShowing(), "the card opened at the editor's top");
         assertTrue(FxTestSupport.callOnFx(() -> card().lookupAll(".label").stream()
                 .anyMatch(n -> n instanceof javafx.scene.control.Label l && "Laid out?".equals(l.getText()))));
+    }
+
+    @Test
+    void fixWithAgentSendsTheThreadAndItsLinesAsTheyAreNow() throws Exception {
+        EditorBuffer b = open(TEXT);
+        fx(() -> b.getArea().moveTo(2, 0));
+        fx(coordinator::addComment);
+        answer("Use a constant.", tr("review.dialog.save"));
+        fx(() -> b.getArea().insertText(0, "// moved\n"));
+        fx(() -> b.getArea().moveTo(3, 0));
+        fx(() -> coordinator.fixAtCaret(false));
+        assertEquals(1, sent.size(), events.toString());
+        String prompt = sent.get(0);
+        assertTrue(prompt.contains("src/A.java, line 4"), prompt);
+        assertTrue(prompt.contains("    int b = 2;"), "the line as it is now: " + prompt);
+        assertTrue(prompt.contains("Use a constant."));
+        assertTrue(prompt.contains(stored().get(0).id()), "so an agent with MCP can resolve it");
+        assertTrue(events.contains("status: " + tr("status.review.sentToAgent")));
+
+        fx(() -> coordinator.fixAtCaret(true));
+        assertEquals(prompt, copied.get(0), "the same prompt, for Claude Code in a terminal");
+        agentOn = false;
+        fx(() -> coordinator.fixAtCaret(false));
+        assertEquals(1, sent.size(), "the agent is off: nothing sent");
+        assertTrue(events.contains("status: " + tr("status.review.agentOff")));
+    }
+
+    @Test
+    void theFindingsListPutsTheMostSevereFirstAndADismissedOneIsNotRaisedAgain() throws Exception {
+        EditorBuffer b = open(TEXT);
+        fx(() -> b.getArea().moveTo(0, 0));
+        fx(coordinator::addComment);
+        answer("A person's comment.", tr("review.dialog.save"));
+        ReviewCoordinator.Place place = coordinator.placeOf(b);
+        com.editora.config.TextAnchor nitLines = com.editora.review.ReviewAnchors.capture(TEXT, 1, 1);
+        com.editora.config.TextAnchor blockerLines = com.editora.review.ReviewAnchors.capture(TEXT, 3, 3);
+        fx(() -> coordinator.agentStart(
+                place, nitLines, "Spacing.", null, ReviewThread.Severity.NIT, "style", "Claude Code"));
+        fx(() -> coordinator.agentStart(
+                place, blockerLines, "Crashes.", null, ReviewThread.Severity.BLOCKER, "correctness", "Claude Code"));
+        ReviewsPanel panel = FxTestSupport.callOnFx(coordinator::panel);
+        fx(panel::toggleFindings);
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        javafx.scene.control.TreeView<Object> tree = (javafx.scene.control.TreeView) panel.tree();
+        assertEquals(
+                2,
+                (int) FxTestSupport.callOnFx(() -> tree.getRoot().getChildren().size()),
+                "findings only");
+        fx(() -> tree.getSelectionModel().select(tree.getRoot().getChildren().get(0)));
+        assertTrue(FxTestSupport.callOnFx(() -> panel.runMenuRow("review.copySelectedFixPrompt")));
+        assertTrue(copied.get(0).contains("Crashes."), "the blocker comes first: " + copied);
+        assertTrue(copied.get(0).contains("Severity: blocker (correctness)"));
+
+        fx(() -> tree.getSelectionModel().select(tree.getRoot().getChildren().get(1)));
+        promptAnswer = "our style allows it";
+        assertTrue(FxTestSupport.callOnFx(() -> panel.runMenuRow("review.dismissSelected")));
+        assertEquals(
+                "The user dismissed a finding on these lines (our style allows it); do not raise it again.",
+                FxTestSupport.callOnFx(() -> coordinator.dismissedOn(place, nitLines)));
+        assertNull(FxTestSupport.callOnFx(() -> coordinator.dismissedOn(place, blockerLines)), "not dismissed");
+        assertTrue(ReviewsPanel.findingOrder()
+                        .compare(
+                                stored().stream()
+                                        .filter(t -> t.severity() == ReviewThread.Severity.BLOCKER)
+                                        .findFirst()
+                                        .orElseThrow(),
+                                stored().stream()
+                                        .filter(t -> t.severity() == ReviewThread.Severity.NIT)
+                                        .findFirst()
+                                        .orElseThrow())
+                < 0);
+    }
+
+    @Test
+    void theCardsFixButtonSendsItsThread() throws Exception {
+        EditorBuffer b = open(TEXT);
+        fx(coordinator::addComment);
+        answer("Fix me.", tr("review.dialog.save"));
+        fx(() -> coordinator.showThread(b, stored().get(0).id()));
+        com.editora.testkit.Await.until(() -> onFxShowing(), "the card opened");
+        fx(() -> button(tr("review.card.fix")).fire());
+        assertEquals(1, sent.size());
+        assertTrue(sent.get(0).contains("Fix me."));
     }
 }

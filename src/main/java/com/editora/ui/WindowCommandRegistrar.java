@@ -2110,6 +2110,16 @@ final class WindowCommandRegistrar {
                         () -> host.reviewCoordinator().panel().toggleShowClosed()));
         host.registry()
                 .register(Command.of(
+                        "review.toggleFindings",
+                        () -> host.reviewCoordinator().panel().toggleFindings()));
+        host.registry()
+                .register(Command.of(
+                        "review.fixWithAgent", () -> host.reviewCoordinator().fixAtCaret(false)));
+        host.registry()
+                .register(Command.of(
+                        "review.copyFixPrompt", () -> host.reviewCoordinator().fixAtCaret(true)));
+        host.registry()
+                .register(Command.of(
                         "tool.notes",
                         () -> host.notesCoordinator()
                                 .ifEnabled(() -> host.toolWindows().toggle(host.notesToolWindow()))));

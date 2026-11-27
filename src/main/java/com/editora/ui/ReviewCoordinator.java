@@ -53,6 +53,15 @@ final class ReviewCoordinator {
 
         void installEmacsKeys(javafx.scene.control.TextInputControl control);
 
+        /** Whether the AI Agent panel can take a prompt (AI and the agent on). */
+        boolean agentEnabled();
+
+        /** Opens the AI Agent panel and sends {@code prompt} as a turn. */
+        void sendToAgent(String prompt);
+
+        /** Puts {@code text} on the clipboard. */
+        void copyText(String text);
+
         /** The active tab's diff pane, or null when the active tab is not a diff. */
         @Nullable
         DiffViewerPane activeDiffPane();
@@ -567,6 +576,11 @@ final class ReviewCoordinator {
             }
 
             @Override
+            public void fixWithAgent(ReviewThread t) {
+                ReviewCoordinator.this.fixWithAgent(place, t);
+            }
+
+            @Override
             public void applySuggestion(ReviewThread t, String suggestion) {
                 ReviewCoordinator.this.applySuggestion(buffer, place, t, suggestion);
             }
@@ -632,6 +646,21 @@ final class ReviewCoordinator {
                         @Override
                         public void delete(Place place, ReviewThread t) {
                             ReviewCoordinator.this.delete(place, t);
+                        }
+
+                        @Override
+                        public void fixWithAgent(Place place, ReviewThread t) {
+                            ReviewCoordinator.this.fixWithAgent(place, t);
+                        }
+
+                        @Override
+                        public void copyFixPrompt(Place place, ReviewThread t) {
+                            ReviewCoordinator.this.copyFixPrompt(place, t);
+                        }
+
+                        @Override
+                        public void dismiss(Place place, ReviewThread t) {
+                            ReviewCoordinator.this.dismiss(place, t);
                         }
                     });
         }
@@ -722,6 +751,108 @@ final class ReviewCoordinator {
         if (Confirm.ask(host.window(), deleteQuestion())) {
             change(place, threads.delete(storage.threads(place.repoKey()), t.id()));
         }
+    }
+
+    // --- asking an agent to fix a thread -------------------------------------------------------------
+
+    /** {@code review.fixWithAgent} / {@code review.copyFixPrompt}: for the thread at the caret. */
+    void fixAtCaret(boolean copy) {
+        EditorBuffer buffer = host.activeBuffer();
+        Place place = buffer == null ? null : places.get(buffer);
+        ReviewThread t = buffer == null ? null : threadAtCaret(buffer);
+        if (place == null || t == null) {
+            host.setStatus(tr("status.review.none"));
+            return;
+        }
+        if (copy) {
+            copyFixPrompt(place, t);
+        } else {
+            fixWithAgent(place, t);
+        }
+    }
+
+    /** Sends the AI Agent panel what to fix for thread {@code t}; you resolve the thread once it is done. */
+    void fixWithAgent(Place place, ReviewThread t) {
+        if (!ops.agentEnabled()) {
+            host.setStatus(tr("status.review.agentOff"));
+            return;
+        }
+        withFixPrompt(place, t, prompt -> {
+            ops.sendToAgent(prompt);
+            host.setStatus(tr("status.review.sentToAgent"));
+        });
+    }
+
+    /** Copies what an agent would be asked, for one in a terminal (Claude Code) to paste. */
+    void copyFixPrompt(Place place, ReviewThread t) {
+        withFixPrompt(place, t, prompt -> {
+            ops.copyText(prompt);
+            host.setStatus(tr("status.review.promptCopied"));
+        });
+    }
+
+    /** The fix prompt for {@code t}, built from its file as it is now (read off the FX thread when not open). */
+    private void withFixPrompt(Place place, ReviewThread t, Consumer<String> then) {
+        Path file = ReviewKeys.resolve(place.root(), t.path());
+        EditorBuffer open = ops.bufferForPath(file);
+        if (open != null) {
+            then.accept(fixPrompt(file, t, open.getContent()));
+            return;
+        }
+        com.editora.perf.OffFx.then(
+                "review-fix-text",
+                () -> {
+                    try {
+                        return java.nio.file.Files.readString(file);
+                    } catch (java.io.IOException | java.io.UncheckedIOException e) {
+                        return "";
+                    }
+                },
+                read -> {
+                    String text = read.value();
+                    then.accept(fixPrompt(file, t, text == null ? "" : text));
+                });
+    }
+
+    /** {@code t}'s fix prompt against {@code text}: its lines where they are now. */
+    static String fixPrompt(Path file, ReviewThread t, String text) {
+        ReviewAnchors.Located at = ReviewAnchors.locate(t, text);
+        String[] lines = text.split("\n", -1);
+        StringBuilder shown = new StringBuilder();
+        for (int i = at.startLine(); i <= at.endLine() && i < lines.length; i++) {
+            if (!shown.isEmpty()) {
+                shown.append('\n');
+            }
+            shown.append(lines[i].endsWith("\r") ? lines[i].substring(0, lines[i].length() - 1) : lines[i]);
+        }
+        String lineText = at.outdated() ? t.anchor().selectedText() : shown.toString();
+        return ReviewText.fixPrompt(file.toString(), at.startLine() + 1, at.endLine() + 1, t, lineText);
+    }
+
+    /** Dismisses {@code t} from the tool window, asking the reason first. */
+    void dismiss(Place place, ReviewThread t) {
+        host.promptText(tr("review.dismiss.title"), tr("review.dismiss.label"), "", reason -> {
+            change(place, threads.dismiss(storage.threads(place.repoKey()), t.id(), reason.strip()));
+            host.setStatus(tr("status.review.dismissed"));
+        });
+    }
+
+    /**
+     * Why an agent may not add a finding on {@code anchor}'s lines of {@code place}'s file: a finding you dismissed on
+     * the same lines (the same text), with your reason; null when there is none. Dismissed is meant to stay dismissed.
+     */
+    @Nullable
+    String dismissedOn(Place place, TextAnchor anchor) {
+        for (ReviewThread t : storage.threads(place.repoKey())) {
+            if (t.state() == ReviewThread.State.DISMISSED
+                    && t.severity() != null
+                    && t.path().equals(place.path())
+                    && t.anchor().selectedText().equals(anchor.selectedText())) {
+                String reason = t.stateNote() == null || t.stateNote().isBlank() ? "no reason given" : t.stateNote();
+                return "The user dismissed a finding on these lines (" + reason + "); do not raise it again.";
+            }
+        }
+        return null;
     }
 
     // --- agents (MCP) --------------------------------------------------------------------------------

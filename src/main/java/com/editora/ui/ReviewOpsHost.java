@@ -36,6 +36,24 @@ final class ReviewOpsHost implements ReviewCoordinator.Ops {
     }
 
     @Override
+    public boolean agentEnabled() {
+        return mc.agentCoordinator.isEnabled();
+    }
+
+    @Override
+    public void sendToAgent(String prompt) {
+        mc.toolWindows.open(mc.agentToolWindow, true);
+        mc.agentCoordinator.sendPrompt(prompt);
+    }
+
+    @Override
+    public void copyText(String text) {
+        javafx.scene.input.ClipboardContent c = new javafx.scene.input.ClipboardContent();
+        c.putString(text);
+        javafx.scene.input.Clipboard.getSystemClipboard().setContent(c);
+    }
+
+    @Override
     public @Nullable DiffViewerPane activeDiffPane() {
         return new DiffOpsHost(mc).activeDiffPane(); // the same lookup the diff commands use
     }

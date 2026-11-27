@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Review findings.** The Review Comments window's **Findings** lists agent findings of every file, the most severe
+  first. **Fix with Agent** sends a thread, its lines as they are now and its suggestion to the AI Agent panel, and
+  **Copy Fix Prompt** copies the same for Claude Code in a terminal; both also work on the thread at the caret. A
+  finding you dismiss stays dismissed: an agent that adds it again on the same lines is refused and told your reason.
 - **Agents take part in code review.** Over MCP, an agent lists a repository's review threads, adds its own on
   lines (with a suggestion, and for a finding a severity and a category), replies, and resolves a thread with a note
   of what it did (`list_review_comments`, `add_review_comment`, `reply_to_review_comment`,

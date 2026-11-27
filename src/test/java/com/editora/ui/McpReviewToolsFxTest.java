@@ -164,4 +164,37 @@ class McpReviewToolsFxTest {
         FxTestSupport.runOnFx(() -> b.getArea().insertText(0, "x"));
         assertNotEquals(before, mcp.bufferStamps().get(path), "an edit moves it");
     }
+
+    @Test
+    void aFindingTheUserDismissedIsNotAddedAgain() throws Exception {
+        EditorBuffer b = open("Dismissed.java");
+        String path = b.getPath().toString();
+        String id = mcp.addReview(path, 2, 2, "Spacing.", null, "nit", "style", "Claude Code")
+                .id();
+        ReviewCoordinator.Place place =
+                new ReviewCoordinator.Place(repo, com.editora.review.ReviewKeys.repoKey(repo), "Dismissed.java");
+        assertNull(mcp.resolveReview(id, "fixed", "Claude Code"), "resolved is not dismissed: it may come back");
+        assertNull(
+                mcp.addReview(path, 2, 2, "Spacing again.", null, "nit", "style", "Claude Code")
+                        .error(),
+                "a resolved finding may be raised again");
+        String second = mcp.listReviews(path, false).get(0).id();
+        FxTestSupport.runOnFx(() -> {
+            var reviews = fx.controller.reviewCoordinator;
+            FxTestSupport.call(
+                    reviews,
+                    "change",
+                    new Class<?>[] {ReviewCoordinator.Place.class, java.util.List.class},
+                    place,
+                    new com.editora.review.ReviewThreads(System::currentTimeMillis)
+                            .dismiss(reviews.threadsOf(place.repoKey()), second, "house style"));
+        });
+        McpBridge.ReviewAdded again = mcp.addReview(path, 2, 2, "Spacing!", null, "nit", "style", "Claude Code");
+        assertNull(again.id());
+        assertTrue(again.error().contains("house style"), again.error());
+        assertNull(
+                mcp.addReview(path, 2, 2, "A question, not a finding.", null, null, null, "Claude Code")
+                        .error(),
+                "a plain comment is not a finding: it is not refused");
+    }
 }

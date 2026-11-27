@@ -96,6 +96,22 @@ Four MCP tools and a resource reach the window's review threads through `McpBrid
 - `editora://reviews` lists the open threads as `list_review_comments` does; the resource watch compares its text.
 - The tools write only the review store, never a file; annotated `readOnlyHint: false`, `destructiveHint: false`.
 
+## Findings and fixing
+
+- `ReviewsPanel`'s **Findings** toggle (`review.toggleFindings`) lists only threads with a severity, flat, ordered by
+  `ReviewsPanel.findingOrder` (severity, then path, then line). Row commands: `review.fixSelectedWithAgent`,
+  `review.copySelectedFixPrompt`, `review.dismissSelected` (reason asked through `CoordinatorHost.promptText`).
+- `ReviewText.fixPrompt` is the text an agent is asked, in English (a model reads it): the file and 1-based lines,
+  a finding's severity and category, every comment, the lines as they are now (`ReviewCoordinator.fixPrompt` finds
+  them in an open buffer's text, else the file read off the FX thread; an outdated thread gives its anchored text),
+  the latest suggestion, and the `thread_id` for `resolve_review_comment`.
+- **Fix with Agent** opens the AI Agent panel and sends it as a turn (`AgentCoordinator.sendPrompt`). The panel's
+  ACP agent gets no MCP servers (`session/new` sends an empty `mcpServers`), so it cannot resolve the thread: the
+  user does. **Copy Fix Prompt** is for an agent in a terminal, which has Editora's MCP tools if set up.
+- Dismissed stays dismissed: `ReviewCoordinator.dismissedOn` finds a `DISMISSED` finding on the same path with the
+  same anchored text, and `WindowMcpBridge.addReview` refuses a new finding there with the user's reason. A plain
+  comment (no severity) is never refused; a resolved finding may be raised again.
+
 ## Keeping threads in the project
 
 With `Settings.reviewsInProject` (schema 187, Settings → Git) the threads of a repository live in its
@@ -107,4 +123,4 @@ thread in order. Turning the setting on or off does not move threads already wri
 ## Not built yet
 
 - Comments on the base side of a diff (they need its revision), and GitHub pull request threads (backlog item 8).
-- The findings view (item 10), and a diff of the change under review for agents (they read it with `git`).
+- Promote a finding to a GitHub comment (needs item 8), and handing the AI Agent panel's agent Editora's MCP server.
