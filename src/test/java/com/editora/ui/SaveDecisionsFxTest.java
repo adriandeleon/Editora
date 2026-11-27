@@ -246,6 +246,32 @@ class SaveDecisionsFxTest {
         }
     }
 
+    /** The bug: Save As was a plain field, so a folder had to be typed out in full to save somewhere else. */
+    @Test
+    void tabCompletesAFolderInTheSaveAsPromptAndTheFileIsSavedThere() throws Exception {
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            FileWorkflowCoordinator workflows = workflows(fx);
+            Path original = Files.writeString(dir.resolve("original.txt"), "A\n");
+            Path kept = Files.createDirectory(dir.resolve("kept-notes"));
+            EditorBuffer buffer = open(async, fx, original);
+
+            run(fx, "file.saveAs");
+            typeInPrompt(fx, dir + java.io.File.separator + "kep");
+            SaveGuardsFxTest.awaitOnFx(
+                    async, "the folder listed", () -> promptRows(fx).equals(List.of("kept-notes")));
+            pressInPrompt(fx, javafx.scene.input.KeyCode.TAB);
+            assertEquals(kept.toString(), promptText(fx), "Tab completes the folder's name");
+            pressInPrompt(fx, javafx.scene.input.KeyCode.ENTER);
+            assertEquals(kept.resolve("original.txt").toString(), promptText(fx), "Enter goes into it, name kept");
+            pressInPrompt(fx, javafx.scene.input.KeyCode.ENTER);
+            settle(async, workflows);
+
+            assertEquals("A\n", Files.readString(kept.resolve("original.txt")));
+            assertEquals(kept.resolve("original.txt"), FxTestSupport.callOnFx(buffer::getPath));
+        }
+    }
+
     @Test
     void overwritingAnotherFileIsAskedFirstAndDecliningLeavesEverythingAsItWas() throws Exception {
         try (AsyncTestScope async = new AsyncTestScope()) {
@@ -707,16 +733,28 @@ class SaveDecisionsFxTest {
 
     /** Types {@code text} into the Save As prompt and accepts it. */
     private static void answerPrompt(FxWindowFixture fx, String text) throws Exception {
-        FxTestSupport.runOnFx(() -> {
-            Node card = promptCard(fx);
-            ((TextField) card.lookup(".text-field")).setText(text);
-            Button ok = (Button) card.lookupAll(".button").stream()
-                    .filter(node ->
-                            node instanceof Button button && tr("dialog.ok").equals(button.getText()))
-                    .findFirst()
-                    .orElseThrow();
-            ok.fire();
-        });
+        typeInPrompt(fx, text);
+        pressInPrompt(fx, javafx.scene.input.KeyCode.ENTER);
+    }
+
+    private static void typeInPrompt(FxWindowFixture fx, String text) throws Exception {
+        FxTestSupport.runOnFx(() -> ((TextField) promptCard(fx).lookup(".text-field")).setText(text));
+    }
+
+    /** Presses {@code key} in the Save As prompt's field. */
+    private static void pressInPrompt(FxWindowFixture fx, javafx.scene.input.KeyCode key) throws Exception {
+        FxTestSupport.runOnFx(() -> javafx.event.Event.fireEvent(
+                promptCard(fx).lookup(".text-field"),
+                new javafx.scene.input.KeyEvent(
+                        javafx.scene.input.KeyEvent.KEY_PRESSED, "", "", key, false, false, false, false)));
+    }
+
+    /** The names the Save As prompt lists. FX thread. */
+    @SuppressWarnings("unchecked")
+    private static List<String> promptRows(FxWindowFixture fx) {
+        javafx.scene.control.ListView<Path> list =
+                (javafx.scene.control.ListView<Path>) promptCard(fx).lookup(".list-view");
+        return list.getItems().stream().map(p -> p.getFileName().toString()).toList();
     }
 
     /** The headers of every dialog on screen. */
