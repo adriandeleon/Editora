@@ -285,6 +285,11 @@ class TwoWritersTest {
                 () -> {
                     try {
                         return blobCount() == 4;
+                    } catch (java.io.UncheckedIOException e) {
+                        if (e.getCause() instanceof java.nio.file.NoSuchFileException) {
+                            return false; // the collection removed a folder mid-walk (seen on Windows): look again
+                        }
+                        throw e;
                     } catch (Exception e) {
                         throw new IllegalStateException(e);
                     }
