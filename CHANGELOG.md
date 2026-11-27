@@ -47,6 +47,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A project's HTML settings apply even when its page opens before the settings file is read.** The project's
+  `html` settings (and the note about keys the server ignores) waited for the next Settings change instead.
 - **The column ruler no longer flashes black when a tab is first shown.** Its line was drawn once in the default
   black before the theme colour reached it (each tab, the first time you switched to it).
 - **Maximizing the window no longer blows up the tool windows.** A docked tool window (Project, Structure, the
