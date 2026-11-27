@@ -135,6 +135,17 @@ class PrInlineReviewFxTest {
             root.applyCss();
             root.layout();
         });
+        // The sides are laid out off the FX thread and built when that lands: a card asked for before then has no
+        // line to stand on (it failed that way on a loaded CI runner, and after ReviewCoordinatorFxTest).
+        com.editora.testkit.Await.until(
+                () -> {
+                    try {
+                        return FxTestSupport.callOnFx(() -> FxTestSupport.field(pane, "rightArea") != null);
+                    } catch (Exception e) {
+                        return false;
+                    }
+                },
+                "the diff's sides are built");
         return pane;
     }
 
