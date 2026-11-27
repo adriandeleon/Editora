@@ -834,6 +834,22 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
         };
     }
 
+    /**
+     * Adds {@code block} to the prompt being written (after what is there, a blank line between) and puts the caret
+     * after it, for the question to follow. Nothing is sent.
+     */
+    void addToPrompt(String block) {
+        String now = input.getText() == null ? "" : input.getText().stripTrailing();
+        input.setText(now.isEmpty() ? block.stripTrailing() + "\n\n" : now + "\n\n" + block.stripTrailing() + "\n\n");
+        input.positionCaret(input.getLength());
+        input.requestFocus();
+    }
+
+    /** The prompt being written. For tests. */
+    String promptText() {
+        return input.getText();
+    }
+
     @Override
     public void focusFirstItem() {
         input.requestFocus();

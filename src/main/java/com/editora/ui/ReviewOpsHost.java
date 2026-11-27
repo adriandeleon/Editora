@@ -47,6 +47,11 @@ final class ReviewOpsHost implements ReviewCoordinator.Ops {
     }
 
     @Override
+    public void addToAgentPrompt(String block) {
+        mc.agentCoordinator.addToPrompt(block);
+    }
+
+    @Override
     public void copyText(String text) {
         javafx.scene.input.ClipboardContent c = new javafx.scene.input.ClipboardContent();
         c.putString(text);

@@ -1,6 +1,6 @@
 # Backlog: Claude Code integration and first-class code review
 
-Status: 2026-11-27. Decisions D1–D6 answered. Shipped: items 1 and 2 (#1823), 6, 7 and 9 (#1828), 10 (#1832); items 11 (#1833) and 8 (GitHub inline review) in their PRs. See [code review](subsystems/code-review.md).
+Status: 2026-11-27. Decisions D1–D6 answered. Shipped: items 1 and 2 (#1823), 6, 7 and 9 (#1828), 10 (#1832), 8 (#1834). In their PRs: 11 (#1833), 12 (#1835; the plugin is in `integrations/claude-code`, its own repository per D5 waits for adl), 5 (#1836), 14 and 15 (#1837). See [code review](subsystems/code-review.md).
 
 **Goal.** Editora becomes the place where you review code, whoever wrote it: you, a teammate's pull
 request, or Claude Code. Claude can see what you see, propose changes you accept or reject hunk by
@@ -125,6 +125,9 @@ Changes tab. Distributed through a marketplace repo (decision D5).
 **13. Send to Claude (S/M)** — needs 7
 From a comment, a finding, a selection or a diff hunk: **Send to Claude** puts it in the agent panel
 prompt (ACP, works today), or as an @-mention over the IDE protocol if item 3 lands.
+*Status:* built as **Add to Agent Prompt** (`agent.addSelection`, `review.addToAgentPrompt`,
+`diff.addChangeToAgentPrompt`): the block goes into the prompt being written, unsent. Findings already had
+Fix with Agent (item 10). Not built: the IDE-protocol @-mention (item 3).
 
 ### Tier 4: review ergonomics
 
