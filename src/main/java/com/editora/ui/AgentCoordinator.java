@@ -95,6 +95,11 @@ final class AgentCoordinator implements AcpClient.Host {
         /** Toggles the AI Agent tool window. */
         void toggleToolWindow();
 
+        /** Where the window keeps what agents changed, turn by turn; null for a host without one (a test's). */
+        default @Nullable AgentChangeSets agentChanges() {
+            return null;
+        }
+
         /** Opens the AI Agent tool window (optionally focusing the prompt input). */
         void openToolWindow(boolean focus);
 
@@ -430,6 +435,10 @@ final class AgentCoordinator implements AcpClient.Host {
         // async chain, which may resolve on a background thread when a fresh process is spawned.
         String cwd = sessionCwd().toString();
         long now = Instant.now().getEpochSecond();
+        AgentChangeSets changes = ops.agentChanges();
+        if (changes != null) {
+            changes.beginTurn(activeAgent().displayName());
+        }
         panel().setBusy(true);
         ensureSession()
                 .thenCompose(sid -> {
@@ -448,6 +457,11 @@ final class AgentCoordinator implements AcpClient.Host {
                 .whenComplete((stopReason, error) -> Platform.runLater(() -> {
                     drainInbox(); // what the agent wrote before the turn ended is shown before its end
                     panel().setBusy(false);
+                    AgentChangeSets.Turn changed = changes == null ? null : changes.endTurn();
+                    if (changed != null) {
+                        panel().appendLine(tr("agent.turnChanged", changed.fileCount()));
+                        host.setStatus(tr("status.agent.turnChanged", changed.fileCount()));
+                    }
                     if (error != null) {
                         String message = String.valueOf(rootCause(error).getMessage());
                         panel().appendLine("✗ " + message);
@@ -1055,6 +1069,10 @@ final class AgentCoordinator implements AcpClient.Host {
         if (!verdict.allowed()) {
             return verdict.message();
         }
+        AgentChangeSets changes = ops.agentChanges();
+        if (changes != null && open.getPath() != null) {
+            changes.beforeAgentWrite(open.getPath(), open.getContent()); // the turn's change set: what it was
+        }
         // The agent read getContent() (the whole file), so widen a narrowed buffer rather than nest the file in it.
         open.applyPreparedWholeText(prepared, body); // the version was checked by the caller
         served.served(key, body); // its own write (LF, as the buffer holds it) is text it knows
@@ -1078,6 +1096,10 @@ final class AgentCoordinator implements AcpClient.Host {
             recordBeforeWrite(file, plan.previousText());
         } else if (file.getParent() != null) {
             documentFiles.createDirectories(file.getParent());
+        }
+        AgentChangeSets changes = ops.agentChanges();
+        if (changes != null) {
+            changes.beforeAgentWrite(file, plan.existing() != null ? plan.previousText() : null);
         }
         java.util.function.BooleanSupplier stillClosed = () -> {
             try {

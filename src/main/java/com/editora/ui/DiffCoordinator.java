@@ -6,6 +6,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -1624,6 +1625,128 @@ final class DiffCoordinator {
         String title = tr(staged ? "diff.title.gitStagedReview" : "diff.title.gitWorkingReview", entries.size());
         ops.addDiffTab(new PatchReviewPane(title, entries));
         host.setStatus(tr("status.diff.reviewOpened", entries.size()));
+    }
+
+    // --- what an agent changed ---------------------------------------------------------------------
+
+    /**
+     * Opens {@code turn}'s changes as one review tab: each file it wrote, as it was before the turn (left) against
+     * what it is now (right, editable: a change can be taken back from the left), and Revert Turn above them.
+     */
+    void openAgentChanges(AgentChangeSets.Turn turn) {
+        List<Map.Entry<Path, @Nullable String>> files =
+                new ArrayList<>(turn.before().entrySet());
+        if (files.isEmpty()) {
+            host.setStatus(tr("status.agent.noChanges"));
+            return;
+        }
+        List<BuiltDiff> built = new ArrayList<>(Collections.nCopies(files.size(), null));
+        AtomicInteger remaining = new AtomicInteger(files.size());
+        for (int i = 0; i < files.size(); i++) {
+            int index = i;
+            Path file = files.get(i).getKey();
+            String before = files.get(i).getValue();
+            String name = file.getFileName() == null
+                    ? file.toString()
+                    : file.getFileName().toString();
+            DiffSide left = callback -> callback.accept(DiffContent.text(before == null ? "" : before));
+            buildDiffPane(
+                    tr("diff.title.agentFile", name),
+                    tr(before == null ? "diff.side.agentCreated" : "diff.side.beforeAgent"),
+                    tr("diff.side.working"),
+                    name,
+                    name,
+                    left,
+                    fileSide(file),
+                    DiffViewerPane.EditableSide.RIGHT,
+                    file,
+                    pane -> {},
+                    result -> {
+                        built.set(index, result);
+                        if (remaining.decrementAndGet() > 0) {
+                            return;
+                        }
+                        List<PatchReviewPane.Entry> entries = new ArrayList<>();
+                        for (int j = 0; j < files.size(); j++) {
+                            BuiltDiff diff = built.get(j);
+                            if (diff != null) {
+                                entries.add(new PatchReviewPane.Entry(
+                                        files.get(j).getKey().toString(),
+                                        files.get(j).getValue() == null ? "A" : "M",
+                                        diff.model().added(),
+                                        diff.model().removed(),
+                                        diff.pane()));
+                            }
+                        }
+                        if (entries.isEmpty()) {
+                            return;
+                        }
+                        PatchReviewPane review = new PatchReviewPane(
+                                tr("diff.title.agentChanges", turn.agent(), entries.size()), entries);
+                        review.setAction(tr("agent.changes.revertTurn"), "agent.revertTurn", () -> revertTurn(turn));
+                        ops.addDiffTab(review);
+                        host.setStatus(tr("status.diff.reviewOpened", entries.size()));
+                    });
+        }
+    }
+
+    /**
+     * Puts every file {@code turn} wrote back as it was before the turn, after asking: one undoable edit of each
+     * file's buffer (a file not open is opened for it), nothing saved. A file the turn created is left for you to
+     * delete; the status says how many.
+     */
+    void revertTurn(AgentChangeSets.Turn turn) {
+        if (!Confirm.ask(host.window(), revertQuestion(turn))) {
+            return;
+        }
+        int created = 0;
+        AtomicInteger reverted = new AtomicInteger();
+        for (Map.Entry<Path, @Nullable String> e : turn.before().entrySet()) {
+            String before = e.getValue();
+            if (before == null) {
+                created++;
+                continue;
+            }
+            EditorBuffer open = ops.openBufferFor(e.getKey());
+            if (open != null) {
+                if (restore(open, before)) {
+                    reverted.incrementAndGet();
+                }
+            } else {
+                ops.openBackgroundBufferAsync(e.getKey(), b -> {
+                    if (b != null && restore(b, before)) {
+                        reverted.incrementAndGet();
+                    }
+                });
+            }
+        }
+        host.setStatus(
+                created == 0
+                        ? tr("status.agent.reverted", turn.before().size())
+                        : tr("status.agent.revertedCreated", turn.before().size() - created, created));
+    }
+
+    /** The question before a turn is reverted. Pure. */
+    static Confirm.Question revertQuestion(AgentChangeSets.Turn turn) {
+        return new Confirm.Question(
+                tr("agent.changes.revertTitle"),
+                null,
+                tr("agent.changes.revertConfirm", turn.agent(), turn.fileCount()),
+                tr("agent.changes.revertTurn"));
+    }
+
+    /** Sets {@code b}'s whole text back to {@code before} as one undoable edit; false when it may not be changed. */
+    static boolean restore(EditorBuffer b, String before) {
+        String lf = com.editora.editops.LineEndings.toLf(before);
+        String now = b.getContent();
+        if (!b.isEditable() || lf.equals(now)) {
+            return false;
+        }
+        if (!NoUndoGuard.check(b, tr("noUndo.op.agent")).allowed()) {
+            return false;
+        }
+        b.applyPreparedWholeText(EditorBuffer.PreparedEdit.between(b.docVersion(), now, lf), lf);
+        return true;
     }
 
     /**

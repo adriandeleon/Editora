@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Review what an agent changed.** Each AI Agent turn, and each run of MCP edits, keeps the files it wrote as they
+  were before. **Agent: Review Changes** shows the latest one as a review tab, file before against file now, and
+  **Revert Turn** puts them all back as one undoable edit each.
 - **Line comments on GitHub pull requests.** A pull request's file diff marks its review threads on their side and
   line; a card reads one, replies, resolves or reopens it. **Add Review Comment** on lines of either side drafts a
   comment (a ```` ```suggestion ```` block is a suggested change), and **Submit review…** sends the drafts with the

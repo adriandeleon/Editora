@@ -91,6 +91,21 @@ final class PatchReviewPane implements TabContent {
         root.setTop(applyBar);
     }
 
+    /**
+     * One action above the review, offered from the keyboard as {@code commandId} while the review has the focus:
+     * Revert Turn on an agent's changes.
+     */
+    void setAction(String label, String commandId, Runnable action) {
+        Button button = new Button(label);
+        button.getStyleClass().add("accent");
+        button.setOnAction(e -> action.run());
+        FocusCommands.press(root, commandId, button);
+        applyBar = UiZoom.padding(UiZoom.spacing(new HBox(button), 8), 6, 8, 6, 8);
+        applyBar.setAlignment(Pos.CENTER_LEFT);
+        applyBar.getStyleClass().addAll("diff-toolbar", "patch-apply-bar");
+        root.setTop(applyBar);
+    }
+
     /** The Apply bar's buttons (working tree, then index), or an empty list when there is none. */
     List<Button> applyButtons() {
         return applyBar == null

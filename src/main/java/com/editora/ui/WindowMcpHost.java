@@ -22,6 +22,11 @@ final class WindowMcpHost implements WindowMcpBridge.Host {
     }
 
     @Override
+    public AgentChangeSets agentChanges() {
+        return mc.agentChanges;
+    }
+
+    @Override
     public ReviewCoordinator reviewCoordinator() {
         return mc.reviewCoordinator;
     }

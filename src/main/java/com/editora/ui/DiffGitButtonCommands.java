@@ -23,6 +23,23 @@ final class DiffGitButtonCommands {
                 Command.of("diff.saveResult", () -> mc.diffCoordinator.withActiveDiff(DiffViewerPane::saveResult)));
         mc.registry.register(
                 Command.of("diff.exportPatch", () -> mc.diffCoordinator.withActiveDiff(DiffViewerPane::exportPatch)));
+        // What an agent changed in its latest turn that changed files: reviewed in one tab, or put back at once.
+        mc.registry.register(Command.of("agent.reviewChanges", () -> {
+            AgentChangeSets.Turn turn = mc.agentChanges.latest();
+            if (turn == null) {
+                mc.setStatus(com.editora.i18n.Messages.tr("status.agent.noChanges"));
+            } else {
+                mc.diffCoordinator.openAgentChanges(turn);
+            }
+        }));
+        mc.registry.register(Command.of("agent.revertTurn", () -> {
+            AgentChangeSets.Turn turn = mc.agentChanges.latest();
+            if (turn == null) {
+                mc.setStatus(com.editora.i18n.Messages.tr("status.agent.noChanges"));
+            } else {
+                mc.diffCoordinator.revertTurn(turn);
+            }
+        }));
         mc.registry.register(Command.of("diff.exitDiffMode", () -> exitDiffMode(mc)));
         mc.registry.register(Command.of(
                 "git.log.showBranchLog",

@@ -13,6 +13,11 @@ import org.jspecify.annotations.Nullable;
  */
 final class AgentOpsHost implements AgentCoordinator.Ops {
 
+    @Override
+    public AgentChangeSets agentChanges() {
+        return mc.agentChanges;
+    }
+
     private final MainController mc;
 
     AgentOpsHost(MainController mc) {

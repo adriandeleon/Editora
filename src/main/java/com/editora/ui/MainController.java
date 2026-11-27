@@ -2569,6 +2569,9 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     final WindowChromeCoordinator chrome = new WindowChromeCoordinator(new WindowChromeHost(this));
 
+    /** What agents (the AI Agent panel, MCP clients) changed, turn by turn, for Agent: Review Changes. */
+    final AgentChangeSets agentChanges = new AgentChangeSets(System::currentTimeMillis);
+
     final WindowMcpBridge mcpBridge = new WindowMcpBridge(new WindowMcpHost(this));
 
     final FileWorkflowCoordinator fileWorkflows = new FileWorkflowCoordinator(new FileWorkflowHost(this));
