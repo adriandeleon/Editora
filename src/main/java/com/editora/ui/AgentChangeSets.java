@@ -32,6 +32,18 @@ final class AgentChangeSets {
         }
     }
 
+    /** Hears a turn's first write to a file whose text before it is known: the turn, the file, that text. */
+    interface FirstWrite {
+        void before(Turn turn, Path file, String text);
+    }
+
+    private volatile @Nullable FirstWrite onFirstWrite;
+
+    /** Who hears each turn's first write to an open file (the window, for a Local History label). */
+    void setOnFirstWrite(@Nullable FirstWrite listener) {
+        this.onFirstWrite = listener;
+    }
+
     private final LongSupplier clock;
     private final Deque<Turn> turns = new ArrayDeque<>();
     private int next = 1;
@@ -55,13 +67,18 @@ final class AgentChangeSets {
         return done == null || done.before().isEmpty() ? null : done;
     }
 
-    /** Before an AI Agent write to {@code file}: its text then (null: it did not exist). */
-    synchronized void beforeAgentWrite(Path file, @Nullable String text) {
+    /**
+     * Before an AI Agent write to {@code file}: its text then (null: it did not exist). {@code label}: tell
+     * {@link #setOnFirstWrite} (a write to a closed file keeps its own Local History row, so it does not).
+     */
+    synchronized void beforeAgentWrite(Path file, @Nullable String text, boolean label) {
         Turn t = acp;
         if (t == null) {
             t = acp = start("AI Agent"); // a write outside a prompt (none should come): still recorded
         }
-        remember(t, file, text);
+        if (remember(t, file, text) && label && text != null) {
+            firstWrite(t, file, text);
+        }
     }
 
     /** Before an MCP edit of {@code file} by {@code agent}: its text then. */
@@ -72,7 +89,9 @@ final class AgentChangeSets {
             t = mcp = start(agent);
         }
         lastMcpEdit = now;
-        remember(t, file, text);
+        if (remember(t, file, text)) {
+            firstWrite(t, file, text);
+        }
     }
 
     /** The turns that changed files, newest first. */
@@ -107,10 +126,25 @@ final class AgentChangeSets {
         return t;
     }
 
-    private static void remember(Turn t, Path file, @Nullable String text) {
-        if (!t.before().containsKey(file)) {
-            t.before().put(file, text); // only the first write of the turn: what the file was before the turn
+    /** Keeps {@code text} as {@code file}'s text before {@code t}; true on the turn's first write to it. */
+    private static boolean remember(Turn t, Path file, @Nullable String text) {
+        if (t.before().containsKey(file)) {
+            return false;
         }
+        t.before().put(file, text); // only the first write of the turn: what the file was before the turn
+        return true;
+    }
+
+    private void firstWrite(Turn t, Path file, String text) {
+        FirstWrite listener = onFirstWrite;
+        if (listener != null) {
+            listener.before(t, file, text);
+        }
+    }
+
+    /** How a turn is named in a picker and in Local History: "Turn 3 · Claude Code". */
+    static String name(Turn t) {
+        return com.editora.i18n.Messages.tr("agent.changes.turnName", t.number(), t.agent());
     }
 
     private static Turn copy(Turn t) {

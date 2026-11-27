@@ -48,6 +48,22 @@ class PrViewedTest {
     }
 
     @Test
+    void everyPageOfFilesIsRead() {
+        String page1 = "{\"data\":{\"repository\":{\"pullRequest\":{\"id\":\"PR_1\",\"viewerLatestReview\":"
+                + "{\"commit\":{\"oid\":\"abc1234\"}},\"files\":{\"pageInfo\":{\"hasNextPage\":true},"
+                + "\"nodes\":[{\"path\":\"a\",\"viewerViewedState\":\"VIEWED\"}]}}}}}";
+        String page2 = page1.replace("\"a\"", "\"b\"").replace("VIEWED", "UNVIEWED");
+        PrViewed.State s = PrViewed.parse(page1 + page2);
+        assertEquals(2, s.files().size(), "both pages");
+        assertTrue(s.viewed("a"));
+        assertFalse(s.viewed("b"));
+        assertEquals("abc1234", s.lastReviewedOid());
+        assertEquals(1, PrViewed.parse(page1 + "{\"data\":").files().size(), "a page cut short keeps the rest");
+        assertTrue(String.join(" ", PrViewed.read(URL, 7).args()).contains("--paginate"));
+        assertTrue(String.join(" ", PrViewed.read(URL, 7).args()).contains("after:$endCursor"));
+    }
+
+    @Test
     void markingNamesTheFileAndThePullRequest() {
         String on = String.join(
                 " ", PrViewed.mark(URL, 7, "PR_1", "src/A.java", true).args());

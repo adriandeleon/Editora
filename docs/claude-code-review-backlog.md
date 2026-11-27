@@ -76,9 +76,9 @@ a Local History label "Before Claude turn N" on each touched file. An **Agent Ch
 the file watcher, or through item 12's hook). *Done when:* a three-file agent edit can be reviewed,
 partly rejected, and fully reverted, with undo intact.
 *Status:* built (`AgentChangeSets`, `agent.reviewChanges`, `agent.revertTurn`): ACP turns, and MCP edits grouped
-until two quiet minutes; a change is taken back with the diff's own per-change apply. Not built: a picker for older
-turns (the latest only), a Local History label per turn, files Claude Code writes from a terminal (needs the plugin
-hook, D4), and `propose_edit` accepts (#1836) until both are in master.
+until two quiet minutes; a change is taken back with the diff's own per-change apply. A picker for older turns and a
+Local History label per turn followed. Not built: files Claude Code writes from a terminal (needs the plugin hook,
+D4).
 
 **5. `propose_edit` MCP tool (M)** — needs 2
 Instead of writing, the agent proposes: Editora opens the proposal in `DiffViewerPane` with the
@@ -149,8 +149,8 @@ changes. Stored per head commit; synced with GitHub's viewed state (GraphQL `mar
 one, for a PR (force-push aware) and for agent turns.
 *Status (14 and 15):* built. PR tabs use GitHub's `viewerViewedState` and `viewerLatestReview` (GraphQL), and
 the REST compare of the reviewed commit and the head; Git reviews keep marks in `reviews.json` (schema 2) by a
-digest of each file's diff. Not built: the agent-turn interdiff (it comes with item 4), and the 100-file cap on the
-viewed read.
+digest of each file's diff. The viewed read pages through every file (`gh --paginate`). Not built: the agent-turn interdiff
+(it comes with item 4).
 
 **16. Code intelligence in the diff (M/L)**
 On the working-tree side of a diff: hover, go to definition, find references (LSP), and "Show in

@@ -18,7 +18,7 @@ public final class PrViewed {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    /** How many files one read brings (GitHub's page size limit). */
+    /** How many files one page brings (GitHub's page size limit); {@code gh --paginate} reads every page. */
     static final int MAX_FILES = 100;
 
     private PrViewed() {}
@@ -56,9 +56,10 @@ public final class PrViewed {
         }
     }
 
-    private static final String QUERY = "query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,"
-            + "name:$name){pullRequest(number:$number){id viewerLatestReview{commit{oid}} files(first:" + MAX_FILES
-            + "){nodes{path viewerViewedState}}}}}";
+    private static final String QUERY = "query($owner:String!,$name:String!,$number:Int!,$endCursor:String){"
+            + "repository(owner:$owner,name:$name){pullRequest(number:$number){id viewerLatestReview{commit{oid}}"
+            + " files(first:" + MAX_FILES + ",after:$endCursor){pageInfo{hasNextPage endCursor}"
+            + " nodes{path viewerViewedState}}}}}";
 
     private static final String MARK =
             "mutation($id:ID!,$path:String!){markFileAsViewed(input:{pullRequestId:$id,path:$path}){clientMutationId}}";
@@ -77,6 +78,7 @@ public final class PrViewed {
                 List.of(
                         "api",
                         "graphql",
+                        "--paginate", // every page of files: a pull request lists up to 3,000
                         "--hostname",
                         t.host(),
                         "-F",
@@ -140,26 +142,39 @@ public final class PrViewed {
         if (json == null || json.isBlank()) {
             return State.NONE;
         }
-        JsonNode pr;
-        try {
-            pr = MAPPER.readTree(json).path("data").path("repository").path("pullRequest");
-        } catch (java.io.IOException e) {
-            return State.NONE;
-        }
-        if (pr.isMissingNode() || pr.isNull()) {
-            return State.NONE;
-        }
+        // gh --paginate prints one answer per page, back to back: the first gives the id and the reviewed commit,
+        // each gives its files. A page cut short keeps the files read before it.
+        String id = null;
+        String oid = "";
         Map<String, String> files = new LinkedHashMap<>();
-        for (JsonNode f : pr.path("files").path("nodes")) {
-            String path = f.path("path").asText("");
-            if (!path.isEmpty()) {
-                files.put(path, f.path("viewerViewedState").asText("UNVIEWED"));
+        try (com.fasterxml.jackson.core.JsonParser parser = MAPPER.getFactory().createParser(json)) {
+            while (parser.nextToken() != null) {
+                JsonNode root = MAPPER.readTree(parser);
+                JsonNode pr = (root == null ? MAPPER.missingNode() : root)
+                        .path("data")
+                        .path("repository")
+                        .path("pullRequest");
+                if (pr.isMissingNode() || pr.isNull()) {
+                    continue;
+                }
+                if (id == null) {
+                    id = pr.path("id").asText("");
+                    oid = pr.path("viewerLatestReview")
+                            .path("commit")
+                            .path("oid")
+                            .asText("");
+                }
+                for (JsonNode f : pr.path("files").path("nodes")) {
+                    String path = f.path("path").asText("");
+                    if (!path.isEmpty()) {
+                        files.put(path, f.path("viewerViewedState").asText("UNVIEWED"));
+                    }
+                }
             }
+        } catch (java.io.IOException e) {
+            // keep what was read
         }
-        return new State(
-                pr.path("id").asText(""),
-                Map.copyOf(files),
-                pr.path("viewerLatestReview").path("commit").path("oid").asText(""));
+        return id == null ? State.NONE : new State(id, Map.copyOf(files), oid);
     }
 
     /**

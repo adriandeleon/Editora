@@ -1128,7 +1128,7 @@ final class AgentCoordinator implements AcpClient.Host {
         }
         AgentChangeSets changes = ops.agentChanges();
         if (changes != null && open.getPath() != null) {
-            changes.beforeAgentWrite(open.getPath(), open.getContent()); // the turn's change set: what it was
+            changes.beforeAgentWrite(open.getPath(), open.getContent(), true); // the turn's change set: what it was
         }
         // The agent read getContent() (the whole file), so widen a narrowed buffer rather than nest the file in it.
         open.applyPreparedWholeText(prepared, body); // the version was checked by the caller
@@ -1156,7 +1156,7 @@ final class AgentCoordinator implements AcpClient.Host {
         }
         AgentChangeSets changes = ops.agentChanges();
         if (changes != null) {
-            changes.beforeAgentWrite(file, plan.existing() != null ? plan.previousText() : null);
+            changes.beforeAgentWrite(file, plan.existing() != null ? plan.previousText() : null, false);
         }
         java.util.function.BooleanSupplier stillClosed = () -> {
             try {

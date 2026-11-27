@@ -65,6 +65,14 @@ class AgentChangesFxTest {
         return active();
     }
 
+    /** The newest turn that changed {@code file} (the tests share one window, so not always the newest turn). */
+    private AgentChangeSets.Turn turnWith(Path file) {
+        return fx.controller.agentChanges.turns().stream()
+                .filter(t -> t.before().containsKey(file))
+                .findFirst()
+                .orElseThrow();
+    }
+
     private EditorBuffer active() {
         try {
             return FxTestSupport.callOnFx(
@@ -87,11 +95,11 @@ class AgentChangesFxTest {
         EditorBuffer b = open("Turn.java");
         assertNull(fx.controller.editBuffer(b.getPath().toString(), "int b = 2;", "int b = 20;", false));
         assertNull(fx.controller.editBuffer(b.getPath().toString(), "int a = 1;", "int a = 10;", false));
-        AgentChangeSets.Turn turn = fx.controller.agentChanges.latest();
+        AgentChangeSets.Turn turn = turnWith(b.getPath());
         assertTrue(turn.fileCount() >= 1, "this file, and another test's within the same quiet time");
         assertEquals(TEXT, turn.before().get(b.getPath()), "before the turn's first edit");
 
-        FxTestSupport.runOnFx(() -> fx.controller.registry.run("agent.reviewChanges"));
+        FxTestSupport.runOnFx(() -> fx.controller.diffCoordinator.openAgentChanges(turn));
         Await.until(
                 () -> {
                     try {
@@ -111,7 +119,7 @@ class AgentChangesFxTest {
             asked.add(q);
             return true;
         });
-        FxTestSupport.runOnFx(() -> fx.controller.registry.run("agent.revertTurn"));
+        FxTestSupport.runOnFx(() -> fx.controller.diffCoordinator.revertTurn(turnWith(b.getPath())));
         assertEquals(1, asked.size(), "asked first");
         assertEquals(TEXT, text(b), "as before the turn");
         FxTestSupport.runOnFx(() -> b.getArea().undo());
@@ -139,7 +147,33 @@ class AgentChangesFxTest {
         assertEquals(
                 "accepted",
                 answer.get(10, java.util.concurrent.TimeUnit.SECONDS).outcome());
-        assertEquals(TEXT, fx.controller.agentChanges.latest().before().get(b.getPath()), "before the accepted edit");
+        assertEquals(TEXT, turnWith(b.getPath()).before().get(b.getPath()), "before the accepted edit");
+    }
+
+    @Test
+    void eachTurnLeavesALabelledRevisionAndSeveralTurnsAskWhichOne() throws Exception {
+        EditorBuffer b = open("Labelled.java");
+        String path = b.getPath().toString();
+        assertNull(fx.controller.editBuffer(path, "int b = 2;", "int b = 7;", false));
+        AgentChangeSets.Turn turn = turnWith(b.getPath());
+        String label = "Before " + AgentChangeSets.name(turn);
+        Await.until(
+                () -> fx.controller.localHistory(path).stream().anyMatch(h -> label.equals(h.label())),
+                "File History has the turn's restore point");
+        int at = fx.controller.localHistory(path).stream()
+                .filter(h -> label.equals(h.label()))
+                .findFirst()
+                .orElseThrow()
+                .index();
+        assertEquals(TEXT, fx.controller.localHistoryText(path, at), "the file before the turn");
+
+        FxTestSupport.runOnFx(() -> fx.controller.agentChanges.beginTurn("Claude Code"));
+        FxTestSupport.runOnFx(() -> fx.controller.agentChanges.beforeAgentWrite(b.getPath(), TEXT, false));
+        FxTestSupport.runOnFx(() -> fx.controller.agentChanges.endTurn());
+        assertTrue(fx.controller.agentChanges.turns().size() >= 2);
+        FxTestSupport.runOnFx(() -> fx.controller.registry.run("agent.reviewChanges"));
+        assertTrue(FxTestSupport.callOnFx(fx.controller.overlayHost::isShowing), "a picker asks which turn");
+        FxTestSupport.runOnFx(fx.controller.overlayHost::hide);
     }
 
     @Test
@@ -147,7 +181,7 @@ class AgentChangesFxTest {
         EditorBuffer b = open("Keep.java");
         assertNull(fx.controller.editBuffer(b.getPath().toString(), "int b = 2;", "int b = 3;", false));
         Confirm.answerWith(q -> false);
-        FxTestSupport.runOnFx(() -> fx.controller.registry.run("agent.revertTurn"));
+        FxTestSupport.runOnFx(() -> fx.controller.diffCoordinator.revertTurn(turnWith(b.getPath())));
         assertEquals("int a = 1;\nint b = 3;\n", text(b));
     }
 }

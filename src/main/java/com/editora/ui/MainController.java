@@ -2331,6 +2331,16 @@ public class MainController implements com.editora.mcp.McpBridge {
         historyCoordinator =
                 new HistoryCoordinator(coordinatorHost, diffCoordinator, new HistoryOpsHost(this), config.shared());
         noUndoGuard = new NoUndoGuard(historyCoordinator::recordSafetyCopy, coordinatorHost::setStatus);
+        // Before an agent turn first changes an open file, File History keeps it as it was, named for the turn.
+        agentChanges.setOnFirstWrite((turn, file, text) -> {
+            String label = tr("agent.changes.historyLabel", AgentChangeSets.name(turn));
+            Runnable record = () -> historyCoordinator.recordAgentTurn(file, text, label);
+            if (Platform.isFxApplicationThread()) {
+                record.run();
+            } else {
+                Platform.runLater(record);
+            }
+        });
         git.attachWindow(diffCoordinator, buffer -> addBuffer(buffer, true)); // stash review, patches, revision tabs
         fileHistoryToolWindow =
                 toolWindow("fileHistory", ToolWindow.Side.BOTTOM, Icons::history, historyCoordinator::panel);
