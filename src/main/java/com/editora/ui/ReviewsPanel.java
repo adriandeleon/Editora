@@ -50,6 +50,12 @@ final class ReviewsPanel extends VBox implements ToolWindowContent {
         void resolve(ReviewCoordinator.Place place, ReviewThread t, boolean resolved);
 
         void delete(ReviewCoordinator.Place place, ReviewThread t);
+
+        void fixWithAgent(ReviewCoordinator.Place place, ReviewThread t);
+
+        void copyFixPrompt(ReviewCoordinator.Place place, ReviewThread t);
+
+        void dismiss(ReviewCoordinator.Place place, ReviewThread t);
     }
 
     private sealed interface Row permits FileRow, ThreadRow {}
@@ -62,6 +68,9 @@ final class ReviewsPanel extends VBox implements ToolWindowContent {
     private final Actions actions;
     private final TextField filterField = new TextField();
     private final ToggleButton showClosed = new ToggleButton(tr("review.panel.showClosed"));
+    /** Agent findings only, every file together, the most severe first. */
+    private final ToggleButton findings = new ToggleButton(tr("review.panel.findings"));
+
     private final TreeView<Row> tree = new TreeView<>();
     private final Label placeholder = new Label();
     private final StackPane placeholderPane;
@@ -94,7 +103,11 @@ final class ReviewsPanel extends VBox implements ToolWindowContent {
         showClosed.setFocusTraversable(false);
         CommandTips.name(showClosed, "review.toggleShowClosed");
         showClosed.selectedProperty().addListener((o, w, n) -> refresh());
-        HBox header = UiZoom.spacing(new HBox(filterField, clear, showClosed), 6);
+        findings.getStyleClass().addAll("flat", "scope-toggle");
+        findings.setFocusTraversable(false);
+        CommandTips.name(findings, "review.toggleFindings");
+        findings.selectedProperty().addListener((o, w, n) -> refresh());
+        HBox header = UiZoom.spacing(new HBox(filterField, clear, findings, showClosed), 6);
         header.getStyleClass().add("project-filter-bar");
         header.setAlignment(Pos.CENTER_LEFT);
 
@@ -136,6 +149,11 @@ final class ReviewsPanel extends VBox implements ToolWindowContent {
         filterField.requestFocus();
     }
 
+    /** Findings only — as a click on the toggle. */
+    void toggleFindings() {
+        findings.fire();
+    }
+
     /** Show Resolved and Dismissed — as a click on the toggle. */
     void toggleShowClosed() {
         showClosed.fire();
@@ -148,7 +166,13 @@ final class ReviewsPanel extends VBox implements ToolWindowContent {
         String filter = filterField.getText() == null
                 ? ""
                 : filterField.getText().strip().toLowerCase(Locale.ROOT);
-        if (scope.place() != null) {
+        if (scope.place() != null && findings.isSelected()) {
+            // Findings: one flat list, the most severe first, then by file and line.
+            scope.threads().stream()
+                    .filter(t -> t.severity() != null && (showClosed.isSelected() || t.open()) && matches(t, filter))
+                    .sorted(findingOrder())
+                    .forEach(t -> root.getChildren().add(new TreeItem<>(new ThreadRow(scope.place(), t))));
+        } else if (scope.place() != null) {
             Map<String, List<ReviewThread>> byFile = new LinkedHashMap<>();
             for (ReviewThread t : scope.threads()) {
                 if ((showClosed.isSelected() || t.open()) && matches(t, filter)) {
@@ -169,8 +193,19 @@ final class ReviewsPanel extends VBox implements ToolWindowContent {
         }
         tree.setRoot(root);
         boolean empty = root.getChildren().isEmpty();
-        placeholder.setText(tr(scope.place() == null ? "review.panel.noRepository" : "review.panel.empty"));
+        placeholder.setText(tr(
+                scope.place() == null
+                        ? "review.panel.noRepository"
+                        : findings.isSelected() ? "review.panel.noFindings" : "review.panel.empty"));
         placeholderPane.setVisible(empty);
+    }
+
+    /** Findings by severity (blocker first), then file, then line. Pure. */
+    static java.util.Comparator<ReviewThread> findingOrder() {
+        return java.util.Comparator.<ReviewThread>comparingInt(t ->
+                        t.severity() == null ? Integer.MAX_VALUE : t.severity().ordinal())
+                .thenComparing(ReviewThread::path)
+                .thenComparingInt(t -> t.anchor().line());
     }
 
     /** Whether {@code t} matches the filter text: its path, or any comment's text or author. Pure. */
@@ -208,13 +243,26 @@ final class ReviewsPanel extends VBox implements ToolWindowContent {
         MenuItem toggle = new MenuItem(tr(isOpen ? "review.card.resolve" : "review.card.reopen"));
         toggle.setGraphic(isOpen ? Icons.check() : Icons.refresh());
         toggle.setOnAction(e -> actions.resolve(r.place(), r.thread(), isOpen));
+        MenuItem fix = new MenuItem(tr("review.card.fix"));
+        fix.setOnAction(e -> actions.fixWithAgent(r.place(), r.thread()));
+        com.editora.editor.RowReasons.when(fix, isOpen, "review.reason.notOpen");
+        MenuItem copy = new MenuItem(tr("review.panel.copyFixPrompt"));
+        copy.setOnAction(e -> actions.copyFixPrompt(r.place(), r.thread()));
+        MenuItem dismiss = new MenuItem(tr("review.card.dismiss"));
+        dismiss.setOnAction(e -> actions.dismiss(r.place(), r.thread()));
+        com.editora.editor.RowReasons.when(
+                dismiss, r.thread().state() != ReviewThread.State.DISMISSED, "review.reason.alreadyDismissed");
         MenuItem delete = new MenuItem(tr("review.card.delete"));
         delete.setGraphic(Icons.trash());
         delete.getStyleClass().add("danger");
         delete.setOnAction(e -> actions.delete(r.place(), r.thread()));
         return List.of(
                 com.editora.editor.MenuChords.tag(open, "review.openSelected"),
+                com.editora.editor.MenuChords.tag(fix, "review.fixSelectedWithAgent"),
+                com.editora.editor.MenuChords.tag(copy, "review.copySelectedFixPrompt"),
+                new SeparatorMenuItem(),
                 com.editora.editor.MenuChords.tag(toggle, "review.toggleSelectedResolved"),
+                com.editora.editor.MenuChords.tag(dismiss, "review.dismissSelected"),
                 new SeparatorMenuItem(),
                 com.editora.editor.MenuChords.tag(delete, "review.deleteSelected"));
     }
@@ -247,7 +295,10 @@ final class ReviewsPanel extends VBox implements ToolWindowContent {
                 String state = t.open()
                         ? ""
                         : "  · " + tr("review.state." + t.state().name().toLowerCase(Locale.ROOT));
-                setText(tr("review.line", t.anchor().line() + 1) + "  " + ReviewText.label(t) + state);
+                String where = findings.isSelected()
+                        ? t.path() + ":" + (t.anchor().line() + 1)
+                        : tr("review.line", t.anchor().line() + 1);
+                setText(where + "  " + ReviewText.label(t) + state);
                 setContextMenu(new ContextMenu(threadMenuRows(r).toArray(MenuItem[]::new)));
             }
         }

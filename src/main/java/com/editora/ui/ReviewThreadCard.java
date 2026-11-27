@@ -46,6 +46,9 @@ final class ReviewThreadCard {
         void delete(ReviewThread t);
 
         void applySuggestion(ReviewThread t, String suggestion);
+
+        /** Asks the AI Agent panel to do what the thread asks. */
+        void fixWithAgent(ReviewThread t);
     }
 
     /** Most rows the comments take before they scroll. */
@@ -63,6 +66,7 @@ final class ReviewThreadCard {
     private final Button resolve = button("review.card.resolve");
     private final Button dismiss = button("review.card.dismiss");
     private final Button apply = button("review.card.apply");
+    private final Button fix = button("review.card.fix");
     private final Button edit = button("review.card.edit");
     private final Button delete = button("review.card.delete");
     private final VBox card;
@@ -92,7 +96,7 @@ final class ReviewThreadCard {
                 send.fire();
             }
         });
-        WrapRow buttons = new WrapRow(6, 6, send, resolve, dismiss, apply, edit, delete);
+        WrapRow buttons = new WrapRow(6, 6, send, resolve, dismiss, apply, fix, edit, delete);
         buttons.getStyleClass().add("git-hunk-actions");
         card = UiZoom.spacing(new VBox(title, status, commentsScroll, reply, buttons), 6);
         card.getStyleClass().addAll("command-palette", "review-card");
@@ -126,6 +130,7 @@ final class ReviewThreadCard {
             }
         });
         delete.setOnAction(e -> closeThen(Actions::delete));
+        fix.setOnAction(e -> closeThen(Actions::fixWithAgent));
     }
 
     private static Button button(String key) {
@@ -170,6 +175,7 @@ final class ReviewThreadCard {
         resolve.setText(tr(t.open() ? "review.card.resolve" : "review.card.reopen"));
         dismiss.setDisable(t.state() == ReviewThread.State.DISMISSED);
         apply.setDisable(suggestion == null || outdated);
+        fix.setDisable(!t.open());
         edit.setDisable(editable == null);
         overlayHost.showAt(card, anchor[0], anchor[1], anchor[2], reply::requestFocus, () -> shown = null);
     }

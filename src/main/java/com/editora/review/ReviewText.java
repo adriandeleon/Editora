@@ -126,4 +126,55 @@ public final class ReviewText {
     private static String stripCr(String line) {
         return line.endsWith("\r") ? line.substring(0, line.length() - 1) : line;
     }
+
+    /**
+     * What an agent is asked to fix a thread: the file and its lines as they are now, a finding's severity and
+     * category, every comment (the latest suggestion as a proposed change), the lines' text, and, for an agent with
+     * Editora's MCP tools, how to resolve the thread when done. English: it is read by a model, not shown in the UI.
+     * Lines are 1-based.
+     */
+    public static String fixPrompt(String path, int startLine, int endLine, ReviewThread t, String lines) {
+        StringBuilder p = new StringBuilder();
+        p.append("Fix this code review ")
+                .append(t.severity() == null ? "comment" : "finding")
+                .append(" in ")
+                .append(path)
+                .append(startLine == endLine ? ", line " + startLine : ", lines " + startLine + "-" + endLine)
+                .append(".\n");
+        if (t.severity() != null) {
+            p.append("\nSeverity: ").append(t.severity().name().toLowerCase(java.util.Locale.ROOT));
+            if (t.category() != null && !t.category().isBlank()) {
+                p.append(" (").append(t.category()).append(')');
+            }
+            p.append('\n');
+        }
+        String suggestion = null;
+        for (ReviewComment c : t.comments()) {
+            String who = switch (c.author().kind()) {
+                case USER -> "The user";
+                case AGENT ->
+                    c.author().name().isBlank() ? "An agent" : c.author().name();
+                case GITHUB -> "@" + c.author().name();
+            };
+            p.append('\n')
+                    .append(who)
+                    .append(" wrote:\n")
+                    .append(c.body().strip())
+                    .append('\n');
+            if (c.suggestion() != null) {
+                suggestion = c.suggestion();
+            }
+        }
+        p.append("\nThe lines as they are now:\n```\n").append(lines).append("\n```\n");
+        if (suggestion != null) {
+            p.append("\nThe suggested replacement for those lines:\n```\n")
+                    .append(suggestion)
+                    .append("\n```\n");
+        }
+        p.append("\nChange only what this asks for. If you have Editora's MCP tools, call resolve_review_comment with")
+                .append(" thread_id \"")
+                .append(t.id())
+                .append("\" and a note saying what you changed.");
+        return p.toString();
+    }
 }

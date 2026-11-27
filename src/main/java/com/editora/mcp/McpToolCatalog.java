@@ -173,7 +173,8 @@ final class McpToolCatalog {
                 "add_review_comment",
                 "Start a review thread on lines of a file, shown to the user after those lines in the editor and"
                         + " in the Review Comments window. Use it for review findings the user should read and act"
-                        + " on; it changes no file. Returns the thread's id.",
+                        + " on; it changes no file. Returns the thread's id. A finding the user dismissed on the"
+                        + " same lines is refused, with the user's reason: do not raise it again.",
                 addReview,
                 "path",
                 "start_line",

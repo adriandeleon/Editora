@@ -90,6 +90,9 @@ repository:
 - `resolve_review_comment` resolves an open thread, with a note saying what
   was done; the note is kept, naming the agent.
 
+A finding you dismissed on some lines is not added there again:
+`add_review_comment` refuses it and gives the agent your reason.
+
 These tools change no file: they write only the review threads. A comment goes
 only on a file the agent may open (see below), and none reaches GitHub.
 

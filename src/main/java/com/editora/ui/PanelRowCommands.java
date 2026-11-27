@@ -67,7 +67,13 @@ final class PanelRowCommands {
                     mc.notesToolWindow,
                     () -> mc.notesCoordinator.panel().runMenuRow(id));
         }
-        for (String id : List.of("review.openSelected", "review.toggleSelectedResolved", "review.deleteSelected")) {
+        for (String id : List.of(
+                "review.openSelected",
+                "review.fixSelectedWithAgent",
+                "review.copySelectedFixPrompt",
+                "review.toggleSelectedResolved",
+                "review.dismissSelected",
+                "review.deleteSelected")) {
             menuRow(
                     mc,
                     id,

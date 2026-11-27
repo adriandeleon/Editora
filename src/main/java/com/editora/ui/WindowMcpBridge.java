@@ -807,6 +807,12 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
         }
         com.editora.config.TextAnchor anchor = com.editora.review.ReviewAnchors.capture(text, startLine - 1, last - 1);
         com.editora.config.ReviewThread.Severity sev = level;
+        if (sev != null) {
+            String dismissed = mcpOnFx(() -> host.reviewCoordinator().dismissedOn(place, anchor));
+            if (dismissed != null) {
+                return new ReviewAdded(null, dismissed, 0, 0);
+            }
+        }
         String id = mcpOnFx(
                 () -> host.reviewCoordinator().agentStart(place, anchor, body, suggestion, sev, category, agent));
         return new ReviewAdded(id, null, startLine, last);
