@@ -47,6 +47,51 @@ class McpToolsTest {
 
         List<OpenFile> openFiles = List.of();
         List<Diagnostic> diagnostics = List.of();
+        List<ReviewThreadInfo> reviews = List.of();
+        ReviewAdded added = new ReviewAdded("t1", null, 1, 1);
+        String reviewError;
+        boolean noRepository;
+        String lastAgent;
+        String lastReviewArgs;
+
+        @Override
+        public List<ReviewThreadInfo> listReviews(String path, boolean all) {
+            if (noRepository) {
+                throw new IllegalStateException("The window has no Git repository.");
+            }
+            lastReviewArgs = path + " " + all;
+            return reviews;
+        }
+
+        @Override
+        public ReviewAdded addReview(
+                String path,
+                int startLine,
+                int endLine,
+                String body,
+                String suggestion,
+                String severity,
+                String category,
+                String agent) {
+            lastAgent = agent;
+            lastReviewArgs = path + ":" + startLine + "-" + endLine + " " + body + " " + suggestion + " " + severity
+                    + " " + category;
+            return added;
+        }
+
+        @Override
+        public String replyReview(String threadId, String body, String suggestion, String agent) {
+            lastAgent = agent;
+            lastReviewArgs = threadId + " " + body;
+            return reviewError;
+        }
+
+        @Override
+        public String resolveReview(String threadId, String note, String agent) {
+            lastAgent = agent;
+            lastReviewArgs = threadId + " " + note;
+            return reviewError;
+        }
 
         @Override
         public List<OpenFile> listOpenFiles() {
