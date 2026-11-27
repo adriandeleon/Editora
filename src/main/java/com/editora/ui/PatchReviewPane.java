@@ -181,6 +181,11 @@ final class PatchReviewPane implements TabContent {
                 : applyBar.getChildren().stream().map(Button.class::cast).toList();
     }
 
+    /** The review's files, in the order shown. */
+    List<Entry> entries() {
+        return entries;
+    }
+
     List<DiffViewerPane> panes() {
         return entries.stream().map(Entry::pane).toList();
     }

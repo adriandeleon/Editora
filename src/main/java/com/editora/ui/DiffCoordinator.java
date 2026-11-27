@@ -1702,7 +1702,7 @@ final class DiffCoordinator {
         }
         List<String> paths = new ArrayList<>();
         List<String> digests = new ArrayList<>();
-        for (PatchReviewPane.Entry e : entries) {
+        for (PatchReviewPane.Entry e : review.entries()) { // the order shown, which the marks are indexed by
             paths.add(e.label() == null ? "" : e.label());
             digests.add(StoredViewed.digest(e.pane().shownLeftText(), e.pane().shownRightText()));
         }
