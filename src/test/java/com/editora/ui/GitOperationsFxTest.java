@@ -548,10 +548,10 @@ class GitOperationsFxTest {
             Button clone = FxTestSupport.field(panel(fx), "cloneButton");
             assertFalse(FxTestSupport.callOnFx(clone::isVisible), "there is a repository here: do not offer to clone");
 
-            // An ordinary folder afterwards goes back to "No VCS".
+            // An ordinary folder afterwards goes back to "No Git".
             FxTestSupport.runOnFx(() -> git.applyState(GitService.RepoState.NONE));
             assertEquals(
-                    tr("statusbar.noVcs"),
+                    tr("statusbar.noGit"),
                     FxTestSupport.callOnFx(() -> gitSegment(fx).getText()));
             assertEquals(tr("gitpanel.placeholder"), FxTestSupport.callOnFx(placeholder::getText));
             assertTrue(FxTestSupport.callOnFx(clone::isVisible));

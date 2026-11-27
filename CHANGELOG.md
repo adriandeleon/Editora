@@ -123,6 +123,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The status bar says "No Git" outside a repository**, not "No VCS": Git is the only version control Editora
+  speaks, so the segment and its dropdown now name it.
 - **Kotlin call stacks name a lowercase or hyphenated file's functions after the file.** A frame in `hello.kt` read
   `HelloKt.main` (and its lambdas `HelloKt.main { lambda }`) instead of `hello.main`, because the debugger did not
   capitalise the file name or turn `-` into `_` the way kotlinc names the file's class.

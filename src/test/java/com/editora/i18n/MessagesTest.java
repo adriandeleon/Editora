@@ -61,6 +61,19 @@ class MessagesTest {
      * sets still match and a full {@code verify} passes with {@code <<<<<<< HEAD} sitting in the shipped
      * resources. Observed, not hypothesised: it is how a conflicted cherry-pick went green here.
      */
+    /** Outside a repository the Git segment and its dropdown name Git, the only VCS Editora has, not "VCS". */
+    @Test
+    void noRepositoryStateSaysNoGit() {
+        Properties base = loadProps("/com/editora/i18n/messages.properties");
+        assertEquals("No Git", base.getProperty("statusbar.noGit"));
+        assertEquals("No Git", base.getProperty("branchpopup.noGit"));
+        for (String locale : ALL_CATALOGS) {
+            String suffix = locale.isEmpty() ? "" : "_" + locale;
+            Properties p = loadProps("/com/editora/i18n/messages" + suffix + ".properties");
+            assertTrue(p.getProperty("statusbar.noGit", "").contains("Git"), "statusbar.noGit in " + suffix);
+        }
+    }
+
     @Test
     void noCatalogHasAMalformedOrDuplicateKey() {
         for (String lang : ALL_CATALOGS) {
