@@ -29,7 +29,7 @@ class ExecutionLineFxTest {
     }
 
     private static EditorBuffer buffer() throws Exception {
-        return FxTestSupport.callOnFx(() -> {
+        EditorBuffer buffer = FxTestSupport.callOnFx(() -> {
             EditorBuffer b = new EditorBuffer();
             b.setLanguageOverride("java");
             b.setContent(SRC);
@@ -38,6 +38,19 @@ class ExecutionLineFxTest {
             b.getFoldManager().recompute();
             return b;
         });
+        // The fold regions come from a scan off the FX thread: a test that folds before it lands finds no region
+        // (it failed that way on a loaded CI runner, three times in a row).
+        com.editora.testkit.Await.until(
+                () -> {
+                    try {
+                        return FxTestSupport.callOnFx(
+                                () -> buffer.getFoldManager().scansSettledForTest());
+                    } catch (Exception e) {
+                        return false;
+                    }
+                },
+                "the fold scan landed");
+        return buffer;
     }
 
     private static List<Integer> highlighted(EditorBuffer b) throws Exception {
