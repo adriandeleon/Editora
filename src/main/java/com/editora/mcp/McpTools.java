@@ -519,6 +519,8 @@ final class McpTools {
                         .put("hover", bridge.hover(text(args, "path"), place(args, "line"), place(args, "column")))));
             case "workspace_symbols" -> reviewTool(() -> workspaceSymbolsResult(req(args, "query")));
             case "local_history" -> reviewTool(() -> localHistoryResult(args));
+            case "test_results" -> reviewTool(() -> testResultsResult(bool(args, "include_passed")));
+            case "debug_state" -> reviewTool(this::debugStateResult);
             case "git_status" -> gitStatusResult();
             case "list_tabs" -> tabsResult();
             case "todo_scan" -> todoScanResult();
@@ -796,6 +798,65 @@ final class McpTools {
             arr.add(o);
         }
         return textResult(arr);
+    }
+
+    private ObjectNode testResultsResult(boolean includePassed) {
+        McpBridge.TestSummary t = bridge.testResults(includePassed);
+        ObjectNode o = m.createObjectNode().put("ran", t.ran());
+        if (!t.ran()) {
+            return textResult(o);
+        }
+        o.put("running", t.running()).put("exitCode", t.exitCode());
+        o.putObject("counts")
+                .put("total", t.total())
+                .put("passed", t.passed())
+                .put("failed", t.failed())
+                .put("errored", t.errored())
+                .put("skipped", t.skipped());
+        ArrayNode tests = o.putArray("tests");
+        for (McpBridge.TestCase c : t.tests()) {
+            ObjectNode n = tests.addObject()
+                    .put("suite", c.suite())
+                    .put("name", c.name())
+                    .put("status", c.status())
+                    .put("millis", c.millis());
+            if (!c.message().isEmpty()) {
+                n.put("message", c.message());
+            }
+            if (!c.stackTrace().isEmpty()) {
+                n.put("stackTrace", c.stackTrace());
+            }
+            if (!c.file().isEmpty()) {
+                n.put("file", c.file());
+            }
+            if (c.line() > 0) {
+                n.put("line", c.line());
+            }
+        }
+        return textResult(o);
+    }
+
+    private ObjectNode debugStateResult() {
+        McpBridge.DebugState d = bridge.debugState();
+        ObjectNode o = m.createObjectNode().put("state", d.state()).put("selectedFrame", d.selectedFrame());
+        ArrayNode frames = o.putArray("frames");
+        for (McpBridge.Frame f : d.frames()) {
+            ObjectNode n = frames.addObject().put("id", f.id()).put("name", f.name());
+            if (!f.path().isEmpty()) {
+                n.put("path", f.path()).put("line", f.line()).put("column", f.column());
+            }
+        }
+        ArrayNode vars = o.putArray("variables");
+        for (McpBridge.Variable v : d.variables()) {
+            ObjectNode n = vars.addObject()
+                    .put("depth", v.depth())
+                    .put("name", v.name())
+                    .put("value", v.value());
+            if (!v.type().isEmpty()) {
+                n.put("type", v.type());
+            }
+        }
+        return textResult(o);
     }
 
     private ObjectNode localHistoryResult(@Nullable JsonNode args) {

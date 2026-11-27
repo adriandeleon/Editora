@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Test results and debug state for agents.** MCP `test_results` reads the last test run (counts and each failure
+  with its message and stack trace) and `debug_state` the paused session's call stack and the variables you have
+  expanded.
 - **Older agent turns, and a restore point per turn.** **Agent: Review Changes** and **Agent: Revert Turn** ask which
   of the kept turns when there are several, and File History keeps each open file as it was before a turn first
   changed it, labelled with the turn.

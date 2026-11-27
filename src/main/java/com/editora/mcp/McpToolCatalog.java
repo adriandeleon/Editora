@@ -243,6 +243,19 @@ final class McpToolCatalog {
                 history,
                 "path"));
         tools.add(tool(
+                "test_results",
+                "The last test run, as the Test Results window shows it: whether it still runs, its exit code and"
+                        + " counts, and each test that did not pass (suite, name, status, time, message, stack trace,"
+                        + " file and line). Pass include_passed for the passing tests too. Empty when no test has"
+                        + " run in this window.",
+                obj().set("include_passed", boolProp("List the passing tests too (default false)."))));
+        tools.add(tool(
+                "debug_state",
+                "The focused debug session as the Debug window shows it: its state (SUSPENDED when paused), the"
+                        + " call stack (frames with file and 1-based line), the selected frame, and the variables as"
+                        + " far as they are expanded there (depth 0 is a scope). Nothing is asked of the program.",
+                obj()));
+        tools.add(tool(
                 "git_status",
                 "Get the Git status for the editor's context: branch, upstream, ahead/behind, changed files.",
                 obj()));
@@ -348,6 +361,8 @@ final class McpToolCatalog {
             case "lsp_hover" -> new Info("Hover", Kind.READ);
             case "workspace_symbols" -> new Info("Workspace Symbols", Kind.READ);
             case "local_history" -> new Info("Local History", Kind.READ);
+            case "test_results" -> new Info("Test Results", Kind.READ);
+            case "debug_state" -> new Info("Debug State", Kind.READ);
             case "git_status" -> new Info("Git Status", Kind.READ);
             case "list_tabs" -> new Info("List Tabs", Kind.READ);
             case "todo_scan" -> new Info("Scan TODOs", Kind.READ);

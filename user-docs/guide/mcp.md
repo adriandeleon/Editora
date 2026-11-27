@@ -18,7 +18,7 @@ these tools, in four groups:
 
 | Group | Tools |
 | --- | --- |
-| **Reads** | `list_open_files`, `list_tabs`, `read_buffer`, `get_selection`, `get_diagnostics`, `document_symbols`, `lsp_definition`, `lsp_references`, `lsp_hover`, `workspace_symbols`, `local_history`, `git_status`, `todo_scan`, `find_in_files`, `list_commands` |
+| **Reads** | `list_open_files`, `list_tabs`, `read_buffer`, `get_selection`, `get_diagnostics`, `document_symbols`, `lsp_definition`, `lsp_references`, `lsp_hover`, `workspace_symbols`, `local_history`, `test_results`, `debug_state`, `git_status`, `todo_scan`, `find_in_files`, `list_commands` |
 | **Writes** | `edit_buffer` (undoable str-replace edits), `propose_edit` (the same edit, shown to you to accept or reject first), `save_buffer` |
 | **Actions** | `open_file`, `execute_command` |
 | **Review** | `list_review_comments`, `add_review_comment`, `reply_to_review_comment`, `resolve_review_comment` |
@@ -112,6 +112,17 @@ These read tools answer as the editor would, for a file open in the window:
 
 A file no language server serves, a file that is not open and an encrypted
 file are refused with the reason.
+
+Two more read what a window shows, without running anything:
+
+- `test_results` gives the last test run in the Test Results window: whether
+  it still runs, its exit code and counts, and each test that did not pass,
+  with its message, stack trace (up to 4,000 characters) and file and line.
+  `include_passed` lists the passing tests too.
+- `debug_state` gives the focused debug session: its state (`SUSPENDED` while
+  paused), the call stack, the selected frame, and the variables as far as you
+  have expanded them in the Debug window. To let an agent see inside a
+  variable, expand it there.
 
 ### Review comments
 

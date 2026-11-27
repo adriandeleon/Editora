@@ -88,6 +88,18 @@ class McpJsonRpcToolsTest {
         }
 
         @Override
+        public TestSummary testResults(boolean includePassed) {
+            record("testResults " + includePassed);
+            return new TestSummary(false, false, 0, 0, 0, 0, 0, 0, List.of());
+        }
+
+        @Override
+        public DebugState debugState() {
+            record("debugState");
+            return new DebugState("INACTIVE", List.of(), -1, List.of());
+        }
+
+        @Override
         public List<HistoryEntry> localHistory(String path) {
             record("localHistory " + path);
             return List.of();
@@ -376,6 +388,8 @@ class McpJsonRpcToolsTest {
                         "lsp_hover",
                         "workspace_symbols",
                         "local_history",
+                        "test_results",
+                        "debug_state",
                         "git_status",
                         "list_tabs",
                         "todo_scan",

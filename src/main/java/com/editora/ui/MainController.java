@@ -530,6 +530,16 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     @Override
+    public TestSummary testResults(boolean includePassed) {
+        return mcpBridge.testResults(includePassed);
+    }
+
+    @Override
+    public DebugState debugState() {
+        return mcpBridge.debugState();
+    }
+
+    @Override
     public @Nullable String saveBuffer(@Nullable String path) {
         return mcpBridge.saveBuffer(path);
     }
