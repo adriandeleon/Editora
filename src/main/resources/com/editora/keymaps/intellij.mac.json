@@ -1,7 +1,7 @@
 {
   "Cmd-s": "file.save",
   "Cmd-S-s": "file.saveAs",
-  "Cmd-S-o": "file.find",
+  "Cmd-S-o": "nav.gotoFile",
   "Cmd-n": "lsp.generate",
   "C-Cmd-n": "file.new",
   "Cmd-w": "buffer.close",

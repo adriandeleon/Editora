@@ -245,7 +245,7 @@ java -jar target/Editora-*.jar
 A fresh install opens on the **Welcome** page. Its buttons are the quickest way
 in:
 
-- **Open Folder as a Project…** opens a folder with its file tree in the
+- **Open Folder…** opens a folder as a project, with its file tree in the
   Project tool window. This is the usual way to work on a codebase; each project
   gets its own window and remembers its open files.
 - **Open File…** opens a single file.
@@ -293,7 +293,7 @@ Editora is keyboard-first. These get you moving:
 | Do this | Emacs keymap | VS Code keymap |
 | --- | --- | --- |
 | Open the command palette (everything is here) | `M-x` | `Ctrl+Shift+P` or `F1` |
-| Find or open a file by path | `C-x C-f` | `Ctrl+P` |
+| Open a file (by path; in VS Code, by name in the project) | `C-x C-f` | `Ctrl+P` |
 | Save | `C-x C-s` | `Ctrl+S` |
 | Jump to a symbol in the file | `M-g i` | `Ctrl+Shift+O` |
 | Switch between open files | `C-x b` | (palette) |

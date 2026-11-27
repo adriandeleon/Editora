@@ -48,9 +48,11 @@ have the full reference.
   scroll and preview tabs.
   ([Search Everywhere](https://editora-project.dev/features/search-everywhere),
   [code navigation](https://editora-project.dev/features/code-navigation))
-- **Code intelligence.** Language servers for 23 languages, auto-detected on `PATH`: diagnostics,
-  go-to, rename, code actions, Java refactorings and code generation, inlay hints and code lenses.
-  Debug Java, Python and Node over DAP; run files and project main classes with saved configurations.
+- **Code intelligence.** 29 language servers, auto-detected on `PATH` or installed from Settings:
+  diagnostics, go-to, rename, code actions, Java refactorings and code generation, inlay hints and code
+  lenses. Step-debug 20 languages over DAP, among them Java, Kotlin, Python, JavaScript and TypeScript, Go,
+  Rust, C/C++, C# and Ruby; run files, project main classes (JavaFX apps included) and the test at the
+  caret, with saved configurations.
   ([LSP](https://editora-project.dev/features/lsp),
   [debugging](https://editora-project.dev/features/debugging),
   [run configurations](https://editora-project.dev/features/run-configurations))
@@ -91,7 +93,7 @@ have the full reference.
   ([plugins](https://editora-project.dev/features/plugins),
   [AI](https://editora-project.dev/features/ai),
   [MCP](https://editora-project.dev/features/mcp))
-- **Yours to shape.** 26 themes, five bundled coding fonts, Zen, Expert and Simple UI modes,
+- **Yours to shape.** 30 themes, five bundled coding fonts, Zen, Expert and Simple UI modes,
   settings sync through a Git repository you own, and an interface in six languages.
   ([themes & fonts](https://editora-project.dev/features/themes-fonts),
   [Zen mode](https://editora-project.dev/features/zen-mode),

@@ -36,7 +36,7 @@ import static com.editora.i18n.Messages.tr;
 /**
  * Emacs {@code find-file}-style keyboard file opener: a path field with a live, prefix-autocompleted
  * listing of the current directory. Type to filter, {@code Tab} to complete the common prefix, Enter
- * to descend into a folder or open a file (a non-existent path opens a new buffer to be written on
+ * to descend into a folder or open a file (in a folder picker: choose the folder typed, or the one listed) (a non-existent path opens a new buffer to be written on
  * save), ↑/↓ (or the keymap's line-up/down chords) to move, {@code Esc} (or the keymap's cancel) to cancel.
  * When {@link #setOpenAsProject} wires it, {@code C-d} opens the highlighted folder (or the folder being listed)
  * as a project. Keyboard-only; see {@link PickerKeys}.
@@ -377,9 +377,14 @@ public class FileFinder {
     /**
      * Enter: in directory-pick mode, choose the target folder; otherwise descend into a directory or
      * hand a file/new path to {@code onChoose}. (In directory mode, {@code Tab} is used to descend.)
+     *
+     * <p>The folder a directory-pick Enter chooses ({@link #pickedFolder}): with the field ending in a separator and
+     * the highlight untouched, the folder being listed, as {@code C-d} has it. Tab-completing
+     * {@code projects/hello} to {@code projects/hello-fx/} and pressing Enter used to choose {@code src/}, the
+     * child that happened to sit on row one (r/JavaFX dry run, 2026-11-27).
      */
     private void chooseSelected() {
-        Path target = targetPath();
+        Path target = pickDirectory ? pickedFolder() : targetPath();
         if (target == null || choosing) {
             return; // a second Enter while the first one's look is under way does nothing
         }
@@ -391,7 +396,7 @@ public class FileFinder {
         choosing = true;
         com.editora.perf.OffFx.then("file-finder-look", () -> Files.isDirectory(target), folder -> {
             choosing = false;
-            if (target.equals(targetPath())) { // nothing typed meanwhile
+            if (target.equals(pickDirectory ? pickedFolder() : targetPath())) { // nothing typed meanwhile
                 chosen(target, folder.or(false));
             }
         });
@@ -450,6 +455,19 @@ public class FileFinder {
             return highlighted;
         }
         return listedDir;
+    }
+
+    /**
+     * The folder a directory-pick Enter chooses: with the field ending in a separator and the highlight untouched,
+     * the folder being listed (as {@link #projectFolder} has it for {@code C-d}); else the highlighted row or the
+     * typed path.
+     */
+    private @Nullable Path pickedFolder() {
+        Path listed = listing.readable() ? currentDir : null;
+        if (listed != null && prefixPart(input.getText()).isEmpty() && !highlightMoved) {
+            return listed;
+        }
+        return targetPath();
     }
 
     /** The selected list entry, or the literal typed path when nothing is selected. */

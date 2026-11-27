@@ -72,6 +72,11 @@ A leading sigil restricts it to a single source when you already know:
 These are VS Code's sigils, chosen because the muscle memory for them already
 exists.
 
+**Go to File** (`nav.gotoFile`: Ctrl+P in the VS Code and Sublime keymaps,
+Ctrl+Shift+N in IntelliJ's, ⌘P and ⌘⇧O on macOS) opens it with `#` already
+typed, so the name you type next finds a project file wherever it sits. In a
+window with no project it opens Find File (`file.find`) instead.
+
 Results stay **grouped by source** rather than interleaved on raw score. The
 sources differ in size by orders of magnitude (tens of thousands of symbols,
 thousands of files, a few hundred commands), so a flat merge would fill the

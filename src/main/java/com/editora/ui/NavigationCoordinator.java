@@ -565,6 +565,24 @@ final class NavigationCoordinator {
     }
 
     /**
+     * {@code nav.gotoFile}: find a project file by name wherever it sits — Search Everywhere scoped to files.
+     * What IntelliJ's Ctrl+Shift+N and VS Code's and Sublime's Ctrl+P are bound to: those used to run {@code
+     * file.find}, a path prompt relative to the project root, where a bare class name found nothing and Enter made
+     * a new empty buffer of that name. A window with no project (or no index) has no files to search, so there it
+     * is that prompt, {@code findFile}.
+     */
+    void gotoFile(Runnable findFile) {
+        if (host.chrome().searchEverywherePopup == null) {
+            return; // overlay host not installed yet (very early in init)
+        }
+        if (host.windowProject() == null || !host.indexCoordinator().isEnabled()) {
+            findFile.run();
+            return;
+        }
+        host.chrome().searchEverywherePopup.showFiles();
+    }
+
+    /**
      * {@code nav.relatedFile}: jump between a file and its counterpart — a test and its subject, a header
      * and its implementation, a component and its stylesheet.
      *

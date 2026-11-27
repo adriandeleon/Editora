@@ -395,7 +395,7 @@ Reopen it from **Help → Welcome Page** (`view.welcome`). From top to bottom it
 
 ![The Welcome tab with the Editora logo, a Start list (New File, Open File, Open Folder as a Project, Clone Git Repository, Command Palette) with shortcuts, and Recent Projects and Recent Files lists](/screenshots/docs/welcome.png "The Welcome page, with the Project tool window open beside it.")
 
-- **Start**: New File, Open File, Open Folder as a Project, Clone Git
+- **Start**: New File, Open File, Open Folder (as a project), Clone Git
   Repository and the Command Palette, each with its shortcut when the keymap
   binds one.
 - **Recent Projects**, newest first. Picking one opens or focuses that

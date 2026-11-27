@@ -11,7 +11,9 @@ import java.util.List;
  * <p>Module and class paths are combined onto a single {@code -cp} (classpath). This runs the common
  * classpath-based Maven/Gradle app correctly, and runs a modular project's main class off the classpath too
  * (the module system falls back to the unnamed module) — good enough to "just run it" without needing the
- * module name. A true JPMS {@code --module <mod>/<class>} launch is deferred.
+ * module name. A true JPMS {@code --module <mod>/<class>} launch is deferred. JavaFX is the exception: its jars
+ * go on {@code --module-path} with {@code --add-modules} ({@link JavaFxModules}), or an {@code Application}
+ * subclass stops with "JavaFX runtime components are missing".
  */
 public final class JavaRunCommand {
 
@@ -29,13 +31,21 @@ public final class JavaRunCommand {
         if (vmArgs != null) {
             argv.addAll(vmArgs);
         }
-        List<String> cp = new ArrayList<>();
+        List<String> paths = new ArrayList<>();
         if (modulePaths != null) {
-            cp.addAll(modulePaths);
+            paths.addAll(modulePaths);
         }
         if (classPaths != null) {
-            cp.addAll(classPaths);
+            paths.addAll(classPaths);
         }
+        JavaFxModules.Split fx = JavaFxModules.split(paths, vmArgs);
+        if (fx.any()) {
+            argv.add("--module-path");
+            argv.add(String.join(File.pathSeparator, fx.jars()));
+            argv.add("--add-modules");
+            argv.add(fx.addModules());
+        }
+        List<String> cp = fx.rest();
         if (!cp.isEmpty()) {
             argv.add("-cp");
             argv.add(String.join(File.pathSeparator, cp));

@@ -350,9 +350,45 @@ class FileFinderFxTest {
             s.awaitRows(1);
             assertEquals(List.of("api"), s.names());
 
+            s.press(KeyCode.DOWN); // the highlight moved onto a child: that child is the one meant
             s.press(KeyCode.ENTER);
             assertEquals(List.of(root.resolve("docs").resolve("api")), s.chosen, "Enter chooses the highlighted one");
             assertFalse(FxTestSupport.callOnFx(s.finder::isShown));
+        }
+    }
+
+    /**
+     * Regression (r/JavaFX dry run, 2026-11-27): Tab-completing a folder then pressing Enter chose the child on row
+     * one ({@code src/}) instead of the folder just completed to, so Open Folder as a Project opened {@code src}.
+     */
+    @Test
+    void theFolderPickerChoosesTheFolderTabCompletedToNotItsFirstChild(@TempDir Path root) throws Exception {
+        tree(root);
+        Files.createDirectory(root.resolve("docs").resolve("api"));
+        try (Shown s = new Shown(root, true, 2)) {
+            s.type(root + SEP + "do");
+            s.awaitRows(1);
+            assertTrue(s.press(KeyCode.TAB));
+            assertEquals(root.resolve("docs") + SEP, s.text());
+            s.awaitRows(1);
+            assertEquals(root.resolve("docs").resolve("api"), s.selected(), "row one is highlighted");
+
+            s.press(KeyCode.ENTER);
+            SaveGuardsFxTest.awaitOnFx(s.async, "a folder chosen", () -> !s.chosen.isEmpty());
+            assertEquals(List.of(root.resolve("docs")), s.chosen, "the folder in the field, not row one");
+        }
+    }
+
+    @Test
+    void theFolderPickerChoosesATypedChildByItsName(@TempDir Path root) throws Exception {
+        tree(root);
+        Files.createDirectory(root.resolve("docs").resolve("api"));
+        try (Shown s = new Shown(root, true, 2)) {
+            s.type(root + SEP + "docs" + SEP + "a");
+            s.awaitRows(1);
+            s.press(KeyCode.ENTER);
+            SaveGuardsFxTest.awaitOnFx(s.async, "a folder chosen", () -> !s.chosen.isEmpty());
+            assertEquals(List.of(root.resolve("docs").resolve("api")), s.chosen);
         }
     }
 

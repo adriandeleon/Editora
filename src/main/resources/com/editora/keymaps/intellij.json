@@ -1,7 +1,7 @@
 {
   "C-s": "file.save",
   "C-S-s": "file.saveAs",
-  "C-S-n": "file.find",
+  "C-S-n": "nav.gotoFile",
   "M-insert": "lsp.generate",
   "C-f4": "buffer.close",
   "C-z": "edit.undo",

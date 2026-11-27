@@ -100,8 +100,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   built in on that machine, and a launch.json `cppdbg` configuration's `sourceFileMap` is honoured, on GDB and on
   CodeLLDB: breakpoints set in your copy of the sources bind, and stops open the files here.
 
+### Changed
+
+- **Go to File searches the project.** IntelliJ's **Ctrl+Shift+N** (⌘⇧O on macOS) and VS Code's and Sublime's
+  **Ctrl+P** (⌘P) run the new **Go: Go to File…**: Search Everywhere showing only the project's files, so a class
+  name finds its file wherever it sits. They ran Find File, a path prompt in the project root, where a name that did
+  not match made a new empty buffer. Without a project they still open Find File; Emacs keeps `C-x C-f`.
+- **The Welcome page's Open Folder row has the command's own name** (**Open Folder…**, **Project: Open Folder…** in
+  the palette), so typing what the Welcome page says into the palette finds it.
+- **Enter in a folder picker chooses the folder in the field.** Tab-completing `projects/hello` to
+  `projects/hello-fx/` and pressing Enter opens `hello-fx`, not its first subfolder; move the highlight or type a
+  name to pick a subfolder.
+
 ### Fixed
 
+- **Run and Debug start a JavaFX app from its `main`.** An `Application` subclass in a Maven or Gradle project
+  stopped with "JavaFX runtime components are missing": its JavaFX jars were on the class path. They now go on the
+  module path, with `--add-modules` for their modules, unless the configuration's VM options already choose modules.
 - **A trusted project's language-server commands and switches apply even when its first file opens before the
   settings file is read.** The project's `lspCommands` and `lspEnabled` waited for the next Settings change instead.
 - **A project's HTML settings apply even when its page opens before the settings file is read.** The project's
