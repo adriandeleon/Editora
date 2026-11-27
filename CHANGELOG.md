@@ -137,6 +137,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Security: an untrusted folder's Python environment no longer runs when you open a `.py` file.** Editora used
+  the `.venv` (or `venv`, `env`, `.env`) it found in the folder for the status bar's version and told Pyright to
+  analyse with it, and Pyright runs the interpreter it is told: a repository shipping its own `.venv/bin/python` ran
+  it within seconds, before anything was trusted. Until the folder is trusted, Pyright, the status bar, Doctor and
+  formatting use your setting or `PATH`'s Python, and the status item says the folder's environment waits for
+  trust; trusting it switches over at once. An interpreter you pick yourself is used either way.
+- **The Claude Code lock file is private from the moment it exists.** It carries the connection's token and was
+  written at the default permissions before being restricted to its owner, so other users of the machine could read
+  it for a moment. A `~/.claude/ide` folder Editora creates is its owner's only.
+- **What Editora sends over the network is listed in full.** The README said the update check "sends no data" from
+  Settings → Workspace; it runs from the first launch, GitHub sees your IP and Editora's version, and the switch is
+  in Settings → Advanced (or `-Deditora.updateCheck=off`). The FAQ now also lists the GitHub calls made through your
+  own `gh`, what a trusted folder downloads, and what only happens when you click.
 - **No "restricted method" warnings on every JavaFX run.** With JavaFX 24 or later, Run and Debug grant
   `--enable-native-access` to the JavaFX modules that load native code, so JDK 24+ no longer prints four red WARNING
   lines.
