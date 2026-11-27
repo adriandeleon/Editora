@@ -53,14 +53,6 @@ class MessagesTest {
         }
     }
 
-    /**
-     * Every line is a comment, blank, a continuation, or {@code key=value}.
-     *
-     * <p>The parity check cannot see this. A merge writes SYMMETRIC conflict markers into all six catalogs
-     * at once, and {@code Properties.load} turns each marker into a key with an empty value — so the key
-     * sets still match and a full {@code verify} passes with {@code <<<<<<< HEAD} sitting in the shipped
-     * resources. Observed, not hypothesised: it is how a conflicted cherry-pick went green here.
-     */
     /** Outside a repository the Git segment and its dropdown name Git, the only VCS Editora has, not "VCS". */
     @Test
     void noRepositoryStateSaysNoGit() {
@@ -74,6 +66,14 @@ class MessagesTest {
         }
     }
 
+    /**
+     * Every line is a comment, blank, a continuation, or {@code key=value}.
+     *
+     * <p>The parity check cannot see this. A merge writes SYMMETRIC conflict markers into all six catalogs
+     * at once, and {@code Properties.load} turns each marker into a key with an empty value — so the key
+     * sets still match and a full {@code verify} passes with {@code <<<<<<< HEAD} sitting in the shipped
+     * resources. Observed, not hypothesised: it is how a conflicted cherry-pick went green here.
+     */
     @Test
     void noCatalogHasAMalformedOrDuplicateKey() {
         for (String lang : ALL_CATALOGS) {
