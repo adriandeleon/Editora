@@ -15,6 +15,35 @@ final class DiffGitButtonCommands {
 
     private DiffGitButtonCommands() {}
 
+    /** Runs {@code then} on the only turn kept, or on the one picked from the turns kept (newest first). */
+    static void chooseTurn(MainController mc, String titleKey, java.util.function.Consumer<AgentChangeSets.Turn> then) {
+        java.util.List<AgentChangeSets.Turn> turns = mc.agentChanges.turns();
+        if (turns.isEmpty()) {
+            mc.setStatus(tr("status.agent.noChanges"));
+            return;
+        }
+        if (turns.size() == 1) {
+            then.accept(turns.get(0));
+            return;
+        }
+        QuickOpen<AgentChangeSets.Turn> picker = new QuickOpen<>(
+                tr(titleKey),
+                tr("palette.agent.pickTurn"),
+                () -> turns,
+                AgentChangeSets::name,
+                DiffGitButtonCommands::turnDetail,
+                then);
+        picker.setOverlayHost(mc.overlayHost);
+        picker.show(mc.stage);
+    }
+
+    /** A turn's detail line in the picker: how many files, and when it started. */
+    static String turnDetail(AgentChangeSets.Turn t) {
+        String when = java.time.format.DateTimeFormatter.ofPattern("HH:mm")
+                .format(java.time.Instant.ofEpochMilli(t.startedAt()).atZone(java.time.ZoneId.systemDefault()));
+        return tr("agent.changes.turnDetail", t.fileCount(), when);
+    }
+
     static void register(MainController mc) {
         // Diff toolbar: the active diff tab, as the other diff.* toolbar commands find it.
         mc.registry.register(
@@ -25,23 +54,13 @@ final class DiffGitButtonCommands {
                 Command.of("diff.exportPatch", () -> mc.diffCoordinator.withActiveDiff(DiffViewerPane::exportPatch)));
         mc.registry.register(Command.of("diff.reviewWalkthrough", () -> ReviewWalkthrough.ask(mc)));
 
-        // What an agent changed in its latest turn that changed files: reviewed in one tab, or put back at once.
-        mc.registry.register(Command.of("agent.reviewChanges", () -> {
-            AgentChangeSets.Turn turn = mc.agentChanges.latest();
-            if (turn == null) {
-                mc.setStatus(com.editora.i18n.Messages.tr("status.agent.noChanges"));
-            } else {
-                mc.diffCoordinator.openAgentChanges(turn);
-            }
-        }));
-        mc.registry.register(Command.of("agent.revertTurn", () -> {
-            AgentChangeSets.Turn turn = mc.agentChanges.latest();
-            if (turn == null) {
-                mc.setStatus(com.editora.i18n.Messages.tr("status.agent.noChanges"));
-            } else {
-                mc.diffCoordinator.revertTurn(turn);
-            }
-        }));
+        // What an agent changed, turn by turn: reviewed in one tab, or put back at once. With several turns kept,
+        // a picker asks which (the newest first).
+        mc.registry.register(Command.of(
+                "agent.reviewChanges",
+                () -> chooseTurn(mc, "command.agent.reviewChanges", mc.diffCoordinator::openAgentChanges)));
+        mc.registry.register(Command.of(
+                "agent.revertTurn", () -> chooseTurn(mc, "command.agent.revertTurn", mc.diffCoordinator::revertTurn)));
 
         mc.registry.register(Command.of(
                 "diff.addChangeToAgentPrompt",

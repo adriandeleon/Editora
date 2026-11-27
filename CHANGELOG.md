@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Older agent turns, and a restore point per turn.** **Agent: Review Changes** and **Agent: Revert Turn** ask which
+  of the kept turns when there are several, and File History keeps each open file as it was before a turn first
+  changed it, labelled with the turn.
 - **Slash commands for Claude Code.** Editora's MCP server offers prompts, which Claude Code lists as
   `/mcp__editora__review_changes` (review the uncommitted changes and leave findings as review comments),
   `/mcp__editora__fix_open_comments` (fix and resolve the open review threads) and `/mcp__editora__explain_selection`.
