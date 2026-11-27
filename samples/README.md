@@ -236,6 +236,13 @@ the download error. Package versions are pinned to ones that compile with typst 
   File** cycle between the three. (`samples/syntax/sample.html` is the single-file version, with
   embedded `<style>` and `<script>` blocks for the grammar switch.)
 
+- `samples/web/widget.html` is also for **debugging in a browser**. With it active, press F5 (Debug:
+  Start / Continue): Editora serves the folder as the live preview does and opens the page in Chrome, Edge
+  or Firefox under the debugger (**Debug web pages in** on the JavaScript card of Settings → Debugging;
+  Firefox needs vscode-firefox-debug from its own card's Install…). A breakpoint in `render()` in
+  `samples/web/widget.js` stops as the page loads, with `count` in Variables. One on the `count += …` line
+  stops each time you click + or −. Stop closes the browser.
+
 ## crontab/ — crontab schedule preview
 
 - `samples/crontab/deploy.crontab` — jobs, `@reboot`, an env assignment, and a deliberately out-of-range
@@ -379,7 +386,14 @@ A self-contained tree with its own `root = true` so it does not inherit the repo
   logpoint, a watch on `total`, step-into, and set-value. `samples/run/hello.java` is the Java
   equivalent for a first breakpoint.
 
-## debug/ — Java, Clojure, Go, Rust, C and C++ debugging (breakpoints, stepping, values, threads)
+- `samples/run/Hello.kt` — a lone **Kotlin program** (a top-level `fun main`, no build): the ▶ on the
+  `fun main(` line compiles it with `kotlinc` into a cached jar and runs it with `java -jar`; F5 does the same
+  under the Kotlin debugger, with a first breakpoint (the frame reads `Hello.main`) and one inside a lambda
+  (`Hello.main { lambda }`). Needs `kotlinc` (`KOTLIN_HOME`, `PATH` or SDKMAN).
+- `samples/run/hello.main.kts` — a **Kotlin script**: the ▶ sits on the first line and runs it with
+  `kotlinc -script`, from the top; F5 debugs it the same way.
+
+## debug/ — one shelf project per debugger (breakpoints, stepping, values, threads)
 
 - `samples/debug/java/pom.xml` — a standalone **Java 25 Maven** project (not a `<module>` of the root
   pom) built to try every breakpoint kind on, in ~220 lines across six classes. Open the folder as a
@@ -539,20 +553,256 @@ A self-contained tree with its own `root = true` so it does not inherit the repo
     **PHP: exceptions** in the Breakpoints view to stop where it is thrown).
   - `samples/debug/php/Pricing.php` — `Pricing::apply` **recurses** through a stacked discount.
 
-## build-tools/ — Maven / Gradle / npm / Cargo / Go toolbar button + actions popup + tests
+- `samples/debug/python/pyproject.toml` — the same shelf as a small **Python** project (four modules and
+  four green tests, ~165 lines), for debugging Python on debugpy (Settings → Debugging → Python; **Install:
+  Python Language Support** installs debugpy). The `pyproject.toml` makes the folder a Python sub-project
+  with a Pyright of its own; nothing needs installing, as the code and tests use only the standard library.
+  Open `shelf.py` and press F5: the script runs under debugpy, which stops at your breakpoints. Every
+  suggested spot is a `break here` comment. `python3 shelf.py` runs it outside Editora, `python3 -m unittest`
+  (or `pytest`) runs the tests, and the `crash` argument raises a `KeyError` nobody catches, which the
+  debugger stops on by itself (Uncaught Exceptions is on from the start). `samples/run/debug.py` is the
+  single-file introduction.
+  - `samples/debug/python/shelf.py` — the entry point and the checkout loop: a first plain breakpoint,
+    **Set Value** on `limit`, a **watch** on `total`, a **logpoint**, a `Counter` that grows, a
+    **conditional** breakpoint in a generator expression (`item.sku == "C-2"`), and a caught `ValueError`
+    (turn on **Raised Exceptions** to stop where it is raised).
+  - `samples/debug/python/pricing.py` — `discount_for`, hit once per big item (Step Out shows its
+    `(return)` value in Variables), and `apply`, which **recurses** through a stacked discount, so the call
+    stack shows two `apply` frames.
+  - `samples/debug/python/restock.py` — three named threads (`restock-1…3`, held at a barrier so all three
+    are in the **Threads** view at once), and a **hit-count** breakpoint on a line that runs 480 times
+    (Python also takes `% 50` or `>= 100`).
+  - `samples/debug/python/test_shelf.py` — four green `unittest.TestCase` tests, which pytest collects too:
+    put the caret in one and use **Debug Test at Caret** (under pytest when it is installed, else under
+    `python -m unittest`); a breakpoint is marked in the first.
 
-Five tiny, self-contained projects — one per build tool. Open a file under a project's folder and
+- `samples/debug/node/package.json` — the same shelf as a standalone **TypeScript on Node.js** package (six
+  files, ~180 lines), for debugging JavaScript and TypeScript on vscode-js-debug (Settings → Debugging →
+  JavaScript; Install there fetches vscode-js-debug). Node.js 22.18 or newer runs the `.ts` files as they are
+  (it removes the types itself), so there is nothing to build. Open `src/main.ts` and press F5: the Debug
+  console's first line is the `node` command, then the debugger stops at your breakpoints. Every suggested
+  spot is a `break here` comment. `npm start` runs it outside Editora and `npm test` runs the tests. A word
+  argument is a caught error, and the `crash` argument throws a `SyntaxError` nobody catches (turn on
+  **Uncaught Exceptions** in Debug: Exception Breakpoints… to stop on it). `npm install` fetches
+  `@types/node`, which only the TypeScript server needs: until then it marks Node's modules and `process` as
+  unknown.
+  - `samples/debug/node/src/main.ts` — the entry point: a first plain breakpoint, Step Into `checkout`, a
+    caught `RangeError` (`err` in Variables), the `crash` argument, and a top-level `await` of the restock.
+  - `samples/debug/node/src/shelf.ts` — the `Item` type and the checkout loop: a **watch** on `total`, a
+    **logpoint**, a `Map` that grows, a **lambda breakpoint** in a `filter` arrow function with a
+    **condition** (`item.sku === "C-2"`), and `parseQuantity`, whose throw the **Caught Exceptions** filter
+    stops on.
+  - `samples/debug/node/src/pricing.ts` — a branch hit once per big item, and `applyDiscount`, which
+    **recurses** through a stacked discount, so the call stack shows two `applyDiscount` frames.
+  - `samples/debug/node/src/restock.ts` + `samples/debug/node/src/restock-worker.ts` — three named **worker
+    threads** (`restock-1…3`), each its own row in Threads. A **hit-count** breakpoint sits on a line that
+    runs 160 times in each worker. There is also an **async call stack**: past the `await`, `main.ts`'s own
+    await shows below an async boundary.
+  - `samples/debug/node/src/shelf.test.ts` — six green `node:test` tests (two in each of two `describe`
+    blocks, two outside) for **Debug Test at Caret**; a breakpoint is marked in the first.
+  - `samples/debug/node/tsconfig.json` — type checking only (`noEmit`), with `allowImportingTsExtensions` for
+    the `./pricing.ts`-style imports that plain Node.js needs.
+  - `samples/debug/node/.vscode/launch.json` — **Debug: Start Configuration…** with VS Code's `node` form:
+    `src/main.ts` with a `pickString` argument, and the tests under `node --test` (`runtimeArgs`).
+
+- `samples/debug/deno/deno.json` — a smaller shelf for **Deno** (three files, ~120 lines). The `deno.json`
+  makes the folder a Deno project, so Run uses `deno run --allow-all`, and Debug adds `--inspect-wait` for
+  vscode-js-debug to attach to (Deno on `PATH`, else `~/.deno/bin`). Open `main.ts` and press F5. Every
+  suggested spot is a `break here` comment. `deno task start` runs it outside Editora, and `deno task test`
+  runs the tests (it fetches `@std/assert` from JSR on the first run). `deno task crash` reads a missing
+  file: Deno stops on that `NotFound` only with **Caught Exceptions** on, because its uncaught errors never
+  reach the debugger. Editora has no Deno language server, so the TypeScript server underlines `Deno`,
+  `import.meta.main`, the `.ts` imports and `@std/assert` — expected here, not a broken sample.
+  - `samples/debug/deno/main.ts` — `Deno.args` and `import.meta.main`, a first plain breakpoint, the checkout
+    loop (a **watch** on `total`, a **logpoint**, a **conditional** breakpoint `item.sku === "C-2"`), a caught
+    `TypeError`, and three async tasks taking turns in `restock`, with a **hit-count** breakpoint on a line
+    that runs 480 times.
+  - `samples/debug/deno/pricing.ts` — discounts as a tagged union; `apply` **recurses** through a stacked
+    one, so the call stack shows two `apply` frames.
+  - `samples/debug/deno/main_test.ts` — four green `Deno.test` tests for **Debug Test at Caret**
+    (`deno test --filter`, which matches top-level tests only); a breakpoint is marked in the first.
+
+- `samples/debug/kotlin/settings.gradle.kts` — the same shelf as a standalone **Kotlin** project built with
+  the **Gradle Kotlin DSL** (four files and five green JUnit 5 tests, ~150 lines). It is also the build-tools
+  sample for Gradle's Kotlin DSL (`samples/build-tools/gradle/` is the Groovy DSL): open a file under it and the
+  Gradle toolbar button appears, with the custom `hello` task under **Load all tasks…**. Open `Main.kt` and use
+  **Debug: Debug via Build Tool**: Gradle starts the `run` task (the `application` plugin) under a suspended
+  JVM and Editora's Kotlin debugger attaches, so breakpoints in every `.kt` file bind. F5 or the gutter ▶ on
+  `Main.kt` compiles that one file on its own, which can't see the rest of the project. Every suggested spot is
+  a `break here` comment. Plain breakpoints only: this debugger does not evaluate conditions, hit counts, log
+  messages or expressions yet. `gradle run` runs it outside Editora, `gradle run --args=crash` ends on an
+  uncaught exception, `gradle test` runs the tests (Gradle fetches the Kotlin plugin and JUnit on first use).
+  - `samples/debug/kotlin/build.gradle.kts` — the `kotlin("jvm")` and `application` plugins, JUnit 5, and a
+    custom `hello` task.
+  - `samples/debug/kotlin/src/main/kotlin/shelf/Main.kt` — the entry point: a first plain breakpoint, Step
+    Into `checkout`, `parseQuantity` with a caught `NumberFormatException` (`e` in Variables, or **Break on
+    Caught Exceptions**), and the `crash` program argument for an **uncaught exception**, which stops where it
+    is thrown.
+  - `samples/debug/kotlin/src/main/kotlin/shelf/Shelf.kt` — the `Item` data class and the `checkout` loop: a
+    **watch** on `total`, **hover** on `item.name`, a `TreeMap` that grows, and a breakpoint **inside a lambda**
+    (the frame reads `Shelf.checkout { lambda }`).
+  - `samples/debug/kotlin/src/main/kotlin/shelf/Pricing.kt` — a `when` hit once per big item, and
+    `Pricing.apply`, which **recurses** through a stacked discount, so the call stack shows two `Pricing.apply`
+    frames.
+  - `samples/debug/kotlin/src/main/kotlin/shelf/Restock.kt` — three named threads (`restock-1…3`): the
+    **Threads** view, and a line inside the thread lambda that runs 480 times.
+  - `samples/debug/kotlin/src/test/kotlin/shelf/ShelfTest.kt` — five green JUnit 5 tests (one parameterized,
+    two with backtick names such as ``fun `checkout totals every item`()``) for the test gutter ▶ and **Debug
+    Test at Caret**; a breakpoint is marked in the first.
+
+- `samples/debug/groovy/shelf.groovy` — the same shelf as a **Groovy** script and three class files (~110
+  lines), for Editora's Groovy debugger (nothing to install beyond `groovy`). Open `shelf.groovy` and press F5:
+  `groovy` compiles the class files beside it from source as the script needs them (Run and Debug run a file
+  in its own folder; outside Editora, run `groovy shelf.groovy` in this folder). Every suggested spot is a
+  `break here` comment. Plain breakpoints only: this debugger does not evaluate conditions, hit counts or log
+  messages yet. `groovy shelf.groovy 3` checks out three items, a word is a caught error, and `crash` throws.
+  - `samples/debug/groovy/shelf.groovy` — the script: a first plain breakpoint (the frame reads `shelf.run`),
+    Step Into `checkout`, a **watch** on `total`, a `TreeMap` that grows, a breakpoint **inside a closure**
+    (`shelf.checkout { closure }`), a caught `NumberFormatException`, and the `crash` argument for an
+    **uncaught exception**.
+  - `samples/debug/groovy/Item.groovy` — the `Item` record.
+  - `samples/debug/groovy/Pricing.groovy` — discounts as maps, and `Pricing.apply`, which **recurses** through
+    a stacked discount, so the call stack shows two `Pricing.apply` frames.
+  - `samples/debug/groovy/Restock.groovy` — three named threads (`restock-1…3`) started with closures: the
+    **Threads** view (frames read `Restock.run { closure }`), and a line that runs 480 times.
+  - `samples/debug/groovy/spock/build.gradle` + `samples/debug/groovy/spock/settings.gradle` — an optional
+    Gradle build that compiles the three class files above (not the script) and runs a **Spock** spec;
+    `gradle test` in that folder fetches Groovy and Spock on first use.
+  - `samples/debug/groovy/spock/src/test/groovy/ShelfSpec.groovy` — three green Spock features (one with a
+    `where:` table): each `def "…"()` gets a gutter ▶, for **Run Test at Caret** and **Debug Test at Caret**;
+    a breakpoint is marked in the first (to stop inside `Pricing.groovy`, give it a breakpoint too).
+
+- `samples/debug/scala/project.scala` — the same shelf as a **Scala CLI** project (Scala 3, six files, ~140
+  lines), for Editora's built-in debugger on Scala: nothing to install but Scala CLI (`scala-cli`, or `scala`
+  3.5 and later, on `PATH`). Open the folder as a project, open `Main.scala` and press F5: Scala CLI compiles
+  the whole folder (after asking to trust it; the first run downloads Scala 3.10.1) and runs it with the
+  debugger's agent, which stops at your breakpoints. Every suggested spot is a `break here` comment.
+  `scala-cli run .` runs it outside Editora, `scala-cli test .` runs the tests (both are in the Scala CLI
+  toolbar button's popup). Plain breakpoints only: this debugger does not evaluate conditions, hit counts or
+  log messages yet, so the spot where a hit count would go is marked as such. Breakpoints bind by file name,
+  and stepping skips the Scala library.
+  - `samples/debug/scala/project.scala` — the `//> using` directives for the whole folder: the Scala version
+    and munit for the tests.
+  - `samples/debug/scala/Main.scala` — the entry point (`@main def shelfDemo`): a first plain breakpoint,
+    **Step Into / Step Out** on the top-level `greeting`, and the `crash` program argument for an **uncaught
+    exception** (a `NoSuchElementException`, which stops the debugger where it is thrown; any other argument
+    is parsed, a word is a *caught* one).
+  - `samples/debug/scala/Shelf.scala` — the `Item` case class and the `checkout` loop: a **watch** on `total`,
+    a `TreeMap` that grows, step-into on `Pricing.discountFor`, a breakpoint **inside a lambda** in a `filter`
+    (its frame reads `Shelf { lambda }`), and `parseQuantity` with a caught `NumberFormatException` (`err` in
+    Variables, or the **Caught Exceptions** filter).
+  - `samples/debug/scala/Pricing.scala` — the `Discount` enum: an `if` arm hit once per big item, and `apply`,
+    whose `Stacked` case **recurses**, so the call stack shows nested `Pricing.apply` frames.
+  - `samples/debug/scala/Restock.scala` — three named worker threads (`restock-1…3`): the **Threads** view, and
+    a line that runs 480 times (where a hit-count breakpoint would go).
+  - `samples/debug/scala/Shelf.test.scala` — five green munit tests, run with `scala-cli test .` (munit comes
+    from the `//> using test.dep`); their results print in the Output console, since a Scala test has no ▶
+    of its own.
+
+- `samples/debug/dart/pubspec.yaml` — the same shelf as a **Dart package** (seven files, ~185 lines), for
+  debugging Dart on the SDK's own debugger (`dart debug_adapter`; put `dart` on your `PATH`). Open
+  `bin/shelf_sample.dart` and press F5: the debugger stops at your breakpoints, with conditions and logpoints.
+  Run File (the gutter ▶) runs it with `dart run`. Every suggested spot is a `break here` comment.
+  `dart pub get` fetches `package:test`, the one dependency (dev only); `dart run` runs it outside Editora,
+  `dart test` runs the tests, and the `crash` program argument throws a `TypeError` nobody catches, which
+  stops the debugger where it was thrown.
+  - `samples/debug/dart/bin/shelf_sample.dart` — the entry point: a first plain breakpoint, Step Into
+    `checkout`, a caught `FormatException` for a word argument, and the `crash` argument.
+  - `samples/debug/dart/lib/shelf_sample.dart` — the package's library, which exports `lib/src`.
+  - `samples/debug/dart/lib/src/checkout.dart` — the `Item` class and the checkout loop: a **watch** on
+    `total`, a **logpoint**, a **conditional** breakpoint in a `where` closure (`item.sku == 'C-2'`), a map
+    that grows, and `parseQuantity` rethrowing a `FormatException` (**All Exceptions** in the Breakpoints
+    list stops where it is thrown).
+  - `samples/debug/dart/lib/src/pricing.dart` — a sealed `Discount` class and `apply`, whose pattern-matching
+    `switch` **recurses** through a stacked discount, so the call stack shows two `apply` frames (a condition,
+    `percent == 5`, stops in the inner one).
+  - `samples/debug/dart/lib/src/restock.dart` — three isolates named `restock-1…3` (`Isolate.run`): the
+    **Threads** view lists each beside `main`, and a breakpoint in their loop stops in each isolate (the
+    line runs 480 times; a condition such as `n == 100` stops once per isolate).
+  - `samples/debug/dart/test/shelf_test.dart` — five green `package:test` tests (two in a `group`): put the
+    caret in one and use **Debug Test at Caret**; a breakpoint is marked in the first.
+
+- `samples/debug/lua/shelf.lua` — the same shelf as a **Lua 5.4** script (three files with `require`, ~125
+  lines), for debugging Lua on Local Lua Debugger (Settings → Debugging → Lua; Install there fetches it; it
+  runs on Node.js). Open `shelf.lua` and press F5: it runs in its folder under the debugger, which stops at
+  your breakpoints (conditions; locals, upvalues and globals in Variables; **Set Value**). Every suggested
+  spot is a `break here` comment. `lua shelf.lua` runs it outside Editora. A word argument raises an
+  error that `pcall` catches, but the debugger still stops where it was raised. The `crash` argument
+  indexes `nil`, which nobody catches.
+  - `samples/debug/lua/shelf.lua` — the items as tables and the checkout loop: a first plain breakpoint, a
+    **watch** on `total` (or Set Value on it), a **conditional** breakpoint (`it.sku == "C-2"`), a table
+    that grows, and `parse_quantity` raising an error.
+  - `samples/debug/lua/pricing.lua` — `pricing.apply` **recurses** through a stacked discount, so the call
+    stack shows two `apply` frames. Its parenthesised `return` keeps it a real call, not a tail call.
+  - `samples/debug/lua/restock.lua` — Lua has no threads, so three coroutines take turns instead. Each one
+    is a row of the **Threads** view (named `thread: 0x…`, beside `main thread`). A breakpoint in a
+    coroutine stops in its own call stack, and the line runs 480 times
+    (a condition, `n == 100 and name == "restock-2"`, stops in one).
+  - `samples/debug/lua/.vscode/launch.json` — **Debug: Start Configuration…** with Local Lua Debugger's
+    `lua-local` form: `lua` runs `shelf.lua` with a `pickString` argument (`6`, `3`, `word` or `crash`).
+
+- `samples/debug/elixir/mix.exs` — the same shelf as a **Mix project** (eight files, ~200 lines, no
+  dependencies), for debugging Elixir on ElixirLS (Settings → Debugging → Elixir; Install there fetches it).
+  Open `shelf.exs` and press F5: after asking to trust the folder, ElixirLS runs `mix run shelf.exs` with
+  the project's modules interpreted, so breakpoints in `lib/` stop with their variables. The first run
+  compiles, and its output shows in the Debug console. Every suggested spot is a `break here` comment on
+  the line above it, where `mix format` keeps comments. `mix run shelf.exs` runs it outside Editora,
+  `mix test` runs the tests, and the `crash` argument raises a `KeyError` that ends the run, shown in
+  the Debug console. Plain breakpoints only: the guide documents no conditions, hit counts or logpoints
+  for Elixir, so the two spots where they would go are marked as such.
+  - `samples/debug/elixir/shelf.exs` — the entry script: F5 or Run File (the gutter ▶) runs it with the
+    project loaded, and its arguments reach `System.argv()`.
+  - `samples/debug/elixir/lib/shelf.ex` — `main/1`: a first plain breakpoint, Step Into `checkout`, whose
+    `Enum.reduce` carries `total` and `by_prefix` through every pass, a comprehension (where a condition
+    would go), and `parse_quantity` raising an `ArgumentError` that `main` rescues.
+  - `samples/debug/elixir/lib/shelf/item.ex` — the `Item` struct, shown in Variables with its fields.
+  - `samples/debug/elixir/lib/shelf/pricing.ex` — discounts as tuples: `apply_discount/2` matches on their
+    shape and **recurses** through a stacked one. The first part of a stack has the `:stacked` frame below
+    it; the second part is a tail call, which replaces that frame.
+  - `samples/debug/elixir/lib/shelf/restock.ex` — three `Task` processes call one `GenServer`: a stop in a
+    task shows its `name`, and the counter's `handle_call` runs 480 times in its own process. The
+    **Threads** view lists every process of the VM, the tasks among them as `Task.Supervised.reply/3`.
+  - `samples/debug/elixir/test/shelf_test.exs` + `samples/debug/elixir/test/test_helper.exs` — five green
+    ExUnit tests (two in a `describe`): put the caret in one and use **Debug Test at Caret**
+    (`mix test file:line`); a breakpoint is marked in the first.
+
+- `samples/debug/powershell/shelf.ps1` — the same shelf as a **PowerShell** script and module (~125 lines),
+  for debugging PowerShell on PowerShell Editor Services (needs `pwsh` and PSES; see Settings → Debugging →
+  PowerShell). Open `shelf.ps1` and press F5: the script runs on PSES, which stops at your breakpoints and
+  writes its output to the Debug console. Every suggested spot is a `break here` comment. A logpoint's
+  message is a PowerShell string (`$($item.Name) total = $total`). `pwsh shelf.ps1` runs it outside Editora,
+  `pwsh shelf.ps1 3` totals three items, `pwsh shelf.ps1 many` reports a bad quantity, and
+  `pwsh shelf.ps1 crash` ends on an error nobody catches. (It doesn't set `Set-StrictMode`: under it, PSES
+  hit-count breakpoints never stop.)
+  - `samples/debug/powershell/shelf.ps1` — a first plain breakpoint, **Set Value** on `$limit`, Step Into
+    `Invoke-Checkout`, a **watch** on `$total`, a **logpoint**, an ordered hashtable that grows, a
+    **conditional** breakpoint (`$item.Sku -eq 'C-2'`), a caught parse error (`$_` in Variables), and three
+    workers' nested loop for a **hit-count** breakpoint on a line that runs 480 times.
+  - `samples/debug/powershell/Pricing.psm1` — the module `shelf.ps1` imports: Step Into lands here, and
+    `Invoke-Discount` **recurses** through a stacked discount, so the call stack shows two
+    `Invoke-Discount` frames (a **function breakpoint** on `Invoke-Discount` stops on every call).
+  - `samples/debug/powershell/.vscode/launch.json` — **Debug: Start Configuration…** with VS Code's
+    `PowerShell` form: the script with a `pickString` argument, and a **command** instead of a file that
+    imports the module and debugs `Invoke-Discount` alone.
+
+## build-tools/ — Maven / Gradle / npm / Cargo / Go / sbt / Mill / Leiningen / Babashka toolbar button + actions popup + tests
+
+Nine tiny, self-contained projects — one per build tool. Open a file under a project's folder and
 its build-tool toolbar button appears (each button stays hidden until its marker file is detected);
 click it for the sectioned actions popup. The projects are **standalone** — the repo's own build
 never picks them up (the Maven sample isn't a `<module>` of the root pom, the Gradle sample has its
 own `settings.gradle`), and every command is harmless (an `@echo`/`println`, or a lifecycle phase you
-choose to run). Each needs its tool on `PATH` to actually run (`mvn`/`gradle`/`npm`/`cargo`/`go`); the
-button + popup show regardless. (Build Tools are disabled in Simple UI mode and for remote files.)
+choose to run). Each needs its tool on `PATH` to actually run
+(`mvn`/`gradle`/`npm`/`cargo`/`go`/`sbt`/`mill`/`lein`/`bb`); the button + popup show regardless.
+(Build Tools are disabled in Simple UI mode and for remote files.) The Gradle **Kotlin DSL**
+(`build.gradle.kts`) is covered by `samples/debug/kotlin/build.gradle.kts`.
 
-Four of the five have **tests**, for the Test Results tool window and the test gutter ▶. Each suite has one
+Most of them have **tests**, for the Test Results tool window and the test gutter ▶. Each suite has one
 passing test, one that **fails on purpose** and one that is **skipped on purpose**, so every status
 has an example — a red result here is the sample working, not a regression. Each test file sits
 beside the source it tests under a conventional name, so **Go: Related File** jumps between them.
+sbt, Mill and Leiningen test output stays in the Output console instead: the Test Results window does
+not read Scala or Clojure test output yet. For test frameworks rather than build tools, see `tests/`.
 
 - `samples/build-tools/maven/pom.xml` + `samples/build-tools/maven/src/main/java/com/example/App.java`
   — the popup lists the Lifecycle phases (a Task each), the `release` **profile** (a checkable
@@ -576,6 +826,101 @@ beside the source it tests under a conventional name, so **Go: Related File** ju
   `go` subcommands over the whole module (`build ./...`, `run .`, `test ./...`, `vet`, `fmt`, `mod
   tidy`, …); the `module example.com/go-demo` line is the Settings "Found: …" label.
   `samples/build-tools/go/main_test.go` holds the tests, including a table-driven one with subtests.
+
+- `samples/build-tools/sbt/build.sbt` + `samples/build-tools/sbt/src/main/scala/demo/Main.scala` — the popup
+  shows the static Common tasks (`compile`/`test`/`run`/`clean`/`package`/`Test/compile`/`update`/`doc`) plus
+  **Load all tasks…**, which runs `sbt projects` and lists `compile`/`test`/`run` for the `root` and `core`
+  subprojects (`core` is a library, so `core/run` reports no main class). The custom `hello` task is not
+  listed: type `hello` into *Run custom…*. Run on `Main.scala` is `sbt "runMain demo.hello"`.
+  `samples/build-tools/sbt/project/build.properties` pins sbt 1.13.1 (the `sbt` launcher fetches it, Scala
+  3.10.1 and munit on first run). `samples/build-tools/sbt/core/src/main/scala/demo/Greeting.scala` is the
+  `core` subproject, and `samples/build-tools/sbt/core/src/test/scala/demo/GreetingTest.scala` its munit
+  tests (one passes, a table of two, one fails on purpose, one `.ignore`d on purpose); `sbt test` runs them
+  through the root's aggregate, and their results stay in the Output console, not Test Results.
+- `samples/build-tools/mill/build.mill` + `samples/build-tools/mill/app/src/demo/Main.scala` — the
+  `//| mill-version: 1.4.0` header picks the Mill version and `mill-jvm-version: system` keeps Mill on the JDK
+  Editora passes (no `./mill` launcher is shipped, so this needs `mill` on `PATH`). The popup shows
+  `__.compile`/`__.test`/`clean`/`resolve _` plus **Load all tasks…** (`mill resolve __.compile`):
+  `app.compile`, `app.run` and the test module `app.test`. Run on `Main.scala` is `mill app.runMain
+  demo.hello`. `samples/build-tools/mill/app/test/src/demo/MainTest.scala` holds munit tests (pass, fail on
+  purpose, skip on purpose); their results stay in the Output console.
+- `samples/build-tools/lein/project.clj` + `samples/build-tools/lein/src/lein_demo/core.clj` — the popup shows
+  the common `lein` tasks (`run`/`test`/`check`/`compile`/`jar`/`uberjar`/`install`/`deps`/`clean`); a
+  `project.clj` is Clojure code, so its `greet` alias is not read: type `greet` into *Run custom…*
+  (`lein greet` prints "Hello from Grace."). Run on `core.clj` is `lein run -m lein-demo.core`.
+  `samples/build-tools/lein/test/lein_demo/core_test.clj` is clojure.test: one passing test, an `are` table,
+  and one that fails on purpose; clojure.test has no skip, so there is no skipped one. `lein test` output
+  stays in the Output console.
+- `samples/build-tools/babashka/bb.edn` — the popup lists the `:tasks` in file order (`hello`, `banner`,
+  `countdown`, each `bb run <task>`) plus `bb tasks`; the private `-stamp` task is left out, as `bb tasks`
+  leaves it out, and `banner` `:depends` on it. Every task only prints. `samples/build-tools/babashka/countdown.bb`
+  is a script: Run (gutter ▶) is `bb countdown.bb`, the `countdown` task runs it with 5, and Debug says
+  Babashka can't be debugged.
+
+## tests/ — test frameworks (Test Results, gutter ▶, Run/Debug Test at Caret)
+
+One tiny, **standalone** project per test framework, each testing a small piece of the shelf logic
+the `debug/` projects share (an item's subtotal, a percentage off, a quantity read from text). Open its
+test file: each test has a ▶ in the gutter, **Run File** runs the whole file, **Run Test at Caret** and
+**Debug Test at Caret** take the test the caret is in, and the results fill the Test Results tool
+window. Like the `build-tools/` suites, each has one passing test, one that **fails on purpose** and
+one that is **skipped on purpose** (plus a parameterized or table-driven one where the framework has
+it), each commented as such, so every Test Results status has an example — a red result here is the
+sample working, not a regression. Each project needs its language and, unless it ships with the
+language, its test framework, which the project's own build tool fetches; the repo's build never picks
+them up.
+
+- `samples/tests/pytest/pyproject.toml` + `samples/tests/pytest/cart.py` — a **pytest** project: the
+  `pyproject.toml` is the project marker (**Run Tests** runs every test from here) and holds pytest's
+  settings (`-ra`) and a `test` dependency group. pytest must be installed for the Python Editora uses, for
+  example `python3 -m venv .venv && .venv/bin/pip install pytest` in this folder. Without pytest these tests
+  don't run: they aren't `unittest` tests. `samples/tests/pytest/test_cart.py` has a passing test, one
+  that fails on purpose, a `@pytest.mark.skip` one, and a `TestLineTotal` class with a
+  `@pytest.mark.parametrize` test (three cases, one row each); `samples/tests/pytest/conftest.py` holds the
+  `cart` fixture the first two take.
+- `samples/tests/jest/package.json` + `samples/tests/jest/shelf.js` — a **Jest** project. The `jest`
+  devDependency is what makes Editora run Jest once `npm install` has put it in `node_modules`; before that,
+  the test file runs under `node --test`. `samples/tests/jest/shelf.test.js` has a passing test, one that
+  **fails on purpose**, one **skipped on purpose** (`test.skip`), a three-row `test.each` table, and one test
+  outside the `describe` block. Run Test at Caret passes the test's name with `-t`.
+- `samples/tests/vitest/package.json` + `samples/tests/vitest/shelf.js` — the same for **Vitest**: the
+  `vitest` devDependency picks Vitest (run once, as `vitest run`), and the package is an ES module
+  (`"type": "module"`). `samples/tests/vitest/shelf.test.js` imports `describe`/`test`/`expect` from `vitest`
+  and has the same pass, fail and skip tests, plus a `test.each` over objects with `$price`-style titles.
+- `samples/tests/googletest/shelf_test.cpp` — GoogleTest: `TEST`s (one `GTEST_SKIP()`) and a `TEST_P`
+  instantiated with three percentages (`Percents/DiscountTest.StaysInRange/0`…`/2`), testing
+  `samples/tests/googletest/shelf.hpp`. `samples/tests/googletest/CMakeLists.txt` downloads GoogleTest
+  1.17.0 with `FetchContent` on the first configure (needs the network once); Editora configures a Debug
+  build in `build/editora-debug` and runs the program with `--gtest_filter`. Needs `cmake` and a C++17
+  compiler.
+- `samples/tests/catch2/shelf_test.cpp` — Catch2 3: `TEST_CASE`s with `SECTION`s, a `SKIP()`, and a
+  `GENERATE` table, testing `samples/tests/catch2/shelf.hpp`. `samples/tests/catch2/CMakeLists.txt`
+  downloads Catch2 3.8.1 the same way; one test runs by its name as a test spec.
+- `samples/tests/doctest/shelf_test.cpp` — doctest: `TEST_CASE`s with `SUBCASE`s, one decorated
+  `* doctest::skip()`, and a `TEST_CASE_TEMPLATE` over `int` and `double`, testing
+  `samples/tests/doctest/shelf.hpp`. `samples/tests/doctest/CMakeLists.txt` downloads doctest 2.4.12
+  (its own CMakeLists asks for CMake 3.5, so configuring prints a harmless deprecation warning); one
+  test runs with `--test-case`.
+- `samples/tests/rspec/spec/shelf_spec.rb` — RSpec: examples that pass, fail on purpose, `skip` and are
+  `pending`, an `each` table and `it_behaves_like` shared examples, testing
+  `samples/tests/rspec/lib/shelf.rb`. No Gemfile: it runs as `rspec spec/shelf_spec.rb` (`:LINE` for the
+  example or group at the caret) with the `rspec` gem installed.
+- `samples/tests/minitest/test/shelf_test.rb` — Minitest (ships with Ruby): `def test_…` methods, one
+  `skip` and one table test, testing `samples/tests/minitest/lib/shelf.rb`; it runs as
+  `ruby -Itest test/shelf_test.rb` (`-n test_name` for the test at the caret).
+- `samples/tests/phpunit/tests/ShelfTest.php` — PHPUnit 11: `test…` methods, one marked `#[Test]`, a
+  `markTestSkipped` and a `#[DataProvider]` with three named rows, testing
+  `samples/tests/phpunit/src/Item.php` and `samples/tests/phpunit/src/Pricing.php`.
+  `samples/tests/phpunit/composer.json` declares PHPUnit as `require-dev` (`composer install` fetches
+  it into `vendor/`; without that, the `phpunit` on the PATH runs it) and
+  `samples/tests/phpunit/phpunit.xml` is its configuration, which Editora runs the tests beside.
+- `samples/tests/exunit/mix.exs` + `samples/tests/exunit/lib/calc.ex` — an **ExUnit** suite in a Mix project
+  of its own, so its failure on purpose never reaches the green tests of `samples/debug/elixir/`. Run File
+  on `samples/tests/exunit/test/calc_test.exs` runs `mix test --trace` on it, and Test Results fills test
+  by test. It has one passing test, one that **fails on purpose**, one **skipped on purpose**
+  (`@tag :skip`), and a table of three `divide` tests made by a `for` inside a `describe` (ExUnit has no
+  parameterized tests). **Run Test at Caret** runs only the test or `describe` at the caret. No
+  dependencies; `samples/tests/exunit/test/test_helper.exs` starts ExUnit.
 
 ## images/ — image viewer
 
@@ -741,7 +1086,8 @@ Pass an MB count to scale the huge file, e.g. `java scripts/GenSamples.java 120`
 - **Valid unless broken on purpose.** A sample should compile, parse or render cleanly, so the only
   squiggles a language server draws are the ones the sample is about. Deliberately broken files say
   so in a comment and in this README. Samples are self-contained: no imports that need a package
-  install to resolve.
+  install to resolve. The exceptions declare what they need in their own manifest, which
+  their build tool fetches (a test framework under `tests/`, JUnit, `package:test`, munit), and say so here.
 - **Prefer offline.** Use local images and files where a feature allows it. The HTTP samples and the
   Markdown badge are the exceptions, and are marked.
 - **Update this README** when you add or remove a sample — `SamplesCorpusTest` fails otherwise.

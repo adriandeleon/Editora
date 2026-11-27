@@ -1,0 +1,22 @@
+;; Sample Babashka project for exercising Editora's Babashka support. The actions popup lists each task in
+;; :tasks, in file order (`bb run <task>`), plus `bb tasks`; a task whose name starts with `-` is private and
+;; left out, as `bb tasks` leaves it out. Every task only prints. Standalone: the repo's own build never reads
+;; it. Needs `bb` on PATH.
+{:tasks
+ {:requires ([clojure.string :as str])
+
+  ;; `bb run hello`: the smallest task.
+  hello {:doc "Prints a greeting."
+         :task (println "Hello from the Babashka sample project.")}
+
+  ;; A private task: not in the popup or `bb tasks`, but others can depend on it.
+  -stamp {:task (str/upper-case "babashka sample")}
+
+  ;; `bb run banner`: runs -stamp first (:depends) and uses its value.
+  banner {:doc "Prints a banner built by the private -stamp task."
+          :depends [-stamp]
+          :task (println (str "== " -stamp " =="))}
+
+  ;; `bb run countdown`: runs the script beside this file, as a child process.
+  countdown {:doc "Runs countdown.bb with 5."
+             :task (shell "bb countdown.bb 5")}}}

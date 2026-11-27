@@ -1,0 +1,20 @@
+//| mill-version: 1.4.0
+//| mill-jvm-version: system
+// Sample Mill build for exercising Editora's Mill support. Mill's build is Scala, so the actions popup shows
+// the static Common tasks (__.compile/__.test/clean/resolve _) plus "Load all tasks…", which runs
+// `mill resolve __.compile` and lists each module: `app.compile`, `app.run` and the test module `app.test`.
+// Standalone: the repo's own build never reads it. Needs `mill` on PATH (the header above picks the version
+// it downloads); the first run fetches Mill, Scala and munit.
+package build
+
+import mill.*, scalalib.*
+
+// The program: sources under app/src, so Run on a file there is `mill app.runMain demo.hello`.
+object app extends ScalaModule {
+  def scalaVersion = "3.10.1"
+
+  // Its tests, under app/test/src: `mill app.test` runs them.
+  object test extends ScalaTests, TestModule.Munit {
+    def mvnDeps = Seq(mvn"org.scalameta::munit:1.3.6")
+  }
+}

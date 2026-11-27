@@ -1,0 +1,30 @@
+// Compiles the shelf's class files from the folder above (not the script) and tests them with Spock, for the
+// Groovy test gutter ▶, Run Test at Caret and Debug Test at Caret. `gradle test` fetches Groovy and Spock on
+// first use. Optional: shelf.groovy runs and debugs without it.
+plugins {
+    id 'groovy'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'org.apache.groovy:groovy:5.1.3'
+    testImplementation platform('org.spockframework:spock-bom:2.5-groovy-5.0')
+    testImplementation 'org.spockframework:spock-core'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+sourceSets {
+    main {
+        groovy {
+            srcDirs = ['..']
+            include 'Item.groovy', 'Pricing.groovy', 'Restock.groovy'
+        }
+    }
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}

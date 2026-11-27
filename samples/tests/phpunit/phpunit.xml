@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- PHPUnit's configuration: Editora runs a test file in the folder of this file (or composer.json), with
+     vendor/bin/phpunit after `composer install`, else the phpunit on the PATH. The test files load src/
+     themselves, so no bootstrap is needed either way. -->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/11.5/phpunit.xsd"
+         colors="true"
+         cacheDirectory="build/.phpunit.cache">
+    <testsuites>
+        <testsuite name="shelf">
+            <directory>tests</directory>
+        </testsuite>
+    </testsuites>
+</phpunit>

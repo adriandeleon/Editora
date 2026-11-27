@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Samples for every debugger, test framework and build tool.** `samples/debug/` gains the shelf project for
+  Python, TypeScript on Node.js, Deno, Kotlin (Gradle Kotlin DSL), Groovy (with a Spock spec), Scala CLI, Dart,
+  Lua, Elixir and PowerShell; the new `samples/tests/` has one pass / fail / skip suite each for pytest, Jest,
+  Vitest, GoogleTest, Catch2, doctest, RSpec, Minitest, PHPUnit and ExUnit; `samples/build-tools/` adds sbt,
+  Mill, Leiningen and Babashka; `samples/run/` a lone Kotlin program and script. `samples/README.md` lists what
+  to try in each.
 - **Test results and debug state for agents.** MCP `test_results` reads the last test run (counts and each failure
   with its message and stack trace) and `debug_state` the paused session's call stack and the variables you have
   expanded.

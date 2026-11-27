@@ -1,0 +1,16 @@
+{
+  "name": "shelf-node",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The shelf debug sample in TypeScript on Node.js 22.18 or newer, which runs .ts files as they are.",
+  "type": "module",
+  "scripts": {
+    "start": "node src/main.ts",
+    "crash": "node src/main.ts crash",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0"
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,14 @@
+{
+  // Type checking only: Node.js runs the .ts files itself, so nothing is compiled. The imports name the .ts
+  // files (allowImportingTsExtensions), and erasableSyntaxOnly keeps to the syntax Node.js can strip.
+  "compilerOptions": {
+    "target": "esnext",
+    "module": "nodenext",
+    "strict": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true
+  },
+  "include": ["src"]
+}

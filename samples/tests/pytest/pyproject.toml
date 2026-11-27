@@ -1,0 +1,15 @@
+# A pytest sample project: this file is the project marker (Run Tests runs every test from here) and holds
+# pytest's settings. pytest is the one thing to install, e.g. into a .venv in this folder:
+#   python3 -m venv .venv && .venv/bin/pip install --group test   (or: .venv/bin/pip install pytest)
+[project]
+name = "cart"
+version = "0.1.0"
+requires-python = ">=3.10"
+
+[dependency-groups]
+test = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+# -ra lists every test that did not pass (the failure and the skip here) at the end of the run.
+addopts = "-ra"
