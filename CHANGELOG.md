@@ -38,6 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   their lines are gone. In a side-by-side diff of your file, its gutter marks the threads and you can comment there.
   **Review Comments** lists a repository's threads. They are kept privately in the config folder, or, with Settings
   → Git → Keep review comments in the project, in the repository's `.editora/reviews.json`.
+- **Add to Agent Prompt.** Put a selection, the review thread at the caret, or a diff's change at its cursor in the AI
+  Agent prompt you are writing, with its file and lines, and add your question before you send it.
 - **MCP: the current protocol, resources and notifications.** The MCP server speaks MCP 2026-07-28 as well as
   the revisions from 2024-11-05 to 2025-11-25, and an agent gets the one it asks for. The open files, their
   diagnostics and the Git status are resources an agent can read and watch: it is told when a file opens or

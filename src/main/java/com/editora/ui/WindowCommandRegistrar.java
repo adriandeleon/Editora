@@ -1385,6 +1385,7 @@ final class WindowCommandRegistrar {
                                         })));
         host.registry().register(Command.of("tool.agent", host.agentCoordinator()::toggleToolWindow));
         host.registry().register(Command.of("agent.newSession", host.agentCoordinator()::newSession));
+        host.registry().register(Command.of("agent.addSelection", host.agentCoordinator()::addSelectionToPrompt));
         host.registry().register(Command.of("agent.stop", host.agentCoordinator()::stopTurn));
         host.registry().register(Command.of("agent.selectModel", host.agentCoordinator()::pickModel));
         host.registry().register(Command.of("agent.selectMode", host.agentCoordinator()::pickMode));
@@ -2118,6 +2119,10 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "review.copyFixPrompt", () -> host.reviewCoordinator().fixAtCaret(true)));
+        host.registry()
+                .register(Command.of(
+                        "review.addToAgentPrompt",
+                        () -> host.reviewCoordinator().addAtCaretToAgentPrompt()));
         host.registry()
                 .register(Command.of(
                         "tool.notes",

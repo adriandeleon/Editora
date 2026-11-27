@@ -2035,6 +2035,23 @@ public final class DiffViewerPane implements TabContent {
         return changeCursor >= 0 && changeCursor < starts.size() ? starts.get(changeCursor) : starts.get(0);
     }
 
+    /**
+     * The change at the diff's change cursor (the first one before any navigation) as a block for the agent's prompt;
+     * null when the diff has no change.
+     */
+    public @Nullable String currentChangePrompt() {
+        int start = currentBlockStart();
+        if (start < 0) {
+            return null;
+        }
+        List<Row> rows = model.rows();
+        List<Row> block = new java.util.ArrayList<>();
+        for (int i = start; i < rows.size() && rows.get(i).type() != com.editora.diff.DiffModels.RowType.EQUAL; i++) {
+            block.add(rows.get(i));
+        }
+        return com.editora.review.AgentPromptBlocks.change(leftName, rightName, block);
+    }
+
     private int changeBlockIndexContaining(int row) {
         List<Integer> starts = model.changeBlockStarts();
         for (int i = starts.size() - 1; i >= 0; i--) {

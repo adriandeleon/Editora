@@ -127,6 +127,9 @@ Changes tab. Distributed through a marketplace repo (decision D5).
 **13. Send to Claude (S/M)** — needs 7
 From a comment, a finding, a selection or a diff hunk: **Send to Claude** puts it in the agent panel
 prompt (ACP, works today), or as an @-mention over the IDE protocol if item 3 lands.
+*Status:* built as **Add to Agent Prompt** (`agent.addSelection`, `review.addToAgentPrompt`,
+`diff.addChangeToAgentPrompt`): the block goes into the prompt being written, unsent. Findings already had
+Fix with Agent (item 10). Not built: the IDE-protocol @-mention (item 3).
 
 ### Tier 4: review ergonomics
 
