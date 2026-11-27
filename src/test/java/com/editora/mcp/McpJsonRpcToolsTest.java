@@ -240,7 +240,8 @@ class McpJsonRpcToolsTest {
                 result.get("serverInfo").get("version").asText());
         assertTrue(result.get("capabilities").get("tools").isObject(), "tools are offered");
         assertTrue(result.at("/capabilities/resources/subscribe").asBoolean(), "and resources, which can be watched");
-        assertEquals(2, result.get("capabilities").size(), "and nothing the server does not implement");
+        assertTrue(result.get("capabilities").get("prompts").isObject(), "and prompts");
+        assertEquals(3, result.get("capabilities").size(), "and nothing the server does not implement");
         assertEquals(List.of(), bridge.calls, "a handshake does not touch the editor");
     }
 
@@ -259,9 +260,9 @@ class McpJsonRpcToolsTest {
 
     @Test
     void anUnknownMethodAndAMissingMethodAreErrorsNotSilence() throws Exception {
-        JsonNode unknown = rpc("prompts/list", null); // no prompts are offered
+        JsonNode unknown = rpc("completion/complete", null); // no completions are offered
         assertEquals(JsonRpc.METHOD_NOT_FOUND, unknown.get("error").get("code").asInt());
-        assertTrue(unknown.get("error").get("message").asText().contains("prompts/list"));
+        assertTrue(unknown.get("error").get("message").asText().contains("completion/complete"));
         assertNull(unknown.get("result"));
 
         JsonNode missing = send("{\"jsonrpc\":\"2.0\",\"id\":2}");
