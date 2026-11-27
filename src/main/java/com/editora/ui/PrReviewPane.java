@@ -69,6 +69,11 @@ public final class PrReviewPane extends Region implements TabContent {
     /** Whether the (long) PR description is expanded; sticky across a Refresh of the same tab. */
     private boolean bodyExpanded;
 
+    /** How many line comments are drafted and not sent; the inline review's summary line (blank for none). */
+    private java.util.function.IntSupplier draftCount = () -> 0;
+
+    private java.util.function.Supplier<String> reviewSummary = () -> "";
+
     private final VBox content = new VBox();
     private final StackPane centerHost = new StackPane(content);
     private final ScrollPane scroll = new ScrollPane(centerHost);
@@ -103,6 +108,35 @@ public final class PrReviewPane extends Region implements TabContent {
         scroll.setFitToWidth(true);
         scroll.setFitToHeight(false);
         getChildren().add(scroll);
+    }
+
+    /** Wires the inline review: its drafts (which make closing the tab ask first) and its summary line. */
+    void setReviewState(java.util.function.IntSupplier drafts, java.util.function.Supplier<String> summary) {
+        this.draftCount = drafts;
+        this.reviewSummary = summary;
+        rebuild();
+    }
+
+    /** The drafts or threads changed: the summary line is written again. */
+    void reviewChanged() {
+        rebuild();
+    }
+
+    /** Drafted line comments are lost with the tab: closing it asks first (they live only here until submitted). */
+    @Override
+    public boolean hasUnsavedChanges() {
+        return draftCount.getAsInt() > 0;
+    }
+
+    /** "Keep Drafts" keeps the tab open: the drafts go nowhere else. */
+    @Override
+    public boolean saveBeforeClose() {
+        return false;
+    }
+
+    @Override
+    public String closeSaveActionKey() {
+        return "github.review.keepDrafts";
     }
 
     /** The current file list (so the injected "Open all" action reads fresh data after a Refresh). */
@@ -142,6 +176,13 @@ public final class PrReviewPane extends Region implements TabContent {
             note.getStyleClass().add("pr-review-notice");
             note.setWrapText(true);
             content.getChildren().add(note);
+        }
+        String summary = reviewSummary.get();
+        if (!summary.isBlank()) {
+            Label line = new Label(summary);
+            line.getStyleClass().add("pr-review-notice");
+            line.setWrapText(true);
+            content.getChildren().add(line);
         }
         Node description = descriptionBlock();
         if (description != null) {
