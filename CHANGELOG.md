@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Library sources, offered once.** The first time a Maven project imports with library sources off, its Java file
   offers **Download Sources**, so completion names a library method's parameters and shows its Javadoc. It turns
   on Settings → LSP → Download library sources and imports the project afresh.
+- **Samples for every debugger, test framework and build tool.** `samples/debug/` gains the shelf project for
+  Python, TypeScript on Node.js, Deno, Kotlin (Gradle Kotlin DSL), Groovy (with a Spock spec), Scala CLI, Dart,
+  Lua, Elixir and PowerShell; the new `samples/tests/` has one pass / fail / skip suite each for pytest, Jest,
+  Vitest, GoogleTest, Catch2, doctest, RSpec, Minitest, PHPUnit and ExUnit; `samples/build-tools/` adds sbt,
+  Mill, Leiningen and Babashka; `samples/run/` a lone Kotlin program and script. `samples/README.md` lists what
+  to try in each.
 - **Test results and debug state for agents.** MCP `test_results` reads the last test run (counts and each failure
   with its message and stack trace) and `debug_state` the paused session's call stack and the variables you have
   expanded.
@@ -112,6 +118,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Clicking Open Folder opens the system's folder dialog** on the Welcome page and in an empty editor, as the
   toolbar button and Open File already did; the shortcut and the palette keep the typed folder prompt. New command:
   **Project: Open Folder with the System Dialog…** (`project.openDialog`).
+- **Save As completes folders.** The keyboard Save As (`file.saveAs`) is now the file finder's card: it lists the
+  folder you are typing in, Tab completes folder and file names, and Enter on a folder goes into it and keeps the
+  file's name. Before, it was a plain text field, so a different folder had to be typed out in full.
 - **Go to File searches the project.** IntelliJ's **Ctrl+Shift+N** (⌘⇧O on macOS) and VS Code's and Sublime's
   **Ctrl+P** (⌘P) run the new **Go: Go to File…**: Search Everywhere showing only the project's files, so a class
   name finds its file wherever it sits. They ran Find File, a path prompt in the project root, where a name that did
@@ -127,6 +136,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **No "the project did not import" before a folder is trusted.** jdtls runs without the build until you trust the
   folder, so every file is "a non-project file"; the Trust Folder notice says why, and the status bar no longer
   reports a failed import (with a red count) beside it.
+- **Kotlin call stacks name a lowercase or hyphenated file's functions after the file.** A frame in `hello.kt` read
+  `HelloKt.main` (and its lambdas `HelloKt.main { lambda }`) instead of `hello.main`, because the debugger did not
+  capitalise the file name or turn `-` into `_` the way kotlinc names the file's class.
 - **Run and Debug start a JavaFX app from its `main`.** An `Application` subclass in a Maven or Gradle project
   stopped with "JavaFX runtime components are missing": its JavaFX jars were on the class path. They now go on the
   module path, with `--add-modules` for their modules, unless the configuration's VM options already choose modules.

@@ -1,0 +1,17 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // Local Lua Debugger's form: the `lua` interpreter runs `file` with these arguments.
+      "name": "shelf (lua-local)",
+      "type": "lua-local",
+      "request": "launch",
+      "program": { "lua": "lua", "file": "${workspaceFolder}/shelf.lua" },
+      "args": ["${input:limit}"],
+      "cwd": "${workspaceFolder}"
+    }
+  ],
+  "inputs": [
+    { "id": "limit", "type": "pickString", "description": "Items to check out (or word, or crash)", "options": ["6", "3", "word", "crash"], "default": "6" }
+  ]
+}

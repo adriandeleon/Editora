@@ -1,0 +1,11 @@
+# The shelf as a Dart package: open bin/shelf_sample.dart and press F5 (Debug), or put the caret in a test of
+# test/shelf_test.dart and use Debug Test at Caret. `dart pub get` fetches package:test (the only dependency).
+name: shelf_sample
+description: The shelf debug sample, in Dart.
+publish_to: none
+
+environment:
+  sdk: ^3.9.0
+
+dev_dependencies:
+  test: ^1.25.0

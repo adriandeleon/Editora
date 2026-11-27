@@ -1,0 +1,28 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // VS Code's node form: src/main.ts on Node.js, which removes the types itself, with the argument picked below.
+      "name": "shelf (node)",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/main.ts",
+      "args": ["${input:limit}"],
+      "cwd": "${workspaceFolder}",
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      // The tests under node --test, which runs the file in a child process that js-debug follows.
+      "name": "shelf tests (node --test)",
+      "type": "node",
+      "request": "launch",
+      "runtimeArgs": ["--test"],
+      "program": "${workspaceFolder}/src/shelf.test.ts",
+      "cwd": "${workspaceFolder}",
+      "skipFiles": ["<node_internals>/**"]
+    }
+  ],
+  "inputs": [
+    { "id": "limit", "type": "pickString", "description": "Items to check out (or crash)", "options": ["6", "8", "word", "crash"], "default": "6" }
+  ]
+}

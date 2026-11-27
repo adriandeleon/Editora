@@ -1,0 +1,25 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // VS Code's PowerShell form: the script runs on PowerShell Editor Services with this argument.
+      "name": "shelf (PowerShell)",
+      "type": "PowerShell",
+      "request": "launch",
+      "script": "${workspaceFolder}/shelf.ps1",
+      "args": ["${input:argument}"],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      // A command instead of a file: debugs the module's functions alone (breakpoints in Pricing.psm1 stop).
+      "name": "Invoke-Discount alone",
+      "type": "PowerShell",
+      "request": "launch",
+      "script": "Import-Module ./Pricing.psm1 -Force; Invoke-Discount -Discount @{ Percent = 10; Then = @{ Percent = 5; Then = $null } } -Price 100",
+      "cwd": "${workspaceFolder}"
+    }
+  ],
+  "inputs": [
+    { "id": "argument", "type": "pickString", "description": "Items to check out (or many, or crash)", "options": ["6", "3", "many", "crash"], "default": "6" }
+  ]
+}

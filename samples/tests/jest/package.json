@@ -1,0 +1,13 @@
+{
+  "name": "shelf-jest",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A Jest sample for Test Results: the jest devDependency is how Editora knows to run Jest.",
+  "scripts": {
+    "test": "jest"
+  },
+  "devDependencies": {
+    "jest": "^30.0.0"
+  },
+  "license": "MIT"
+}
