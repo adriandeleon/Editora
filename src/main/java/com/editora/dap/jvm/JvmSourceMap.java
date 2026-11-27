@@ -431,7 +431,7 @@ public final class JvmSourceMap {
         String simple = dot >= 0 ? cls.substring(dot + 1) : cls;
         String method = methodName == null ? "" : methodName;
         String base = sourceName.substring(0, sourceName.lastIndexOf('.'));
-        String fileClass = base + "Kt";
+        String fileClass = kotlinFacadePrefix(base) + "Kt";
         String lambda = null;
         java.util.regex.Matcher inner = KOTLIN_LAMBDA_CLASS.matcher(simple);
         if (("invoke".equals(method) || "invokeSuspend".equals(method)) && inner.matches()) {
@@ -453,6 +453,26 @@ public final class JvmSourceMap {
             method = method.substring(0, method.length() - "$default".length());
         }
         return simple + "." + method;
+    }
+
+    /** A character kotlinc turns into {@code _} in a file facade's name. */
+    private static final java.util.regex.Pattern NOT_KOTLIN_NAME_CHAR =
+            java.util.regex.Pattern.compile("[^\\p{L}\\p{Digit}]");
+
+    /**
+     * The start of the class kotlinc names a file's facade ({@code <prefix>Kt}) after, as its
+     * {@code NameUtils.getPackagePartClassNamePrefix}: every character that is not a letter or a digit becomes
+     * {@code _}, then the first is capitalised, or prefixed with {@code _} when it cannot start a Java name
+     * ({@code hello} → {@code Hello}, {@code my-file} → {@code My_file}, {@code 1st} → {@code _1st}).
+     */
+    static String kotlinFacadePrefix(String fileBase) {
+        if (fileBase.isEmpty()) {
+            return "_";
+        }
+        String sanitized = NOT_KOTLIN_NAME_CHAR.matcher(fileBase).replaceAll("_");
+        return Character.isJavaIdentifierStart(sanitized.charAt(0))
+                ? sanitized.substring(0, 1).toUpperCase(java.util.Locale.ENGLISH) + sanitized.substring(1)
+                : "_" + sanitized;
     }
 
     /** The methods through which Clojure calls a function's body. */

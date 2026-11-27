@@ -120,6 +120,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Kotlin call stacks name a lowercase or hyphenated file's functions after the file.** A frame in `hello.kt` read
+  `HelloKt.main` (and its lambdas `HelloKt.main { lambda }`) instead of `hello.main`, because the debugger did not
+  capitalise the file name or turn `-` into `_` the way kotlinc names the file's class.
 - **Run and Debug start a JavaFX app from its `main`.** An `Application` subclass in a Maven or Gradle project
   stopped with "JavaFX runtime components are missing": its JavaFX jars were on the class path. They now go on the
   module path, with `--add-modules` for their modules, unless the configuration's VM options already choose modules.
