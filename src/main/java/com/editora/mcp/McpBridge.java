@@ -108,6 +108,46 @@ public interface McpBridge {
         return false;
     }
 
+    // --- code intelligence and history (read-only) --------------------------------------------------
+
+    /** A place in a file: an absolute path, a 1-based line and a 1-based column; or a library {@code uri}. */
+    record Location(String path, int line, int column) {}
+
+    /** A workspace symbol: name, its container ("" for none), kind, and where it is (path "" for a library one). */
+    record WorkspaceSymbol(String name, String container, String kind, String path, int line) {}
+
+    /** One Local History revision of a file, newest first: when ({@code epoch} ms), why, its label and size. */
+    record HistoryEntry(int index, long epochMillis, String reason, String label, long size) {}
+
+    /**
+     * Where the symbol at 1-based {@code line}:{@code column} of open file {@code path} (the active buffer when null)
+     * is defined, or ({@code references}) every place it is used. Throws {@link IllegalStateException} with the
+     * reason when there is no server, the file is not open, or the server fails.
+     */
+    default List<Location> navigate(@Nullable String path, int line, int column, boolean references) {
+        throw new IllegalStateException("Code intelligence is not available.");
+    }
+
+    /** The hover text (Markdown) at a place of an open file; "" when the server has none. Throws as {@link #navigate}. */
+    default String hover(@Nullable String path, int line, int column) {
+        throw new IllegalStateException("Code intelligence is not available.");
+    }
+
+    /** The project's symbols matching {@code query}, as the language servers of its open files answer. */
+    default List<WorkspaceSymbol> workspaceSymbols(String query) {
+        throw new IllegalStateException("Code intelligence is not available.");
+    }
+
+    /** The Local History revisions of open file {@code path}, newest first. Throws with the reason it cannot. */
+    default List<HistoryEntry> localHistory(String path) {
+        throw new IllegalStateException("Local History is not available.");
+    }
+
+    /** The text of revision {@code index} (0: the newest) of open file {@code path}. Throws with the reason. */
+    default String localHistoryText(String path, int index) {
+        throw new IllegalStateException("Local History is not available.");
+    }
+
     /** One comment of a review thread, as an agent reads it. {@code authorKind}: {@code user}, {@code agent}, {@code github}. */
     record ReviewCommentInfo(
             String id,

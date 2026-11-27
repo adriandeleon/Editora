@@ -88,6 +88,19 @@ most likely wrong, and in what order to read it. The agent is asked not to
 change any file. Up to 80,000 characters of diff are sent; the prompt says how
 many files were left out.
 
+## Viewed files
+
+A review of several files (**Review Working Changes**, **Review Staged
+Changes**, a stash or two revisions) has a box by each file to mark it viewed,
+and counts the files viewed so far. Marking the file you are reading moves on
+to the next one you have not viewed. **Diff: Mark File in Review Viewed**
+does the same from the keyboard.
+
+The marks are kept per repository in Editora's config folder, never in the
+project, so a review you open again remembers them. A file whose diff changed
+since you marked it shows as not viewed again. For pull requests, see
+[GitHub](/docs/github): their marks are GitHub's.
+
 ## The Review Comments window
 
 **Tool Window: Review Comments** (`tool.reviews`) lists the threads of the

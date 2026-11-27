@@ -140,6 +140,10 @@ changes. Stored per head commit; synced with GitHub's viewed state (GraphQL `mar
 **15. Changes since last review (M)** — needs 14
 "Show only what changed since I last reviewed": interdiff between the reviewed head and the current
 one, for a PR (force-push aware) and for agent turns.
+*Status (14 and 15):* built. PR tabs use GitHub's `viewerViewedState` and `viewerLatestReview` (GraphQL), and
+the REST compare of the reviewed commit and the head; Git reviews keep marks in `reviews.json` (schema 2) by a
+digest of each file's diff. Not built: the agent-turn interdiff (it comes with item 4), and the 100-file cap on the
+viewed read.
 
 **16. Code intelligence in the diff (M/L)**
 On the working-tree side of a diff: hover, go to definition, find references (LSP), and "Show in
@@ -157,6 +161,8 @@ generated files, and the walkthrough through AI Actions instead of the agent.
 **18. More read tools for agents (M)** — needs 2
 `lsp_definition`, `lsp_references`, `lsp_hover`, `workspace_symbols`, `test_results`,
 `debug_state` (stack, variables when paused), `local_history`. All read-only and annotated so.
+*Status:* built: `lsp_definition`, `lsp_references`, `lsp_hover`, `workspace_symbols`, `local_history`. Not built:
+`test_results` and `debug_state` (they need a read model of the Test Results window and of a paused session).
 
 ## Suggested order
 

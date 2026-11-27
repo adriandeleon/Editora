@@ -26,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   first. **Fix with Agent** sends a thread, its lines as they are now and its suggestion to the AI Agent panel, and
   **Copy Fix Prompt** copies the same for Claude Code in a terminal; both also work on the thread at the caret. A
   finding you dismiss stays dismissed: an agent that adds it again on the same lines is refused and told your reason.
+- **Viewed files.** Mark each file of a review viewed: the count shows how far you are, and marking the file you read
+  moves on to the next. A Git review remembers its marks per repository until a file changes; a pull request uses
+  GitHub's own viewed marks. **Changes since your last review** opens what changed in a pull request since the
+  commit you last reviewed.
 - **Agents take part in code review.** Over MCP, an agent lists a repository's review threads, adds its own on
   lines (with a suggestion, and for a finding a severity and a category), replies, and resolves a thread with a note
   of what it did (`list_review_comments`, `add_review_comment`, `reply_to_review_comment`,
@@ -68,6 +72,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   graphics driver updated without a reboot) it falls back to software rendering and the whole window lags. The
   status bar now says so once, Doctor gains a Graphics Rendering row with the reason and the fix, and menus drop
   their shadow in that mode, since redrawing the blur at every hover is what made them lag.
+- **More for agents to read.** MCP tools for the language server's definitions, references and hover at a place,
+  the project's symbols, and a file's Local History (`lsp_definition`, `lsp_references`, `lsp_hover`,
+  `workspace_symbols`, `local_history`), all read-only.
 - **Attach to a remote Go program.** Debug: Attach to Remote Delve… (also in Run ▸ Launch and Attach) debugs a Go
   program under Delve's headless server (`dlv debug --headless --listen=:2345`) on another machine, in a container or
   here, with no Delve needed on this machine. Give the folder it was built from over there and Delve maps your
