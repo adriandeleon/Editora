@@ -118,6 +118,41 @@ final class LspPopups {
     }
 
     /**
+     * The hover of 0-based {@code line}:{@code column} of {@code b}'s file, shown over {@code showOn} (a diff's side
+     * that is that file) at its caret: the diff stays where it is.
+     */
+    void showHoverIn(CodeArea showOn, EditorBuffer b, int line, int column) {
+        Path path = lsp.lspPath(b);
+        if (path == null) {
+            host.setStatus(tr("status.lsp.noHover"));
+            return;
+        }
+        LspCoordinator.syncText(lspManager, b, path);
+        long generation = ++hoverGeneration;
+        int caret = showOn.getCaretPosition();
+        List<LspDiagnostic> here = CaretProblems.at(lsp.problemsOf(path), line, column);
+        java.util.function.BooleanSupplier stale =
+                () -> generation != hoverGeneration || caret != showOn.getCaretPosition() || b.isDisposed();
+        lspManager.hoverAt(
+                path,
+                null,
+                line,
+                column,
+                text -> {
+                    if (stale.getAsBoolean()) return;
+                    if ((text == null || text.isBlank()) && here.isEmpty()) {
+                        host.setStatus(tr("status.lsp.noHover"));
+                    } else {
+                        showHoverPopup(showOn, text == null ? "" : text, here);
+                    }
+                },
+                failure -> {
+                    if (stale.getAsBoolean()) return;
+                    host.setStatus(tr("status.lsp.hoverFailed", failure));
+                });
+    }
+
+    /**
      * Shows LSP hover markdown in a dismissable popup at the caret (rendered via the Markdown renderer).
      * Closes on Escape, a click elsewhere (auto-hide), caret movement, scrolling, or another hover.
      */

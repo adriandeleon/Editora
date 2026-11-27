@@ -139,6 +139,8 @@ one, for a PR (force-push aware) and for agent turns.
 **16. Code intelligence in the diff (M/L)**
 On the working-tree side of a diff: hover, go to definition, find references (LSP), and "Show in
 Map". Read-only sides can use the same LSP through a temporary document where the server allows it.
+*Status:* built for the file side (`DiffCodeIntel`): hover over the diff; definition, references and Reveal in Map
+from the file at the same place. Not built: the read-only side (a temporary document), and the unified view.
 
 **17. Review order and walkthrough (M)**
 Group files (source, tests, config, generated, lockfiles collapsed), order by dependency, and an

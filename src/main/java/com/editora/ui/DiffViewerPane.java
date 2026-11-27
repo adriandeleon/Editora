@@ -173,6 +173,35 @@ public final class DiffViewerPane implements TabContent {
 
     private @Nullable LineHook lineHook;
 
+    /** The file on disk one side of the diff is (its editable side), for code intelligence there; null for none. */
+    private java.nio.file.@Nullable Path localFile;
+
+    /** Says that the editable side is {@code file} as it is in the editor. */
+    public void setLocalFile(java.nio.file.Path file) {
+        this.localFile = file;
+    }
+
+    public java.nio.file.@Nullable Path localFile() {
+        return localFile;
+    }
+
+    /**
+     * Where the caret is in the local file, as {@code {line, column}} (0-based, the file's own line): when the local
+     * side has the focus, side by side, on a row of the file (not a filler row); null otherwise.
+     */
+    public int @Nullable [] localCaret() {
+        CodeArea area = localFile == null ? null : localArea();
+        if (area == null || !area.isFocused()) {
+            return null;
+        }
+        int[] nos = area == leftArea ? leftLineNos : rightLineNos;
+        int row = area.getCurrentParagraph();
+        if (row < 0 || row >= nos.length || nos[row] <= 0) {
+            return null;
+        }
+        return new int[] {nos[row] - 1, area.getCaretColumn()};
+    }
+
     /** The side-by-side panes' source line numbers (1-based, -1 for a filler row), by displayed row. */
     private int[] leftLineNos = new int[0];
 
@@ -2519,7 +2548,7 @@ public final class DiffViewerPane implements TabContent {
     }
 
     /** The side-by-side area showing the local file, or null (a read-only diff, or the unified view). */
-    private @Nullable CodeArea localArea() {
+    public @Nullable CodeArea localArea() {
         if (unified) {
             return null;
         }

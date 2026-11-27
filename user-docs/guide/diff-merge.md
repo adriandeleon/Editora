@@ -79,6 +79,21 @@ or **Diff: Apply Reviewed Patch to Index** (`diff.applyPatchToIndex`).
 To make a patch from staged changes, unstaged changes, or a commit, or to apply
 one to the working tree or the index, see [Git patches](/docs/git#patches).
 
+### Code intelligence in a diff
+
+When one side of a diff is your file (a working-tree change, or a file
+compared with HEAD, a branch or a revision), these commands work from that
+side, side by side:
+
+- **Show Hover** answers over the diff, at the caret.
+- **Go to Definition** and **Find References** open the file at the caret's
+  line and column and run from there.
+- **Reveal in Map** (`projectMap.revealActiveFile`) shows that file on the
+  Project Map.
+
+They use your usual shortcuts. On the other side, which is a revision with no
+file of its own, they work as they do anywhere else.
+
 ## Folder comparisons
 
 Right-click a folder in the Project tree to compare it recursively with HEAD, a
