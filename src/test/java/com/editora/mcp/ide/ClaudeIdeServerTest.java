@@ -171,6 +171,27 @@ class ClaudeIdeServerTest {
                 tools.call("openDiff", args).at("/content/0/text").asText());
     }
 
+    /** Regression: Claude Code asks for the mcp subprotocol and dropped the connection when the answer named none. */
+    @Test
+    void theMcpSubprotocolClaudeCodeAsksForIsAgreed(@TempDir Path dir) throws Exception {
+        try (ClaudeIdeServer server = new ClaudeIdeServer(bridge(java.util.Map.of()), List::of, dir, "1.0")) {
+            String token = m.readTree(Files.readString(server.lockFile()))
+                    .get("authToken")
+                    .asText();
+            WebSocket ws = HttpClient.newHttpClient()
+                    .newWebSocketBuilder()
+                    .header(ClaudeIdeServer.AUTH_HEADER, token)
+                    .subprotocols("mcp")
+                    .buildAsync(URI.create("ws://127.0.0.1:" + server.port()), new Client())
+                    .get(10, TimeUnit.SECONDS);
+            assertEquals("mcp", ws.getSubprotocol());
+            ws.sendClose(WebSocket.NORMAL_CLOSURE, "").get(10, TimeUnit.SECONDS);
+        }
+        assertEquals("mcp", WebSocketServer.subprotocol("chat, mcp"));
+        assertEquals(null, WebSocketServer.subprotocol("chat"));
+        assertEquals(null, WebSocketServer.subprotocol(null));
+    }
+
     @Test
     void theLockFolderFollowsClaudesConfigFolder() {
         assertEquals(Path.of("/c/ide"), ClaudeIdeServer.ideDir("/c", Path.of("/home/u")));

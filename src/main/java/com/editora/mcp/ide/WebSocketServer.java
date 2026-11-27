@@ -108,8 +108,11 @@ public final class WebSocketServer implements AutoCloseable {
                         .getBytes(StandardCharsets.US_ASCII));
                 return;
             }
+            String protocol = subprotocol(headers.get("sec-websocket-protocol"));
             out.write(("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
-                            + "Sec-WebSocket-Accept: " + acceptKey(key) + "\r\n\r\n")
+                            + "Sec-WebSocket-Accept: " + acceptKey(key) + "\r\n"
+                            + (protocol == null ? "" : "Sec-WebSocket-Protocol: " + protocol + "\r\n")
+                            + "\r\n")
                     .getBytes(StandardCharsets.US_ASCII));
             out.flush();
             c = new Connection(out);
@@ -162,6 +165,22 @@ public final class WebSocketServer implements AutoCloseable {
                 return null;
             }
             b.write(c);
+        }
+        return null;
+    }
+
+    /**
+     * The subprotocol to answer with: {@code mcp} when the client offers it (Claude Code asks for it and drops a
+     * connection whose answer names none), else none. Pure.
+     */
+    static @Nullable String subprotocol(@Nullable String offered) {
+        if (offered == null) {
+            return null;
+        }
+        for (String p : offered.split(",")) {
+            if (p.strip().equals("mcp")) {
+                return "mcp";
+            }
         }
         return null;
     }
