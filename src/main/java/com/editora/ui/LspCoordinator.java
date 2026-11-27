@@ -374,6 +374,10 @@ final class LspCoordinator {
         });
         this.xmlTrust = new XmlFolderTrust(this, host, lspManager, ops);
         this.html = new HtmlLspAids(host, lspManager, ops);
+        // So are the HTML servers their project's html object, its ignored keys said: a page opened before the read
+        // landed was given the user's settings alone, and nothing applied the project's later.
+        projectScope.addChangeListener(
+                () -> html.applySettings(projectSettings().getHtml()));
         this.eslint = new EslintCoordinator(this, host, ops);
         this.jsFormat = new JsFormatCoordinator(this, host, lspManager, ops, eslint);
         this.navigation = new LspNavigation(host, lspManager, ops, new LspNavigation.Host() {

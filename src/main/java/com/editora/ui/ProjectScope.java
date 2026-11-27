@@ -294,9 +294,14 @@ final class ProjectScope {
      */
     private @Nullable String applied;
 
-    /** What applies here, as one string: root, trust and the values (language servers aside: LspCoordinator's). */
+    /**
+     * What applies here, as one string: root, trust, the values (language servers aside: LspCoordinator's) and the
+     * {@code html} object. That object is read untrusted too (the HTML servers take it, its ignored keys are said):
+     * without it here, a project whose read landed after its first page opened never told the servers.
+     */
     private String signature() {
         return root() + "|" + trusted() + "|" + settings().valueOverrides() + "|"
+                + settings().getHtml() + "|"
                 + toolchain().signature();
     }
 
