@@ -107,6 +107,42 @@ final class GitHubCoordinator {
     private final WindowOps ops;
     private final GitHubService service = new GitHubService();
 
+    /** Line comments on pull requests: their threads on GitHub and the drafts of a review not yet sent. */
+    private final PrInlineReview inline = new PrInlineReview(new PrInlineReview.Host() {
+        @Override
+        public OverlayHost overlayHost() {
+            return host.overlayHost();
+        }
+
+        @Override
+        public void setStatus(String message) {
+            host.setStatus(message);
+        }
+
+        @Override
+        public void gh(
+                Path dir,
+                com.editora.github.GhInvocation call,
+                Consumer<com.editora.process.ProcessRunner.Result> done) {
+            service.prThreads(dir, call, done);
+        }
+
+        @Override
+        public void installKeys(javafx.scene.control.TextInputControl control) {
+            TextInputKeymap.install(control, ops.keymap());
+        }
+
+        @Override
+        public void openUrl(String url) {
+            GitHubCoordinator.this.openUrl(url);
+        }
+
+        @Override
+        public boolean confirm(Confirm.Question question) {
+            return Confirm.ask(host.window(), question);
+        }
+    });
+
     /** The repo root whose remotes have been read (so the async check runs once per root). */
     private @Nullable Path remoteCheckedRoot;
     /**
@@ -836,6 +872,12 @@ final class GitHubCoordinator {
                 return;
             }
             existing.update(detail != null ? detail : existing.detail(), files, notice);
+            PrInlineReview.State st = inline.state(key);
+            PrViewParser.PrDetail shown = existing.detail();
+            if (shown != null) {
+                inline.pinned(st, shown.headRefOid(), shown.url());
+            }
+            inline.loadThreads(st);
             return;
         }
         reviewPanes.remove(key); // a stale entry whose tab was closed — rebuild
@@ -845,10 +887,10 @@ final class GitHubCoordinator {
         }
         PrReviewPane pane = new PrReviewPane(
                 number,
-                fp -> openFileDiff(number, fp),
+                fp -> openFileDiff(key, fp),
                 () -> {
                     PrReviewPane p = reviewPanes.get(key);
-                    openAllFiles(number, p != null ? p.files() : files);
+                    openAllFiles(key, p != null ? p.files() : files);
                 },
                 this::openUrl,
                 // The tab's own links act on the repository the pull request was opened from: with this tab
@@ -857,10 +899,17 @@ final class GitHubCoordinator {
                 () -> readyIn(dir, d -> {
                     PrReviewPane p = reviewPanes.get(key);
                     PrViewParser.PrDetail seen = p == null ? null : p.detail();
-                    submitReviewForm(d, number, seen == null ? "" : seen.headRefOid(), seen == null ? "" : seen.url());
+                    submitReviewForm(
+                            d, number, seen == null ? "" : seen.headRefOid(), seen == null ? "" : seen.url(), key);
                 }));
         pane.update(detail, files, notice);
         reviewPanes.put(key, pane);
+        PrInlineReview.State st = inline.state(key);
+        inline.attachTab(st, pane);
+        if (detail != null) {
+            inline.pinned(st, detail.headRefOid(), detail.url());
+        }
+        inline.loadThreads(st);
         ops.addReviewTab(pane);
     }
 
@@ -879,6 +928,7 @@ final class GitHubCoordinator {
             if (e.getValue() != pane) {
                 return false;
             }
+            inline.closed(e.getKey()); // its drafts were asked about before the tab closed
             List<com.editora.process.ProcessRunner.Cancellation> loading = reviewLoads.remove(e.getKey());
             if (loading != null) {
                 loading.forEach(com.editora.process.ProcessRunner.Cancellation::cancel);
@@ -1603,12 +1653,12 @@ final class GitHubCoordinator {
     }
 
     /** Opens every changed file of a PR as its own diff tab — confirming first past {@link #MAX_OPEN_ALL_WITHOUT_CONFIRM}. */
-    private void openAllFiles(int prNumber, List<PatchParser.FilePatch> files) {
+    private void openAllFiles(ReviewKey key, List<PatchParser.FilePatch> files) {
         if (files.size() > MAX_OPEN_ALL_WITHOUT_CONFIRM && !confirmOpenAll(files.size())) {
             return;
         }
         for (PatchParser.FilePatch fp : files) {
-            openFileDiff(prNumber, fp);
+            openFileDiff(key, fp);
         }
     }
 
@@ -1625,7 +1675,8 @@ final class GitHubCoordinator {
     }
 
     /** Opens one PR file as a read-only side-by-side diff tab (base ↔ head), reusing {@link DiffCoordinator}. */
-    private void openFileDiff(int prNumber, PatchParser.FilePatch fp) {
+    private void openFileDiff(ReviewKey key, PatchParser.FilePatch fp) {
+        int prNumber = key.number();
         String oldName = cleanLabel(fp.oldPath());
         String newName = cleanLabel(fp.newPath());
         String name = !newName.isEmpty() ? newName : (!oldName.isEmpty() ? oldName : tr("github.pr.file"));
@@ -1637,8 +1688,15 @@ final class GitHubCoordinator {
         // The patch-file path: every hunk keeps the line numbers its header states (the lines of separate
         // hunks are held back to back, so numbering them 1, 2, 3… made them read as one block at the top of
         // the file) and a side without a final newline is shown as such.
+        // The file's path in the pull request, as its review comments name it (the head's, else the base's).
+        String path = !newName.isEmpty() ? newName : oldName;
         diff.openPatchFileDiff(
-                tr("diff.title.prFile", name, prNumber), tr("diff.side.prBase"), tr("diff.side.prHead"), name, fp);
+                tr("diff.title.prFile", name, prNumber),
+                tr("diff.side.prBase"),
+                tr("diff.side.prHead"),
+                name,
+                fp,
+                pane -> inline.attachDiff(inline.state(key), pane, path));
     }
 
     // --- open on GitHub --------------------------------------------------------------------------
@@ -1901,7 +1959,8 @@ final class GitHubCoordinator {
     /** Picks a PR then opens the submit-review form (the {@code github.submitReview} palette command). */
     void submitReviewPicked() {
         // Picked from a list, the pull request's head was never shown: the review is not pinned to a commit.
-        ready(dir -> pickPr(dir, tr("github.picker.reviewTitle"), pr -> submitReviewForm(dir, pr.number(), "", "")));
+        ready(dir ->
+                pickPr(dir, tr("github.picker.reviewTitle"), pr -> submitReviewForm(dir, pr.number(), "", "", null)));
     }
 
     /**
@@ -1911,7 +1970,14 @@ final class GitHubCoordinator {
      * pushed while the reviewer read are not approved with them; {@code prUrl}, the pull request's address, says
      * which host and repository the pinned call goes to.
      */
-    private void submitReviewForm(Path dir, int number, String commitId, String prUrl) {
+    private void submitReviewForm(Path dir, int number, String commitId, String prUrl, @Nullable ReviewKey key) {
+        // A review from its tab carries the line comments drafted there.
+        PrInlineReview.State state = key == null ? null : inline.state(key);
+        List<com.editora.github.PrLineDraft> drafts = state == null ? List.of() : inline.drafts(state);
+        if (!drafts.isEmpty() && !PrReviewArgs.canCarryDrafts(commitId, prUrl, number)) {
+            host.setStatus(tr("status.github.draftsNeedPin"));
+            return;
+        }
         KeymapManager keymap = ops.keymap();
         javafx.scene.control.ComboBox<PrReviewArgs.ReviewAction> actionBox = new javafx.scene.control.ComboBox<>();
         actionBox.getItems().setAll(PrReviewArgs.ReviewAction.values());
@@ -1947,6 +2013,11 @@ final class GitHubCoordinator {
         grid.add(actionBox, 1, 0);
         grid.add(new Label(tr("dialog.review.body")), 0, 1);
         grid.add(body, 1, 1);
+        if (!drafts.isEmpty()) {
+            Label carried = new Label(tr("dialog.review.withDrafts", drafts.size()));
+            carried.setWrapText(true);
+            grid.add(carried, 1, 2);
+        }
         GridPane.setHgrow(body, Priority.ALWAYS);
 
         // Approve may be submitted with no comment — once chosen (the form starts on Comment); request-changes /
@@ -1968,12 +2039,15 @@ final class GitHubCoordinator {
                 tr("dialog.review.button"),
                 valid,
                 submission -> {
-                    com.editora.github.GhInvocation call =
-                            PrReviewArgs.invocation(number, actionBox.getValue(), body.getText(), commitId, prUrl);
+                    com.editora.github.GhInvocation call = PrReviewArgs.invocation(
+                            number, actionBox.getValue(), body.getText(), commitId, prUrl, drafts);
                     host.setStatus(tr("status.github.reviewing", number));
                     service.prReview(dir, call, r -> {
                         if (r.ok()) {
                             submission.done();
+                            if (state != null && !drafts.isEmpty()) {
+                                inline.submitted(state); // the drafts are threads on GitHub now
+                            }
                             host.setStatus(tr("status.github.reviewed", number));
                         } else {
                             formFailed(submission, tr("status.github.reviewFailed"), r.message());

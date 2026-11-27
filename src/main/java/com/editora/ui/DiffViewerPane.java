@@ -158,6 +158,21 @@ public final class DiffViewerPane implements TabContent {
 
     private @Nullable ReviewHook reviewHook;
 
+    /**
+     * Marks and comments on a read-only diff of a pull request's base (left) and head (right), for
+     * {@code GitHubCoordinator}: which lines of each side carry a thread or a draft, what a click on a mark does, and
+     * what Add Review Comment does on the selected lines. Lines are the sides' own numbers, 1-based.
+     */
+    public interface LineHook {
+        java.util.Set<Integer> marked(boolean left);
+
+        void open(boolean left, int line);
+
+        void comment(boolean left, int first, int last);
+    }
+
+    private @Nullable LineHook lineHook;
+
     /** The side-by-side panes' source line numbers (1-based, -1 for a filler row), by displayed row. */
     private int[] leftLineNos = new int[0];
 
@@ -2426,6 +2441,75 @@ public final class DiffViewerPane implements TabContent {
         refreshReviewMarks();
     }
 
+    /** Marks a pull request's threads and drafts on both sides, or (null) no longer. */
+    public void setLineHook(@Nullable LineHook hook) {
+        this.lineHook = hook;
+        refreshReviewMarks();
+    }
+
+    public @Nullable LineHook lineHook() {
+        return lineHook;
+    }
+
+    /**
+     * The focused side's selected lines (or the caret's), 1-based, as {@code {left ? 1 : 0, first, last}}; null when
+     * neither side has the focus, in the unified view, or on filler rows only.
+     */
+    public int @Nullable [] focusedLines() {
+        if (unified || leftArea == null || rightArea == null) {
+            return null;
+        }
+        CodeArea area = leftArea.isFocused() ? leftArea : rightArea.isFocused() ? rightArea : null;
+        if (area == null) {
+            return null;
+        }
+        int[] nos = area == rightArea ? rightLineNos : leftLineNos;
+        int from = area.offsetToPosition(
+                        area.getSelection().getStart(), org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
+                .getMajor();
+        int end = area.getSelection().getLength() == 0
+                ? area.getSelection().getEnd()
+                : Math.max(area.getSelection().getStart(), area.getSelection().getEnd() - 1);
+        int to = area.offsetToPosition(end, org.fxmisc.richtext.model.TwoDimensional.Bias.Backward)
+                .getMajor();
+        int[] lines = sourceLines(nos, from, to);
+        return lines == null ? null : new int[] {area == leftArea ? 1 : 0, lines[0] + 1, lines[1] + 1};
+    }
+
+    /**
+     * Where a card goes for 1-based {@code line} of a side: {@code {x, belowY, aboveY}} in scene coordinates, the line
+     * scrolled into view first; null when the side does not show that line or it is not laid out.
+     */
+    public double @Nullable [] lineAnchor(boolean left, int line) {
+        CodeArea area = left ? leftArea : rightArea;
+        if (unified || area == null) {
+            return null;
+        }
+        int[] nos = left ? leftLineNos : rightLineNos;
+        int row = -1;
+        for (int i = 0; i < nos.length; i++) {
+            if (nos[i] == line) {
+                row = i;
+                break;
+            }
+        }
+        if (row < 0) {
+            return null;
+        }
+        try {
+            area.showParagraphInViewport(row);
+            area.layout();
+            javafx.geometry.Bounds b = area.getParagraphBoundsOnScreen(row).orElse(null);
+            if (b == null) {
+                return null;
+            }
+            javafx.geometry.Bounds s = area.localToScene(area.screenToLocal(b));
+            return new double[] {s.getMinX() + 48, s.getMaxY(), s.getMinY()};
+        } catch (RuntimeException notLaidOut) {
+            return null;
+        }
+    }
+
     /** Draws the review marks again: a thread was added, answered or resolved. */
     public void refreshReviewMarks() {
         if (!unified && leftArea != null && rightArea != null) {
@@ -2486,8 +2570,11 @@ public final class DiffViewerPane implements TabContent {
         Set<Integer> blockStarts = apply ? new HashSet<>(model.changeBlockStarts()) : Set.of();
         ReviewHook hook = area == localArea() ? reviewHook : null;
         Set<Integer> commented = hook == null ? Set.of() : hook.commentedLines();
+        LineHook prHook = lineHook;
+        boolean leftSide = area == leftArea;
+        Set<Integer> marked = prHook == null ? Set.of() : prHook.marked(leftSide);
         // Always render a gutter when apply arrows are needed, even if line numbers are off.
-        if (!showLineNumbers && !apply && hook == null) {
+        if (!showLineNumbers && !apply && hook == null && prHook == null) {
             return;
         }
         int width = Math.max(2, String.valueOf(maxOf(lineNos)).length());
@@ -2533,6 +2620,16 @@ public final class DiffViewerPane implements TabContent {
                         tr("diff.applyLine"),
                         () -> applyRow(sourceRow));
                 gutter = new HBox(hunkSlot, lineSlot, changeSign, num);
+            }
+            if (prHook != null) {
+                int no = i < lineNos.length ? lineNos[i] : -1;
+                gutter.getChildren()
+                        .add(
+                                0,
+                                arrowSlot(
+                                        no > 0 && marked.contains(no) ? Icons.review() : null,
+                                        tr("review.diff.open"),
+                                        () -> prHook.open(leftSide, no)));
             }
             if (hook != null) {
                 int line = i < lineNos.length ? lineNos[i] - 1 : -1;

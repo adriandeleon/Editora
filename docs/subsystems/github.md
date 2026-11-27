@@ -161,6 +161,26 @@ Single-thread lanes, so one slow call cannot hold up the rest:
 - `gh browse` gets its flags first, then `--`, then the path; `gh repo create` gets its flags, then `--`, then
   the name, and Settings Sync refuses a name starting with `-` or `.` (`GitHubService.validRepositoryName`).
 
+## Line comments (inline review)
+
+`ui/PrInlineReview` keeps one `State` per review tab (`ReviewKey`): the head commit and address it is pinned to (the
+detail on screen), the drafts (`github/PrLineDraft`, in memory only), the threads read from GitHub, and the file
+diffs opened from the tab.
+
+- **Threads:** `github/PrThreads.read` is one `gh api graphql` call (`reviewThreads`, first 100, 50 comments each).
+  `reply` (`addPullRequestReviewThreadReply`, the body on stdin through `-F body=@-`) and `resolve`
+  (`resolveReviewThread` / `unresolveReviewThread`) are run by `GitHubService.prThreads`, and the threads are read
+  again after each. A thread GitHub no longer places on the diff (`line` null) is outdated and not marked.
+- **Marks:** `openFileDiff` opens the file through `DiffCoordinator.openPatchFileDiff(…, configure)`, which hands
+  the pane to `PrInlineReview.attachDiff`: a `DiffViewerPane.LineHook` marks the lines of both sides that carry a
+  thread or a draft (side by side only) and opens the line's card there (`lineAnchor`).
+- **Drafts:** Add Review Comment in such a diff goes to the hook (`ReviewCoordinator.startThread`, using
+  `focusedLines`), which opens the draft dialog. `submitReviewForm` from the tab sends the drafts in the pinned
+  call's `comments` (`PrReviewArgs.invocation(…, drafts)`: path, side, line, and `start_line`/`start_side` for a
+  range); without a pinned call (`canCarryDrafts`) it refuses. A sent review clears the drafts and reads the threads.
+- **Closing:** `PrReviewPane.hasUnsavedChanges` is true while drafts wait; `saveBeforeClose` is false, so the close
+  question's **Keep Drafts** keeps the tab open and **Don't Save** drops them.
+
 ## Tests
 
 Three fake-`gh` shell scripts (POSIX only, skipped on Windows), each steered by marker files:
