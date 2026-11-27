@@ -3207,6 +3207,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                             return;
                         }
                         claudeIde = server;
+                        refreshClaudeIde(); // the project may have been set while the server was starting
                         com.editora.terminal.LocalShell.setExtraEnvironment(java.util.Map.of(
                                 "CLAUDE_CODE_SSE_PORT",
                                 String.valueOf(server.port()),
