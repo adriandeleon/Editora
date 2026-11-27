@@ -44,6 +44,10 @@ public final class JavaRunCommand {
             argv.add(String.join(File.pathSeparator, fx.jars()));
             argv.add("--add-modules");
             argv.add(fx.addModules());
+            String nativeAccess = fx.enableNativeAccess(); // else JDK 24+ prints four red WARNING lines on every run
+            if (nativeAccess != null) {
+                argv.add(nativeAccess);
+            }
         }
         List<String> cp = fx.rest();
         if (!cp.isEmpty()) {

@@ -115,6 +115,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Trust Folder on a file's notice trusts at once.** The notice's button is the decision; **What does trusting
   allow?** beside it opens the full question (Cancel its default), and **Workspace: Trust This Folder** still asks.
+- **The Run toolbar names the last run.** With no configuration selected, the dropdown reads *HelloApp (last run)*
+  after a ▶ in the gutter, and its Run button reruns it, where it said "No configurations" with Run disabled.
+- **Open File on the Welcome page shows a shortcut in the IntelliJ keymap again:** Ctrl+Shift+N (Go to File), which
+  opens Find File in a window with no project.
 - **Clicking Open Folder opens the system's folder dialog** on the Welcome page and in an empty editor, as the
   toolbar button and Open File already did; the shortcut and the palette keep the typed folder prompt. New command:
   **Project: Open Folder with the System Dialog…** (`project.openDialog`).
@@ -133,6 +137,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **No "restricted method" warnings on every JavaFX run.** With JavaFX 24 or later, Run and Debug grant
+  `--enable-native-access` to the JavaFX modules that load native code, so JDK 24+ no longer prints four red WARNING
+  lines.
+- **The trust question names the build servers.** It listed lemminx-maven, schemas and wrappers but not what the
+  Java file's notice is about: starting Java, Kotlin, Scala, Rust, Ruby, C#, Clojure, Dart and Elixir servers with
+  the folder's build.
+- **The status bar no longer says "Loaded and ready" while a build waits for trust;** it says the server runs
+  without the project's build, syntax checks only.
 - **No "the project did not import" before a folder is trusted.** jdtls runs without the build until you trust the
   folder, so every file is "a non-project file"; the Trust Folder notice says why, and the status bar no longer
   reports a failed import (with a red count) beside it.

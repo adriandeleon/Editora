@@ -288,6 +288,8 @@ class XmlFolderTrustFxTest {
         String body = prompt.alert().getContentText();
         assertTrue(body.contains(project.toString()), body);
         assertTrue(body.contains("lemminx-maven"), body);
+        // The Java file's notice links here: the list names the build its server loads (r/JavaFX re-review).
+        assertTrue(body.contains("Java") && body.contains("Gradle") && body.contains("Cargo"), body);
     }
 
     @Test

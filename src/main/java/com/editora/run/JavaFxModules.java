@@ -33,7 +33,16 @@ public final class JavaFxModules {
      * A Maven or Gradle artifact ({@code javafx-controls-25.jar}, {@code javafx-controls-25-linux.jar}) or a
      * JavaFX SDK jar ({@code javafx.controls.jar}).
      */
-    private static final Pattern JAR = Pattern.compile("javafx[-.]([a-z]+)(?:-\\d[^/\\\\]*)?\\.jar");
+    private static final Pattern JAR = Pattern.compile("javafx[-.]([a-z]+)(?:-(\\d+)[^/\\\\]*)?\\.jar");
+
+    /** The modules that load native code, so JDK 24 and later warn about them unless native access is granted. */
+    private static final Set<String> NATIVE = Set.of("javafx.graphics", "javafx.media", "javafx.web");
+
+    /**
+     * The first JavaFX release that needs JDK 22 or later: from it on, {@code --enable-native-access} is known to the
+     * JDK it runs on, and JDK 24 warns without it ("A restricted method in java.lang.System has been called").
+     */
+    static final int NATIVE_ACCESS_FROM = 24;
 
     /**
      * A launch's paths with the JavaFX jars taken out.
@@ -41,8 +50,10 @@ public final class JavaFxModules {
      * @param jars the JavaFX jars, in their original order ({@code []}: none, or the user chose modules)
      * @param modules the modules those jars name, sorted ({@code javafx.base, javafx.controls, …})
      * @param rest every other path, in its original order
+     * @param nativeAccess the modules to grant native access ({@code --enable-native-access}): those of {@link
+     *     #NATIVE} present, when every JavaFX jar names its version and it is {@link #NATIVE_ACCESS_FROM} or later
      */
-    public record Split(List<String> jars, List<String> modules, List<String> rest) {
+    public record Split(List<String> jars, List<String> modules, List<String> rest, List<String> nativeAccess) {
         /** Whether there is anything to put on the module path. */
         public boolean any() {
             return !jars.isEmpty();
@@ -52,27 +63,38 @@ public final class JavaFxModules {
         public String addModules() {
             return String.join(",", modules);
         }
+
+        /** The {@code --enable-native-access=…} option for {@link #nativeAccess}, or null when there is none. */
+        public @Nullable String enableNativeAccess() {
+            return nativeAccess.isEmpty() ? null : "--enable-native-access=" + String.join(",", nativeAccess);
+        }
     }
 
     /** {@code paths} split into its JavaFX jars and the rest; nothing moves when {@code vmArgs} choose modules. */
     public static Split split(@Nullable List<String> paths, @Nullable List<String> vmArgs) {
         List<String> all = paths == null ? List.of() : paths;
         if (choosesModules(vmArgs)) {
-            return new Split(List.of(), List.of(), List.copyOf(all));
+            return new Split(List.of(), List.of(), List.copyOf(all), List.of());
         }
         List<String> jars = new ArrayList<>();
         Set<String> modules = new TreeSet<>();
         List<String> rest = new ArrayList<>();
+        boolean recentEnough = true;
         for (String path : all) {
             String module = moduleOf(path);
             if (module != null) {
                 jars.add(path);
                 modules.add(module);
+                int version = versionOf(path);
+                recentEnough &= version >= NATIVE_ACCESS_FROM;
             } else {
                 rest.add(path);
             }
         }
-        return new Split(List.copyOf(jars), List.copyOf(modules), List.copyOf(rest));
+        List<String> nativeAccess = !recentEnough || grantsNativeAccess(vmArgs)
+                ? List.of()
+                : modules.stream().filter(NATIVE::contains).toList();
+        return new Split(List.copyOf(jars), List.copyOf(modules), List.copyOf(rest), nativeAccess);
     }
 
     /** As {@link #split(List, List)}, with the VM options as java-debug takes them: one string. */
@@ -93,6 +115,28 @@ public final class JavaFxModules {
         String name = path.substring(slash + 1).toLowerCase(Locale.ROOT);
         Matcher m = JAR.matcher(name);
         return m.matches() && MODULES.contains(m.group(1)) ? "javafx." + m.group(1) : null;
+    }
+
+    /** The JavaFX major version a Maven or Gradle jar's name carries ({@code 25}), or 0 for none (an SDK jar). */
+    static int versionOf(@Nullable String path) {
+        if (path == null) {
+            return 0;
+        }
+        int slash = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+        Matcher m = JAR.matcher(path.substring(slash + 1).toLowerCase(Locale.ROOT));
+        if (!m.matches() || m.group(2) == null) {
+            return 0;
+        }
+        try {
+            return Integer.parseInt(m.group(2));
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    /** Whether the VM options already grant native access: theirs stands. */
+    static boolean grantsNativeAccess(@Nullable List<String> vmArgs) {
+        return vmArgs != null && vmArgs.stream().anyMatch(a -> a != null && a.startsWith("--enable-native-access"));
     }
 
     /** Whether the VM options already say where modules come from or which to add. */

@@ -636,8 +636,9 @@ scripts, Maven build extensions, Rust build scripts and proc macros, a
 A file of one of these languages says so, with **Trust Folder** and **Not
 now**. The button trusts the folder at once; **What does trusting allow?**
 beside the message lists everything trust lets the folder run, and asks there.
-**Workspace: Trust This Folder** asks the same question. Trusting restarts the
-server with the build; removing the trust in Settings → Advanced →
+**Workspace: Trust This Folder** asks the same question. Until then the status
+bar says the server runs without the project's build (syntax checks only).
+Trusting restarts the server with the build; removing the trust in Settings → Advanced →
 Trusted folders stops it again. A loose file with no build next to it starts its
 server as usual. Other servers, Pyright among them, are not held back.
 

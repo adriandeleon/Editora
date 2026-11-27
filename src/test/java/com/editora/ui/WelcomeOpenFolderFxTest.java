@@ -73,4 +73,46 @@ class WelcomeOpenFolderFxTest {
         });
         assertEquals(List.of("project.openDialog"), ran, "a click opens the system's folder dialog");
     }
+
+    /**
+     * Regression (r/JavaFX re-review, 2026-11-27): with the IntelliJ keymap Open File showed no chord once Ctrl+Shift+N
+     * became Go to File. It shows that one: in a window with no project it opens Find File.
+     */
+    @Test
+    void openFileShowsTheGoToFileChordWhenNothingElseIsBound(@TempDir Path dir) throws Exception {
+        String[] shown = {null};
+        String[] expected = {null};
+        FxTestSupport.runOnFx(() -> {
+            KeymapManager keymap = new KeymapManager();
+            keymap.loadNamed("intellij");
+            expected[0] = keymap.displayChord("nav.gotoFile");
+            WelcomePane pane = new WelcomePane(
+                    new CommandRegistry(),
+                    keymap,
+                    new RecentFiles(dir),
+                    List::of,
+                    p -> {},
+                    url -> {},
+                    () -> true,
+                    () -> true,
+                    List::of,
+                    c -> {},
+                    "");
+            new javafx.scene.Scene(pane, 1200, 900);
+            pane.refresh();
+            pane.applyCss();
+            pane.layout();
+            Hyperlink open = pane.lookupAll(".welcome-action").stream()
+                    .map(Hyperlink.class::cast)
+                    .filter(h -> h.getText().equals(tr("welcome.openFile")))
+                    .findFirst()
+                    .orElseThrow();
+            shown[0] = open.getParent().lookupAll(".welcome-key").stream()
+                    .map(n -> ((javafx.scene.control.Label) n).getText())
+                    .findFirst()
+                    .orElse(null);
+        });
+        assertEquals(expected[0], shown[0]);
+        org.junit.jupiter.api.Assertions.assertNotNull(shown[0], "Ctrl+Shift+N in the IntelliJ keymap");
+    }
 }

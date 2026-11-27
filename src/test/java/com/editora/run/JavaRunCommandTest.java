@@ -97,6 +97,7 @@ class JavaRunCommandTest {
                         "/m2/javafx-controls-25-linux.jar" + S + "/m2/javafx-graphics-25-linux.jar",
                         "--add-modules",
                         "javafx.controls,javafx.graphics",
+                        "--enable-native-access=javafx.graphics", // JavaFX 25: no JDK 24 warning on every run
                         "-cp",
                         "/p/target/classes",
                         "demo.HelloApp"),

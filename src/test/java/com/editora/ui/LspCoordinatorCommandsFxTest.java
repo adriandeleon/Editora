@@ -2141,7 +2141,7 @@ class LspCoordinatorCommandsFxTest {
         publish(b.getPath(), List.of(warning));
         fx.run(() -> fx.coordinator.onServerStatus("java", root, "ServiceReady", "ServiceReady"));
         // The ready line, and whatever the non-project look says after it (both land a moment later).
-        String ready = tr("status.lsp.ready", "jdtls");
+        String ready = tr("status.lsp.readyWithoutBuild", "jdtls"); // not "Loaded and ready": syntax only
         String notImported = tr("status.lsp.readyNotImported", "jdtls");
         OnFx.holdsWithin(
                 () -> ready.equals(fx.host.lastStatus()) || notImported.equals(fx.host.lastStatus()),
@@ -2151,7 +2151,7 @@ class LspCoordinatorCommandsFxTest {
         String said = fx.host.lastError();
         String failed = tr("status.lsp.importProblemWhy", "jdtls", "").replaceFirst(":.*", "");
         assertTrue(said == null || !said.startsWith(failed), "no import failure before trust: " + said);
-        assertEquals(ready, fx.host.lastStatus(), "not \"loaded, but the project did not import\"");
+        assertEquals(ready, fx.host.lastStatus(), "running without the build, not \"did not import\" or \"ready\"");
     }
 
     /**

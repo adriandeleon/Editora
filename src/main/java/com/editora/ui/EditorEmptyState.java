@@ -11,7 +11,6 @@ import javafx.scene.layout.StackPane;
 
 import com.editora.command.CommandRegistry;
 import com.editora.command.KeymapManager;
-import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -71,22 +70,22 @@ final class EditorEmptyState {
     private void rebuild() {
         rows.getChildren().clear();
         int r = 0;
-        r = row(r, tr("welcome.openFile"), "file.open", "file.find");
+        r = row(r, tr("welcome.openFile"), "file.open", WelcomePane.OPEN_FILE_CHORDS);
         if (projectsEnabled.getAsBoolean()) {
             r = row(r, tr("welcome.openFolder"), "project.openDialog", "project.open"); // as Open File: a dialog
         }
-        r = row(r, tr("command.palette.show"), "palette.show", null);
-        row(r, tr("welcome.page"), "view.welcome", null);
+        r = row(r, tr("command.palette.show"), "palette.show");
+        row(r, tr("welcome.page"), "view.welcome");
     }
 
-    private int row(int r, String text, String commandId, @Nullable String fallbackChordId) {
+    private int row(int r, String text, String commandId, String... fallbackChordIds) {
         Hyperlink link = new Hyperlink(text);
         link.getStyleClass().add("editor-empty-action");
         link.setOnAction(e -> registry.run(commandId));
         rows.add(link, 0, r);
         String chord = keymap == null ? null : keymap.displayChord(commandId);
-        if (chord == null && fallbackChordId != null && keymap != null) {
-            chord = keymap.displayChord(fallbackChordId);
+        for (int i = 0; chord == null && keymap != null && i < fallbackChordIds.length; i++) {
+            chord = keymap.displayChord(fallbackChordIds[i]);
         }
         if (chord != null) {
             Label key = new Label(chord);

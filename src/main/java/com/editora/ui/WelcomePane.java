@@ -823,25 +823,32 @@ public final class WelcomePane extends Region implements TabContent {
         box.setFillWidth(true);
         // As wide as the widest row (label + gap + chord), not the column, so chords sit near their labels.
         box.setMaxWidth(Region.USE_PREF_SIZE);
-        box.getChildren().add(action(Icons.newFile(), tr("welcome.newFile"), "file.new", null));
+        box.getChildren().add(action(Icons.newFile(), tr("welcome.newFile"), "file.new"));
         // Runs the Open dialog. Its own chord when bound; the Emacs keymap binds only find-file (C-x C-f),
         // which opens a file too, so that is the chord to learn there.
-        box.getChildren().add(action(Icons.open(), tr("welcome.openFile"), "file.open", "file.find"));
+        box.getChildren().add(action(Icons.open(), tr("welcome.openFile"), "file.open", OPEN_FILE_CHORDS));
         if (projectsEnabled.getAsBoolean()) {
             // A click opens the system's folder dialog, as Open File's does; the chord shown is the finder's.
             box.getChildren()
                     .add(action(Icons.openFolder(), tr("welcome.openFolder"), "project.openDialog", "project.open"));
         }
         if (gitEnabled.getAsBoolean()) {
-            box.getChildren().add(action(Icons.git(), tr("welcome.clone"), "git.clone", null));
+            box.getChildren().add(action(Icons.git(), tr("welcome.clone"), "git.clone"));
         }
         // The Command Palette is always last (it's the gateway to everything else).
-        box.getChildren().add(action(Icons.palette(), tr("command.palette.show"), "palette.show", null));
+        box.getChildren().add(action(Icons.palette(), tr("command.palette.show"), "palette.show"));
         return box;
     }
 
-    /** {@code commandId} runs on click; its chord is shown, or {@code fallbackChordId}'s when it has none. */
-    private Node action(Node icon, String text, String commandId, @Nullable String fallbackChordId) {
+    /**
+     * The commands whose chord Open File shows when File: Open… has none: Find File, then Go to File — IntelliJ's
+     * Ctrl+Shift+N, which opens Find File in a window with no project. With the IntelliJ keymap the row showed no
+     * chord at all once Ctrl+Shift+N became Go to File (r/JavaFX re-review, 2026-11-27).
+     */
+    static final String[] OPEN_FILE_CHORDS = {"file.find", "nav.gotoFile"};
+
+    /** {@code commandId} runs on click; its chord is shown, or the first of {@code fallbackChordIds}' it has none. */
+    private Node action(Node icon, String text, String commandId, String... fallbackChordIds) {
         // Put the icon in a fixed-width column so every label starts at the same x, regardless of icon width.
         StackPane holder = new StackPane(scaled(icon));
         holder.setMinWidth(UiZoom.px(26 * zoom));
@@ -861,8 +868,8 @@ public final class WelcomePane extends Region implements TabContent {
         row.setAlignment(Pos.CENTER_LEFT);
         row.getStyleClass().add("welcome-action-row");
         String shortcut = shortcutFor(commandId);
-        if (shortcut == null && fallbackChordId != null) {
-            shortcut = shortcutFor(fallbackChordId);
+        for (int i = 0; shortcut == null && i < fallbackChordIds.length; i++) {
+            shortcut = shortcutFor(fallbackChordIds[i]);
         }
         if (shortcut != null) {
             Label key = new Label(shortcut);

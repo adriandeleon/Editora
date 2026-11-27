@@ -4184,9 +4184,13 @@ final class LspCoordinator {
                 host.setStatus(tr("status.lsp.readyWithProblems", server));
             } else {
                 host.setStatus(
-                        line.ready()
-                                ? nodeTypes.atReady(root, tr("status.lsp.ready", server))
-                                : tr("status.lsp.server", server, line.text()));
+                        !line.ready()
+                                ? tr("status.lsp.server", server, line.text())
+                                : LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && buildWaitsForTrust(root)
+                                        // "ready" read as fully working while every file was syntax-only (r/JavaFX
+                                        // re-review, 2026-11-27): say what runs, and what trusting adds
+                                        ? tr("status.lsp.readyWithoutBuild", server)
+                                        : nodeTypes.atReady(root, tr("status.lsp.ready", server)));
                 if (line.ready()) {
                     updateStatusBar(); // the segment names the TypeScript the server said it runs (JS review B109)
                     if (LspServerRegistry.JAVA_SERVER_ID.equals(serverId)) {
@@ -4195,6 +4199,18 @@ final class LspCoordinator {
                 }
             }
         }
+    }
+
+    /** Whether an open file under {@code root} is served by a jdtls that started without the folder's build. */
+    private boolean buildWaitsForTrust(@Nullable Path root) {
+        boolean[] waits = {false};
+        host.forEachBuffer(b -> {
+            Path p = waits[0] ? null : lspPath(b);
+            if (p != null && (root == null || p.startsWith(root)) && lspManager.buildNotLoaded(p)) {
+                waits[0] = true;
+            }
+        });
+        return waits[0];
     }
 
     /** {@link #sayOnceReasoned} waits not yet ended (FX thread only). */

@@ -215,7 +215,9 @@ script. In a Maven or Gradle project, every `main` gets a ▶ in the gutter and
 runs with the project's classpath. A JavaFX application runs too: its JavaFX
 jars go on the module path with `--add-modules`, as `javafx:run` puts them,
 unless the configuration's VM options already set `--module-path` or
-`--add-modules`. Run and Debug both do this. See
+`--add-modules`. Run and Debug both do this. With JavaFX 24 or later it also
+grants the JavaFX modules that load native code `--enable-native-access`, so
+JDK 24 and later print no "restricted method" warning on every run. See
 [Running files](/docs/run-debug#running-files) and
 [Running a project's main class](/docs/run-debug#running-a-projects-main-class).
 
