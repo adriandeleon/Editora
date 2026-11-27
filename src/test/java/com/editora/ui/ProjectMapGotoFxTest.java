@@ -138,6 +138,30 @@ class ProjectMapGotoFxTest {
         assertEquals(List.of(), editorOpened, "nothing opened in the editor");
     }
 
+    /**
+     * IntelliJ's Ctrl+Shift+N and VS Code's Ctrl+P run {@code nav.gotoFile} since the r/JavaFX dry run (2026-11-27):
+     * typed in the Map they still open the Map's own file finder.
+     */
+    @Test
+    void theGoToFileChordsOpenTheMapsFinderToo() throws Exception {
+        Path src = Files.createDirectories(root.resolve("src"));
+        Path use = Files.writeString(src.resolve("Use.java"), USE);
+        ProjectPanel panel = openPanel();
+        ProjectMapView view = FxTestSupport.field(panel, "mapView");
+        MapCards cards = FxTestSupport.field(view, "cards");
+        ProjectMapPreview source = openCard(cards, use);
+        FxTestSupport.runOnFx(() -> {
+            source.editor().requestFocus();
+            assertTrue(runMapCommand(panel, "nav.gotoFile"));
+        });
+        waitForOverlayList(panel);
+        FxTestSupport.runOnFx(() -> assertEquals(
+                src.toString(),
+                Path.of(overlayField(panel).getText()).toString(),
+                "the Map's finder, in the card's folder"));
+        FxTestSupport.runOnFx(() -> panel.mapWindow().overlayHost().hide());
+    }
+
     @Test
     void goToFileTypedInACardOpensTheFilesCardOnTheMap() throws Exception {
         Path src = Files.createDirectories(root.resolve("src"));

@@ -2732,6 +2732,10 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("search.everywhere", host.navigation()::showSearchEverywhere));
         host.registry()
                 .register(Command.of(
+                        "nav.gotoFile",
+                        () -> host.navigation().gotoFile(() -> host.registry().run("file.find"))));
+        host.registry()
+                .register(Command.of(
                         "view.togglePaletteSearchEverywhere",
                         () -> host.editorSettings()
                                 .toggleSetting(

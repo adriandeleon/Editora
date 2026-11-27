@@ -252,6 +252,7 @@ final class MenuBarModel {
                 new MenuSpec(
                         "menubar.navigate",
                         List.of(
+                                "nav.gotoFile",
                                 "file.find",
                                 "buffer.jump",
                                 "lsp.gotoSymbol",

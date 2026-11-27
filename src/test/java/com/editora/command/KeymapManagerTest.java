@@ -169,4 +169,34 @@ class KeymapManagerTest {
         }
         return m;
     }
+
+    /**
+     * Regression (r/JavaFX dry run, 2026-11-27): IntelliJ's Ctrl+Shift+N and VS Code's and Sublime's Ctrl+P ran the
+     * path-relative Find File prompt, so a class name found nothing and Enter made a new empty buffer. They are
+     * Go to File in those editors: a search of the project's files by name.
+     */
+    @Test
+    void goToFileChordsSearchTheProjectInTheKeymapsThatBorrowThem() {
+        Map<String, String> expected = Map.of(
+                "intellij", "C-S-n",
+                "vscode", "C-p",
+                "sublime", "C-p");
+        expected.forEach((name, chord) -> {
+            KeymapManager km = new KeymapManager();
+            km.loadNamed(name, false);
+            assertEquals("nav.gotoFile", km.commandFor(chord), name);
+        });
+        Map<String, String> mac = Map.of(
+                "intellij", "Cmd-S-o",
+                "vscode", "Cmd-p",
+                "sublime", "Cmd-p");
+        mac.forEach((name, chord) -> {
+            KeymapManager km = new KeymapManager();
+            km.loadNamed(name, true);
+            assertEquals("nav.gotoFile", km.commandFor(chord), name + " (macOS)");
+        });
+        KeymapManager emacs = new KeymapManager();
+        emacs.loadNamed("emacs", false);
+        assertEquals("file.find", emacs.commandFor("C-x C-f"), "Emacs keeps C-x C-f as its find-file");
+    }
 }

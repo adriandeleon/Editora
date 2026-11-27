@@ -262,4 +262,39 @@ class LaunchConfigTest {
                 java.util.Map.of("host", "localhost", "port", 1),
                 LaunchConfig.pythonAttach("", 1).get("connect"));
     }
+
+    /** Regression (r/JavaFX dry run, 2026-11-27): Debug of a JavaFX Application on the class path never reached main. */
+    @Test
+    void javaFxJarsMoveToTheModulePathAndTheirModulesAreAdded() {
+        Map<String, Object> m = LaunchConfig.launch(
+                "demo.HelloApp",
+                "hello-fx",
+                List.of("/p/target/classes", "/m2/javafx-controls-25-linux.jar", "/m2/javafx-base-25-linux.jar"),
+                List.of(),
+                "",
+                "",
+                List.of(),
+                "-Xmx256m",
+                false);
+        assertEquals(List.of("/p/target/classes"), m.get("classPaths"));
+        assertEquals(List.of("/m2/javafx-controls-25-linux.jar", "/m2/javafx-base-25-linux.jar"), m.get("modulePaths"));
+        assertEquals("-Xmx256m --add-modules javafx.base,javafx.controls", m.get("vmArgs"));
+    }
+
+    @Test
+    void javaFxIsLeftAloneWhenTheVmArgsAlreadyAddModules() {
+        Map<String, Object> m = LaunchConfig.launch(
+                "M",
+                "",
+                List.of("/c", "/m2/javafx-controls-25-linux.jar"),
+                List.of(),
+                "",
+                "",
+                List.of(),
+                "--add-modules javafx.controls",
+                false);
+        assertEquals(List.of("/c", "/m2/javafx-controls-25-linux.jar"), m.get("classPaths"));
+        assertFalse(m.containsKey("modulePaths"));
+        assertEquals("--add-modules javafx.controls", m.get("vmArgs"));
+    }
 }

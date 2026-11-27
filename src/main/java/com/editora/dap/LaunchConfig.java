@@ -92,6 +92,18 @@ public final class LaunchConfig {
             boolean stopOnEntry,
             Target target) {
         Target on = target == null ? Target.LOCAL : target;
+        // JavaFX found only on the class path stops an Application subclass before main ("JavaFX runtime
+        // components are missing"): its jars go on the module path, its modules into --add-modules.
+        com.editora.run.JavaFxModules.Split fx = com.editora.run.JavaFxModules.split(classPaths, vmArgs);
+        List<String> cp = fx.any() ? fx.rest() : classPaths;
+        List<String> mp = modulePaths;
+        String vm = vmArgs;
+        if (fx.any()) {
+            List<String> mods = new java.util.ArrayList<>(modulePaths == null ? List.of() : modulePaths);
+            mods.addAll(fx.jars());
+            mp = mods;
+            vm = ((vmArgs == null ? "" : vmArgs.strip()) + " --add-modules " + fx.addModules()).strip();
+        }
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("type", "java");
         m.put("name", "Editora (Launch)");
@@ -100,18 +112,18 @@ public final class LaunchConfig {
         if (env != null && !env.isEmpty()) {
             m.put("env", env);
         }
-        if (notBlank(vmArgs)) {
+        if (notBlank(vm)) {
             // java-debug's vmArgs is a single string of JVM options (kept verbatim, so a quoted value survives).
-            m.put("vmArgs", vmArgs);
+            m.put("vmArgs", vm);
         }
         if (notBlank(projectName)) {
             m.put("projectName", projectName);
         }
-        if (notEmpty(classPaths)) {
-            m.put("classPaths", classPaths);
+        if (notEmpty(cp)) {
+            m.put("classPaths", cp);
         }
-        if (notEmpty(modulePaths)) {
-            m.put("modulePaths", modulePaths);
+        if (notEmpty(mp)) {
+            m.put("modulePaths", mp);
         }
         if (notBlank(javaExec)) {
             m.put("javaExec", javaExec);

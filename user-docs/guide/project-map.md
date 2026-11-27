@@ -671,7 +671,7 @@ Method, Find Usages, Call Hierarchy and Type Hierarchy.
   Hierarchy in the editor instead, at that spot, bringing the editor window
   forward.
 - **Go to File and Go to Symbol.** Typed in the Map window, the file finder
-  (`file.find`; `Ctrl+P` in VS Code, `Ctrl+Shift+N` in IntelliJ, `C-x C-f` in
+  (`file.find` or `nav.gotoFile`; `Ctrl+P` in VS Code, `Ctrl+Shift+N` in IntelliJ, `C-x C-f` in
   Emacs) and Go to Symbol in Workspace (`lsp.gotoSymbol`) open over the Map, and
   what you pick opens as a card there, its name selected. The finder starts in
   the folder of the card you are in, Go to Symbol asks that card's language

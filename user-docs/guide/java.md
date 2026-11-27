@@ -209,7 +209,10 @@ Imports and Format.
 **Run File** (`file.run`: `C-c r` in the Emacs keymap, Ctrl+Shift+B (⌘⇧B on macOS) in VS Code) runs a compact source
 file, a single-file program (`java File.java`) or a `java --source` shebang
 script. In a Maven or Gradle project, every `main` gets a ▶ in the gutter and
-runs with the project's classpath. See
+runs with the project's classpath. A JavaFX application runs too: its JavaFX
+jars go on the module path with `--add-modules`, as `javafx:run` puts them,
+unless the configuration's VM options already set `--module-path` or
+`--add-modules`. Run and Debug both do this. See
 [Running files](/docs/run-debug#running-files) and
 [Running a project's main class](/docs/run-debug#running-a-projects-main-class).
 
