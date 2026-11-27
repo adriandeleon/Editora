@@ -174,9 +174,14 @@ final class McpTools {
         if (uri.equals(REVIEWS_URI)) {
             return reviewsText();
         }
-        String path = filePath(uri);
-        Long stamp = path == null ? null : bufferStamps.get(path);
-        return stamp == null ? null : Long.toString(stamp);
+        // By URI, as resourceUris names them: turning the URI back into a path can spell it otherwise than the
+        // window does (on Windows a "/tmp/a" key comes back as "C:\\tmp\\a"), and the file would never update.
+        for (java.util.Map.Entry<String, Long> e : bufferStamps.entrySet()) {
+            if (fileUri(e.getKey()).equals(uri)) {
+                return Long.toString(e.getValue());
+            }
+        }
+        return null;
     }
 
     /** The open files' URIs, as {@code resources/list} lists them (for telling when the list changed). */

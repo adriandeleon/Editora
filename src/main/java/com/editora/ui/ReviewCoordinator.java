@@ -633,6 +633,27 @@ final class ReviewCoordinator {
         return panel;
     }
 
+    /**
+     * Where threads are kept changed (the {@code reviewsInProject} setting): the open files and diffs find their
+     * threads again in the other store.
+     */
+    void storeChanged() {
+        places.clear();
+        diffPlaces.clear();
+        host.forEachBuffer(b -> {
+            b.setReviewLenses(null);
+            restore(b);
+        });
+        diffTargets.forEach((pane, target) -> {
+            pane.refreshReviewMarks();
+            findPlace(target, place -> {
+                diffPlaces.put(pane, place);
+                pane.refreshReviewMarks();
+            });
+        });
+        activeBufferChanged();
+    }
+
     /** The tool window shows the threads of the active file's repository: it follows the active tab. */
     void activeBufferChanged() {
         if (panel != null) {

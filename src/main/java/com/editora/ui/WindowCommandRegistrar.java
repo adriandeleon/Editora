@@ -3039,6 +3039,16 @@ final class WindowCommandRegistrar {
                                         () -> host.config().getSettings().isGitAutoFetch(),
                                         v -> host.config().getSettings().setGitAutoFetch(v),
                                         host.git()::applySupport)));
+        // Where review threads are kept: the config folder, or each repository's .editora/reviews.json.
+        host.registry()
+                .register(Command.of(
+                        "review.toggleKeepInProject",
+                        () -> host.editorSettings()
+                                .toggleSetting(
+                                        "review.toggleKeepInProject",
+                                        () -> host.config().getSettings().isReviewsInProject(),
+                                        v -> host.config().getSettings().setReviewsInProject(v),
+                                        host.reviewCoordinator()::storeChanged)));
         host.registry()
                 .register(Command.of(
                         "git.setAutoFetchInterval",
