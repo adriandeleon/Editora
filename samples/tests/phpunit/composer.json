@@ -1,0 +1,17 @@
+{
+  "name": "editora-samples/phpunit-shelf",
+  "description": "Sample PHPUnit project for Editora's Test Results, test gutter and Run/Debug Test at Caret: composer install fetches PHPUnit into vendor/ (or a phpunit on the PATH runs it).",
+  "type": "project",
+  "license": "MIT",
+  "require": {
+    "php": ">=8.2"
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^11.5"
+  },
+  "autoload": {
+    "psr-4": {
+      "Shelf\\": "src/"
+    }
+  }
+}

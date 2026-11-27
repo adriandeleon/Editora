@@ -1,0 +1,6 @@
+# The shelf as a small Python project: this file makes the folder a Python sub-project, so Pyright gets a
+# server of its own here. Nothing to install: the code and its tests use only the standard library.
+[project]
+name = "shelf"
+version = "0.1.0"
+requires-python = ">=3.10"

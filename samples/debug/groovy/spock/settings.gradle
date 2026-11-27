@@ -1,0 +1,2 @@
+// An optional Gradle build beside the Groovy shelf, only for its Spock spec (the script itself needs no build).
+rootProject.name = 'shelf-spock'
