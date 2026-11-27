@@ -14,6 +14,7 @@ import com.editora.config.NoteStore;
 import com.editora.config.PluginStore;
 import com.editora.config.ProjectManager;
 import com.editora.config.RecentFiles;
+import com.editora.config.ReviewStore;
 import com.editora.config.SearchHistory;
 import com.editora.config.Settings;
 import com.editora.config.TrustStore;
@@ -453,7 +454,10 @@ public enum ConfigSchema {
                     // PowerShell's language server; + powershellDebugEnabled (on), powershellDebugPath ("") —
                     // PowerShell
                     // debugging on it. Additive: absent is the default.
-                    Map.entry(185, (Migration) ConfigMigrations::identity)),
+                    Map.entry(185, (Migration) ConfigMigrations::identity),
+                    // v186→187: + reviewsInProject (off) — review threads in the repository's .editora/reviews.json
+                    // instead of the config folder. Additive: absent is the default.
+                    Map.entry(186, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without
@@ -608,6 +612,8 @@ public enum ConfigSchema {
     RECENT(RecentFiles.SCHEMA_VERSION, 1, Map.of(0, ConfigMigrations::wrapRecentFilesArray)),
     // v1 → v2: TextAnchor gained a `length` component — additive (missing ⇒ 0, handled by the relocator).
     NOTES(NoteStore.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity)),
+    /** Local code-review threads, per repository. */
+    REVIEWS(ReviewStore.SCHEMA_VERSION, 1, Map.of()),
     // v1 → v2: + exec, what the user allowed and configured for running commands on each host (additive;
     // absent means nothing is allowed anywhere, which is what every connection meant before).
     CONNECTIONS(ConnectionStore.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity)),

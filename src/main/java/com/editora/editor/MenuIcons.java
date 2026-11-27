@@ -289,6 +289,11 @@ public final class MenuIcons {
         return line("M3 2.5h10v8l-3 3H3zM10 13.5v-3h3");
     }
 
+    /** A speech balloon — "Add Review Comment"; mirrors {@code Icons.review} (tool stripe). */
+    static Node review() {
+        return line("M2.5 3h11v7.5H7l-3 2.5v-2.5H2.5zM5 6h6M5 8h4");
+    }
+
     /** UI Kit line "bookmark" — "Add/Remove Bookmark"; mirrors {@code Icons.bookmark} (tool stripe). */
     static Node bookmark() {
         return line("M4.5 2h7v12L8 10.6 4.5 14z");

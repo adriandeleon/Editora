@@ -80,6 +80,69 @@ public interface McpBridge {
             int behind,
             List<GitFileState> files) {}
 
+    /** One comment of a review thread, as an agent reads it. {@code authorKind}: {@code user}, {@code agent}, {@code github}. */
+    record ReviewCommentInfo(
+            String id,
+            String authorKind,
+            String author,
+            String body,
+            @Nullable String suggestion,
+            long createdAt) {}
+
+    /**
+     * A review thread as an agent reads it: its file (absolute), its lines where they are now (1-based, inclusive;
+     * the last known ones when {@code outdated}), its state ({@code open}, {@code resolved}, {@code dismissed}) and
+     * why, an agent finding's severity and category, and its comments, oldest first.
+     */
+    record ReviewThreadInfo(
+            String id,
+            String path,
+            int startLine,
+            int endLine,
+            boolean outdated,
+            String state,
+            @Nullable String stateNote,
+            @Nullable String severity,
+            @Nullable String category,
+            List<ReviewCommentInfo> comments) {}
+
+    /** A thread an agent started: its id and lines, or why it was refused ({@code error} set, {@code id} null). */
+    record ReviewAdded(@Nullable String id, @Nullable String error, int startLine, int endLine) {}
+
+    /**
+     * The review threads of the window's repository (of {@code path}'s, when given, only those on that file), open
+     * ones only unless {@code all}. Default: none (a bridge without review comments).
+     */
+    default List<ReviewThreadInfo> listReviews(@Nullable String path, boolean all) {
+        return List.of();
+    }
+
+    /**
+     * Starts a review thread on lines {@code startLine..endLine} (1-based) of {@code path}, written by {@code agent}.
+     * Refused (an {@code error}) for a file outside the window's repository or project, or lines the file has not.
+     */
+    default ReviewAdded addReview(
+            String path,
+            int startLine,
+            int endLine,
+            String body,
+            @Nullable String suggestion,
+            @Nullable String severity,
+            @Nullable String category,
+            String agent) {
+        return new ReviewAdded(null, "Review comments are not available.", 0, 0);
+    }
+
+    /** Replies to thread {@code threadId}; null when done, else why not. */
+    default @Nullable String replyReview(String threadId, String body, @Nullable String suggestion, String agent) {
+        return "Review comments are not available.";
+    }
+
+    /** Resolves thread {@code threadId} with {@code note} (what fixed it); null when done, else why not. */
+    default @Nullable String resolveReview(String threadId, String note, String agent) {
+        return "Review comments are not available.";
+    }
+
     /**
      * Each open file's change stamp, by path: a number that changes whenever its text does (a buffer's document
      * version). Cheap — no text is copied — so the server can poll it while an agent watches resources. Default: the

@@ -35,6 +35,7 @@ public class ConfigManager {
     static final String BOOKMARKS_FILE_NAME = "bookmarks.json";
     static final String BREAKPOINTS_FILE_NAME = "breakpoints.json";
     static final String NOTES_FILE_NAME = "notes.json";
+    static final String REVIEWS_FILE_NAME = "reviews.json";
     static final String CONNECTIONS_FILE_NAME = "connections.json";
     static final String DICTIONARY_FILE_NAME = "dictionary.txt";
     static final String PLUGINS_FILE_NAME = "plugins.json";

@@ -726,6 +726,9 @@ public class EditorBuffer implements TabContent {
     private java.util.function.BiConsumer<EditorBuffer, Integer> gutterBlameClick = (buffer, line) -> {};
     /** Invoked by the "Add Personal Note" context-menu item (the controller prompts + creates). */
     java.util.function.Consumer<EditorBuffer> addNoteHandler = b -> {};
+
+    /** "Add Review Comment" ({@code false}) and "Suggest Change" ({@code true}) from the context menu; null: no rows. */
+    java.util.function.@Nullable BiConsumer<EditorBuffer, Boolean> reviewCommentHandler;
     /** LSP navigation actions (controller-supplied); shown in the context menu only while LSP is active. */
     Runnable lspGotoDefinitionAction = () -> {};
 
@@ -2187,6 +2190,35 @@ public class EditorBuffer implements TabContent {
 
     public void activateCodeLens(int line) {
         inlayDecor.activateCodeLens(line);
+    }
+
+    /**
+     * A review thread's marker: drawn after the thread's last line ({@code line}, 0-based) like a code lens, kept on
+     * its line through edits, and clickable. {@code threadId} names the thread for the click handler.
+     */
+    public record ReviewLens(int line, String label, String threadId) {}
+
+    /** Sets the review markers; null or empty clears them. */
+    public void setReviewLenses(java.util.@Nullable List<ReviewLens> lenses) {
+        inlayDecor.setReviewLenses(lenses);
+    }
+
+    public void setReviewLensHandler(java.util.function.BiConsumer<Integer, java.util.List<ReviewLens>> handler) {
+        inlayDecor.setReviewLensHandler(handler);
+    }
+
+    /** The review markers on {@code line} (0-based), as they are now (edits move them). */
+    public java.util.List<ReviewLens> reviewLensesOn(int line) {
+        return inlayDecor.reviewLensesOn(line);
+    }
+
+    /** Every line that has a review marker now, in order. */
+    public java.util.NavigableSet<Integer> reviewLensLines() {
+        return inlayDecor.reviewLensLines();
+    }
+
+    public void activateReviewLens(int line) {
+        inlayDecor.activateReviewLens(line);
     }
 
     public void setOccurrenceRequester(Runnable requester) {
@@ -4766,6 +4798,11 @@ public class EditorBuffer implements TabContent {
         if (handler != null) {
             this.addNoteHandler = handler;
         }
+    }
+
+    /** Sets what the context menu's review rows do; until then the menu has none. */
+    public void setReviewCommentHandler(java.util.function.BiConsumer<EditorBuffer, Boolean> handler) {
+        this.reviewCommentHandler = handler;
     }
 
     public void setRunHandler(Runnable handler) {

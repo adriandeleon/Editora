@@ -270,7 +270,7 @@ class McpServerErasTest {
         List<String> uris = new ArrayList<>();
         list.get("resources").forEach(r -> uris.add(r.get("uri").asText()));
         String file = McpTools.fileUri("/tmp/a.java");
-        assertEquals(List.of(file, McpTools.DIAGNOSTICS_URI, McpTools.GIT_STATUS_URI), uris);
+        assertEquals(List.of(file, McpTools.DIAGNOSTICS_URI, McpTools.REVIEWS_URI, McpTools.GIT_STATUS_URI), uris);
 
         JsonNode read =
                 modern(2, "resources/read", "\"uri\":\"" + file + "\"").body().get("result");

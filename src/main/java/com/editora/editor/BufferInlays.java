@@ -84,14 +84,69 @@ final class BufferInlays {
                 : b.httpResults.inlays(line, lsp, b.area.getParagraphLength(line));
     }
 
-    /** The LSP inlays of one line: its colour swatches and hints, then — after the last character — its code lens. */
+    /**
+     * The LSP inlays of one line: its colour swatches and hints, then — after the last character — its code lens,
+     * then its review threads.
+     */
     private java.util.@Nullable List<org.fxmisc.richtext.Inlay> lspInlaysOn(int line) {
         java.util.List<org.fxmisc.richtext.Inlay> hints = swatchInlays.merged(line, inlayHintsByLine.get(line));
+        if (line < 0 || line >= b.area.getParagraphs().size()) {
+            return hints;
+        }
         java.util.List<EditorBuffer.CodeLens> lenses = codeLensByLine.get(line);
-        return lenses == null || line < 0 || line >= b.area.getParagraphs().size()
-                ? hints
-                : CodeLensShift.withLens(
-                        hints, lenses, EditorBuffer.CodeLens::label, b.area.getParagraphLength(line), CODE_LENS_STYLE);
+        if (lenses != null) {
+            hints = CodeLensShift.withLens(
+                    hints, lenses, EditorBuffer.CodeLens::label, b.area.getParagraphLength(line), CODE_LENS_STYLE);
+        }
+        java.util.List<EditorBuffer.ReviewLens> reviews = reviewLensByLine.get(line);
+        if (reviews != null) {
+            hints = CodeLensShift.withLens(
+                    hints, reviews, EditorBuffer.ReviewLens::label, b.area.getParagraphLength(line), REVIEW_LENS_STYLE);
+        }
+        return hints;
+    }
+
+    private static final String REVIEW_LENS_STYLE = "review-lens";
+
+    /** 0-based line → the review threads whose last line it is. Read live by the areas' inlay factory. */
+    private java.util.Map<Integer, java.util.List<EditorBuffer.ReviewLens>> reviewLensByLine = java.util.Map.of();
+
+    private java.util.function.BiConsumer<Integer, java.util.List<EditorBuffer.ReviewLens>> reviewLensHandler =
+            (line, lenses) -> {};
+
+    /** Sets the review threads' markers, each drawn after its thread's last line. Null or empty clears them. */
+    void setReviewLenses(java.util.@Nullable List<EditorBuffer.ReviewLens> lenses) {
+        java.util.Map<Integer, java.util.List<EditorBuffer.ReviewLens>> byLine =
+                CodeLensShift.byLine(lenses, EditorBuffer.ReviewLens::line);
+        if (byLine.equals(reviewLensByLine)) {
+            return;
+        }
+        reviewLensByLine = byLine.isEmpty() ? java.util.Map.of() : byLine;
+        ensureInlayFactory();
+        refreshInlayAreas();
+    }
+
+    /** What a click on a review marker does: gets the line as it is now, and the threads ending on it. */
+    void setReviewLensHandler(java.util.function.BiConsumer<Integer, java.util.List<EditorBuffer.ReviewLens>> handler) {
+        this.reviewLensHandler = handler == null ? (line, lenses) -> {} : handler;
+    }
+
+    /** The review markers on {@code line} (0-based), empty when it has none. */
+    java.util.List<EditorBuffer.ReviewLens> reviewLensesOn(int line) {
+        return reviewLensByLine.getOrDefault(line, java.util.List.of());
+    }
+
+    /** Every line with a review marker, in order. */
+    java.util.NavigableSet<Integer> reviewLensLines() {
+        return new java.util.TreeSet<>(reviewLensByLine.keySet());
+    }
+
+    /** Runs the click action of the review markers on {@code line}, as a click on them does. */
+    void activateReviewLens(int line) {
+        java.util.List<EditorBuffer.ReviewLens> lenses = reviewLensByLine.get(line);
+        if (lenses != null) {
+            reviewLensHandler.accept(line, lenses);
+        }
     }
 
     /** Draws the server's colour swatches (HTML review D9) before their literals; null or empty clears them. */
@@ -154,8 +209,14 @@ final class BufferInlays {
     /** Keeps the lenses on their declarations until the next answer arrives ({@link CodeLensShift}). */
     void shiftCodeLenses(java.util.List<org.fxmisc.richtext.model.PlainTextChange> changes) {
         var moved = CodeLensShift.afterChanges(codeLensByLine, changes, b.area);
+        var movedReviews = CodeLensShift.afterChanges(reviewLensByLine, changes, b.area);
         if (moved != null) {
             codeLensByLine = moved;
+        }
+        if (movedReviews != null) {
+            reviewLensByLine = movedReviews; // a thread's marker stays on its line until the next save re-anchors it
+        }
+        if (moved != null || movedReviews != null) {
             refreshInlayAreas();
         }
     }
@@ -175,13 +236,21 @@ final class BufferInlays {
     void installCodeLensClick(CodeArea a) {
         b.httpResults.install(a); // and on a .http request's result
         a.addEventFilter(MouseEvent.MOUSE_CLICKED, e -> {
-            if (e.getButton() != MouseButton.PRIMARY || !e.isStillSincePress() || lensAt(a, e) == null) {
+            if (e.getButton() != MouseButton.PRIMARY || !e.isStillSincePress()) {
                 return;
             }
-            e.consume();
-            activateCodeLens(lensLineAt(a, e));
+            if (reviewLensAt(a, e) != null) {
+                e.consume();
+                activateReviewLens(lensLineAt(a, e));
+            } else if (lensAt(a, e) != null) {
+                e.consume();
+                activateCodeLens(lensLineAt(a, e));
+            }
         });
-        a.addEventFilter(MouseEvent.MOUSE_MOVED, e -> hoverLens(a, lensAt(a, e)));
+        a.addEventFilter(MouseEvent.MOUSE_MOVED, e -> {
+            Node review = reviewLensAt(a, e);
+            hoverLens(a, review != null ? review : lensAt(a, e));
+        });
         a.addEventFilter(MouseEvent.MOUSE_EXITED, e -> hoverLens(a, null));
     }
 
@@ -195,6 +264,14 @@ final class BufferInlays {
         int offset = hit.getCharacterIndex().orElse(hit.getInsertionIndex());
         return a.offsetToPosition(offset, org.fxmisc.richtext.model.TwoDimensional.Bias.Backward)
                 .getMajor();
+    }
+
+    /** The review marker the pointer is over, or null. Looks for one only on a line that has markers. */
+    private @Nullable Node reviewLensAt(CodeArea a, MouseEvent e) {
+        if (reviewLensByLine.isEmpty() || !reviewLensByLine.containsKey(lensLineAt(a, e))) {
+            return null;
+        }
+        return labelAt(a, e.getSceneX(), e.getSceneY(), REVIEW_LENS_STYLE);
     }
 
     /** The lens label the pointer is over, or null. Looks for one only on a line that has lenses. */

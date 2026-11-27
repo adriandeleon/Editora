@@ -150,6 +150,11 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
     }
 
     @Override
+    public ToolWindow reviewsToolWindow() {
+        return mc.reviewsToolWindow;
+    }
+
+    @Override
     public ToolWindow fileInfoToolWindow() {
         return mc.fileInfoToolWindow;
     }
@@ -492,6 +497,11 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
     @Override
     public NotesCoordinator notesCoordinator() {
         return mc.notesCoordinator;
+    }
+
+    @Override
+    public ReviewCoordinator reviewCoordinator() {
+        return mc.reviewCoordinator;
     }
 
     @Override

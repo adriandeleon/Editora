@@ -85,6 +85,7 @@ com/editora/ui/MapSurface.java	this	addEventHandler	the Project Map canvas: ever
 com/editora/ui/MarkdownBacklinks.java	list	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
 com/editora/ui/MarkdownLintPanel.java	list	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
 com/editora/ui/NotesPanel.java	tree	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
+com/editora/ui/ReviewsPanel.java	tree	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
 com/editora/ui/OverlayHost.java	backdrop	addEventHandler	the overlay backdrop: a press closes the overlay, as Esc does
 com/editora/ui/ProblemsPanel.java	tree	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
 com/editora/ui/ProjectCombo.java	delete	addEventFilter	a Button (a Control)

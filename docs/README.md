@@ -54,6 +54,8 @@ architecture and contributor guidance; the exhaustive historical notes are prese
   symbol index, Search Everywhere, and the flow features (recent locations, peek, sticky scroll).
 - [subsystems/project-map.md](subsystems/project-map.md) — the Project tool window's Canvas-based
   Miller-column navigator, interaction contract, layout, filtering, preview, and threading model.
+- [subsystems/code-review.md](subsystems/code-review.md) — local review threads: the model, how they follow
+  their lines, where they are kept, and what is still to build.
 - [subsystems/diff-and-merge.md](subsystems/diff-and-merge.md) — loss-aware diff text, background
   computation, refresh guards, patch-set, repository, and directory review, Git hunk actions, ancestor-aware
   merge, and accessibility.

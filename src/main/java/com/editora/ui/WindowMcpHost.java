@@ -22,6 +22,11 @@ final class WindowMcpHost implements WindowMcpBridge.Host {
     }
 
     @Override
+    public ReviewCoordinator reviewCoordinator() {
+        return mc.reviewCoordinator;
+    }
+
+    @Override
     public WindowSessionCoordinator sessions() {
         return mc.sessions;
     }

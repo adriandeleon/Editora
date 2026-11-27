@@ -32,7 +32,7 @@ class McpResourcesTest {
                 new McpBridge.OpenFile(null, "Untitled-1", "plain", true, true),
                 new McpBridge.OpenFile(path, "a.md", "markdown", true, false));
         JsonNode list = tools.listResourcesResult().get("resources");
-        assertEquals(3, list.size(), "the file, the diagnostics, the Git status: " + list);
+        assertEquals(4, list.size(), "the file, the diagnostics, the reviews, the Git status: " + list);
         JsonNode file = list.get(0);
         assertEquals(McpTools.fileUri(path), file.get("uri").asText());
         assertEquals("text/markdown", file.get("mimeType").asText());
@@ -56,7 +56,11 @@ class McpResourcesTest {
         assertNull(tools.resourceStamp(McpTools.fileUri(path + ".gone"), stamps), "a file no longer open");
         assertTrue(tools.resourceStamp(McpTools.GIT_STATUS_URI, stamps).contains("repo"));
         assertEquals(
-                java.util.Set.of(McpTools.fileUri(path), McpTools.DIAGNOSTICS_URI, McpTools.GIT_STATUS_URI),
+                java.util.Set.of(
+                        McpTools.fileUri(path),
+                        McpTools.DIAGNOSTICS_URI,
+                        McpTools.REVIEWS_URI,
+                        McpTools.GIT_STATUS_URI),
                 tools.resourceUris(stamps));
     }
 
@@ -85,5 +89,17 @@ class McpResourcesTest {
                 "yaml", "application/yaml",
                 "java", "text/plain");
         expected.forEach((language, type) -> assertEquals(type, McpTools.mimeType(language), language));
+    }
+
+    /**
+     * Regression: a stamp was looked up by the path its URI turns back into, which can be spelled otherwise than the
+     * window's key (on Windows "/tmp/a" comes back as "C:\\tmp\\a"; here a trailing slash), so the file never updated.
+     */
+    @Test
+    void aFilesStampIsFoundByItsUriWhateverThePathKeyLooksLike() {
+        String key = path + "/"; // the same file, spelled otherwise
+        Map<String, Long> stamps = Map.of(key, 7L);
+        assertEquals("7", tools.resourceStamp(McpTools.fileUri(key), stamps));
+        assertTrue(tools.resourceUris(stamps).contains(McpTools.fileUri(key)));
     }
 }
