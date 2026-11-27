@@ -23,6 +23,8 @@ final class DiffGitButtonCommands {
                 Command.of("diff.saveResult", () -> mc.diffCoordinator.withActiveDiff(DiffViewerPane::saveResult)));
         mc.registry.register(
                 Command.of("diff.exportPatch", () -> mc.diffCoordinator.withActiveDiff(DiffViewerPane::exportPatch)));
+        mc.registry.register(Command.of("diff.reviewWalkthrough", () -> ReviewWalkthrough.ask(mc)));
+
         // What an agent changed in its latest turn that changed files: reviewed in one tab, or put back at once.
         mc.registry.register(Command.of("agent.reviewChanges", () -> {
             AgentChangeSets.Turn turn = mc.agentChanges.latest();

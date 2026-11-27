@@ -84,6 +84,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   project's files to it, so breakpoints bind and stops open the files here. Stop takes your breakpoints out and leaves
   the program running. A launch.json `go` configuration with `"mode": "remote"` (and its `substitutePath`) attaches the
   same way.
+- **Review order and walkthrough.** A review of several files lists source first, then tests, configuration, docs and
+  generated files (dimmed), with a heading for each kind. **Diff: Ask Agent for a Review Walkthrough** asks the AI
+  Agent what the change does, where it is risky and in what order to read it.
 - **Claude Code's IDE connection (experimental).** With **Let Claude Code connect as to an IDE** on, `/ide` in Claude
   Code finds the window: its proposed changes open as diffs to accept or reject, and **Claude Code: Send Selection**
   sends lines as an @-mention.
