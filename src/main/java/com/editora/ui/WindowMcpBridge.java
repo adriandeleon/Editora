@@ -69,6 +69,16 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
 
         /** The window's review threads. */
         ReviewCoordinator reviewCoordinator();
+
+        /** The window's Local History; null for a host without one (a test's). */
+        default @Nullable HistoryCoordinator historyCoordinator() {
+            return null;
+        }
+
+        /** Where revision bodies are read; null for a host without one. */
+        default com.editora.history.@Nullable HistoryService historyService() {
+            return null;
+        }
     }
 
     private final Host host;
@@ -351,6 +361,174 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
             }
         }
         return "The buffer kept changing while the edit was applied; read it again and retry.";
+    }
+
+    // --- code intelligence and Local History (read-only) ---------------------------------------------
+
+    /** How long a read waits for a language server. */
+    private static final long LSP_WAIT_SECONDS = 10;
+
+    /** FX thread: the open buffer a read names (the active one for null) and its server's path, or why not. */
+    private record Readable(
+            @Nullable EditorBuffer buffer,
+            @Nullable Path lspPath,
+            @Nullable String refusal) {}
+
+    private Readable readable(@Nullable String path, boolean needsServer) {
+        EditorBuffer b = path == null ? host.activeBuffer() : openBufferForPath(path);
+        if (b == null) {
+            return new Readable(null, null, path == null ? "No active buffer." : "No open buffer for: " + path);
+        }
+        if (b.encryption().isEncrypted()) {
+            return new Readable(null, null, ENCRYPTED);
+        }
+        if (!needsServer) {
+            return new Readable(b, b.getPath(), null);
+        }
+        Path lsp = host.lspCoordinator().lspPath(b);
+        if (!host.lspEnabled() || lsp == null || !host.lspManager().isManaged(lsp)) {
+            return new Readable(null, null, "No language server serves this file.");
+        }
+        LspCoordinator.syncText(host.lspManager(), b, lsp); // the server answers for the text as it is now
+        return new Readable(b, lsp, null);
+    }
+
+    private static <T> T await(java.util.concurrent.CompletableFuture<T> f, String what) {
+        try {
+            return f.get(LSP_WAIT_SECONDS, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (java.util.concurrent.TimeoutException e) {
+            throw new IllegalStateException("The language server did not answer " + what + " in time.");
+        } catch (java.util.concurrent.ExecutionException e) {
+            Throwable cause = e.getCause() == null ? e : e.getCause();
+            throw new IllegalStateException(String.valueOf(cause.getMessage()));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted.");
+        }
+    }
+
+    @Override
+    public java.util.List<Location> navigate(@Nullable String path, int line, int column, boolean references) {
+        java.util.concurrent.CompletableFuture<java.util.List<com.editora.lsp.LspManager.Target>> f =
+                new java.util.concurrent.CompletableFuture<>();
+        Readable r = mcpOnFx(() -> readable(path, true));
+        if (r.refusal() != null) {
+            throw new IllegalStateException(r.refusal());
+        }
+        Path lsp = java.util.Objects.requireNonNull(r.lspPath());
+        mcpOnFx(() -> {
+            java.util.function.Consumer<String> failed = why -> f.completeExceptionally(new IllegalStateException(why));
+            if (references) {
+                host.lspManager().references(lsp, line - 1, Math.max(0, column - 1), f::complete, failed);
+            } else {
+                host.lspManager().definition(lsp, line - 1, Math.max(0, column - 1), f::complete, failed);
+            }
+            return null;
+        });
+        java.util.List<Location> out = new java.util.ArrayList<>();
+        for (com.editora.lsp.LspManager.Target t : await(f, references ? "references" : "the definition")) {
+            if (t.file() != null) {
+                out.add(new Location(t.file().toString(), t.line() + 1, t.character() + 1));
+            } else if (t.classFileUri() != null) {
+                out.add(new Location(t.classFileUri(), t.line() + 1, t.character() + 1));
+            }
+        }
+        return out;
+    }
+
+    @Override
+    public String hover(@Nullable String path, int line, int column) {
+        java.util.concurrent.CompletableFuture<String> f = new java.util.concurrent.CompletableFuture<>();
+        Readable r = mcpOnFx(() -> readable(path, true));
+        if (r.refusal() != null) {
+            throw new IllegalStateException(r.refusal());
+        }
+        Path lsp = java.util.Objects.requireNonNull(r.lspPath());
+        mcpOnFx(() -> {
+            host.lspManager()
+                    .hoverAt(
+                            lsp,
+                            null,
+                            line - 1,
+                            Math.max(0, column - 1),
+                            text -> f.complete(text == null ? "" : text),
+                            why -> f.completeExceptionally(new IllegalStateException(why)));
+            return null;
+        });
+        return await(f, "the hover");
+    }
+
+    @Override
+    public java.util.List<WorkspaceSymbol> workspaceSymbols(String query) {
+        java.util.concurrent.CompletableFuture<java.util.List<com.editora.lsp.LspManager.WorkspaceSymbolMatch>> f =
+                new java.util.concurrent.CompletableFuture<>();
+        Readable r = mcpOnFx(() -> readable(null, true)); // the active file's server answers for its workspace
+        if (r.refusal() != null) {
+            throw new IllegalStateException(
+                    "workspace_symbols asks the language server of the active file: " + r.refusal());
+        }
+        Path lsp = java.util.Objects.requireNonNull(r.lspPath());
+        mcpOnFx(() -> {
+            host.lspManager().workspaceSymbols(lsp, query, f::complete);
+            return null;
+        });
+        java.util.List<WorkspaceSymbol> out = new java.util.ArrayList<>();
+        for (com.editora.lsp.LspManager.WorkspaceSymbolMatch s : await(f, "the symbols")) {
+            out.add(new WorkspaceSymbol(
+                    s.name(),
+                    s.container(),
+                    s.kind(),
+                    s.file() == null ? "" : s.file().toString(),
+                    s.line() + 1));
+        }
+        return out;
+    }
+
+    /** FX thread: {@code path}'s Local History revisions, or why they cannot be read. */
+    private java.util.List<com.editora.config.HistoryRevision> revisions(String path) {
+        Readable r = readable(path, false);
+        if (r.refusal() != null) {
+            throw new IllegalStateException(r.refusal());
+        }
+        HistoryCoordinator history = host.historyCoordinator();
+        Path file = r.lspPath();
+        if (history == null || file == null) {
+            throw new IllegalStateException("Local History is not available.");
+        }
+        return history.revisionsFor(file);
+    }
+
+    @Override
+    public java.util.List<HistoryEntry> localHistory(String path) {
+        java.util.List<com.editora.config.HistoryRevision> revs = mcpOnFx(() -> revisions(path));
+        java.util.List<HistoryEntry> out = new java.util.ArrayList<>();
+        for (int i = 0; i < revs.size(); i++) {
+            com.editora.config.HistoryRevision rev = revs.get(i);
+            out.add(new HistoryEntry(i, rev.timestamp(), rev.reason(), rev.label(), rev.sizeBytes()));
+        }
+        return out;
+    }
+
+    @Override
+    public String localHistoryText(String path, int index) {
+        java.util.List<com.editora.config.HistoryRevision> revs = mcpOnFx(() -> revisions(path));
+        if (index < 0 || index >= revs.size()) {
+            throw new IllegalStateException("No revision " + index + ": the file has " + revs.size() + ".");
+        }
+        com.editora.history.HistoryService service = host.historyService();
+        if (service == null) {
+            throw new IllegalStateException("Local History is not available.");
+        }
+        java.util.concurrent.CompletableFuture<String> f = new java.util.concurrent.CompletableFuture<>();
+        mcpOnFx(() -> {
+            service.content(revs.get(index), text -> f.complete(text == null ? "" : text));
+            return null;
+        });
+        try {
+            return f.get(LSP_WAIT_SECONDS, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (Exception e) {
+            throw new IllegalStateException("The revision could not be read.");
+        }
     }
 
     /** How many times an edit is searched for again when the buffer changed before it was applied. */

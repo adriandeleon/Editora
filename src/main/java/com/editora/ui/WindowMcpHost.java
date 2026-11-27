@@ -22,6 +22,16 @@ final class WindowMcpHost implements WindowMcpBridge.Host {
     }
 
     @Override
+    public HistoryCoordinator historyCoordinator() {
+        return mc.historyCoordinator;
+    }
+
+    @Override
+    public com.editora.history.HistoryService historyService() {
+        return mc.config.shared().historyService();
+    }
+
+    @Override
     public ReviewCoordinator reviewCoordinator() {
         return mc.reviewCoordinator;
     }

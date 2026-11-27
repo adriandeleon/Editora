@@ -136,6 +136,48 @@ final class McpToolCatalog {
                 "Get a file's symbol outline (classes/methods/fields) from its language server."
                         + " Omit 'path' for the active buffer's file. Empty when no server serves the file.",
                 obj().set("path", strProp("Absolute path of an open file; omit for the active buffer."))));
+        ObjectNode at = obj();
+        at.set("path", strProp("Absolute path of an open file; omit for the active buffer."));
+        at.set("line", intProp("1-based line of the symbol."));
+        at.set("column", intProp("1-based column on that line (any character of the symbol's name)."));
+        tools.add(toolReq(
+                "lsp_definition",
+                "Where the symbol at a place of an open file is defined, from its language server: a list of"
+                        + " {path, line, column} (1-based). A library symbol's path is a URI such as jdt://.",
+                at,
+                "line",
+                "column"));
+        tools.add(toolReq(
+                "lsp_references",
+                "Every place the symbol at a place of an open file is used, from its language server:"
+                        + " {path, line, column} (1-based).",
+                at.deepCopy(),
+                "line",
+                "column"));
+        tools.add(toolReq(
+                "lsp_hover",
+                "The language server's hover for a place of an open file (its type, signature and docs), as"
+                        + " Markdown; empty when it has none.",
+                at.deepCopy(),
+                "line",
+                "column"));
+        tools.add(toolReq(
+                "workspace_symbols",
+                "Symbols of the project matching a query (classes, functions…), from the language server of the"
+                        + " active file: {name, container, kind, path, line}.",
+                obj().set("query", strProp("Part of the name to look for.")),
+                "query"));
+        ObjectNode history = obj();
+        history.set("path", strProp("Absolute path of an open file."));
+        history.set(
+                "revision", intProp("Optional: 0 for the newest revision, 1 for the one before… Omit to list them."));
+        tools.add(toolReq(
+                "local_history",
+                "An open file's Local History, Editora's own snapshots taken on save and before risky changes:"
+                        + " without 'revision' the list (newest first: index, time, reason, label, size); with"
+                        + " 'revision' that revision's text.",
+                history,
+                "path"));
         tools.add(tool(
                 "git_status",
                 "Get the Git status for the editor's context: branch, upstream, ahead/behind, changed files.",
@@ -236,6 +278,11 @@ final class McpToolCatalog {
             case "save_buffer" -> new Info("Save Buffer", Kind.WRITE);
             case "get_selection" -> new Info("Get Selection", Kind.READ);
             case "document_symbols" -> new Info("Document Symbols", Kind.READ);
+            case "lsp_definition" -> new Info("Go to Definition", Kind.READ);
+            case "lsp_references" -> new Info("Find References", Kind.READ);
+            case "lsp_hover" -> new Info("Hover", Kind.READ);
+            case "workspace_symbols" -> new Info("Workspace Symbols", Kind.READ);
+            case "local_history" -> new Info("Local History", Kind.READ);
             case "git_status" -> new Info("Git Status", Kind.READ);
             case "list_tabs" -> new Info("List Tabs", Kind.READ);
             case "todo_scan" -> new Info("Scan TODOs", Kind.READ);

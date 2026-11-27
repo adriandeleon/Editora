@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class McpToolsTest {
 
     /** A configurable bridge so each test can set what the "editor" returns. */
-    static final class StubBridge implements McpBridge {
+    static class StubBridge implements McpBridge {
         boolean openFileResult = true;
         String editError;
         String saveError;

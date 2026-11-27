@@ -14,11 +14,11 @@ and guarded by a security-notice dialog; enable it in **Settings → MCP Server*
 ## What it exposes
 
 A **loopback-only** HTTP/JSON-RPC server with **bearer-token auth** exposes
-eighteen tools, in four groups:
+these tools, in four groups:
 
 | Group | Tools |
 | --- | --- |
-| **Reads** | `list_open_files`, `list_tabs`, `read_buffer`, `get_selection`, `get_diagnostics`, `document_symbols`, `git_status`, `todo_scan`, `find_in_files`, `list_commands` |
+| **Reads** | `list_open_files`, `list_tabs`, `read_buffer`, `get_selection`, `get_diagnostics`, `document_symbols`, `lsp_definition`, `lsp_references`, `lsp_hover`, `workspace_symbols`, `local_history`, `git_status`, `todo_scan`, `find_in_files`, `list_commands` |
 | **Writes** | `edit_buffer` (undoable str-replace edits), `save_buffer` |
 | **Actions** | `open_file`, `execute_command` |
 | **Review** | `list_review_comments`, `add_review_comment`, `reply_to_review_comment`, `resolve_review_comment` |
@@ -74,6 +74,23 @@ editor's undo history. Nothing is written to disk until `save_buffer`.
 on disk, and an error when the save was refused, failed, or is still pending.
 `execute_command` reports only that a command ran, so an agent that needs to
 know a save reached the disk uses `save_buffer` rather than running `file.save`.
+
+### Code intelligence and Local History
+
+These read tools answer as the editor would, for a file open in the window:
+
+- `lsp_definition`, `lsp_references` and `lsp_hover` take a 1-based `line` and
+  `column` in an open file (the active one when `path` is left out) and ask
+  its language server. A place in a library has a URI such as `jdt://` for its
+  path.
+- `workspace_symbols` finds the project's symbols by part of their name,
+  through the active file's language server.
+- `local_history` lists an open file's Local History revisions, newest first
+  (time, reason, label, size), or returns one revision's text with
+  `revision` (0 is the newest).
+
+A file no language server serves, a file that is not open and an encrypted
+file are refused with the reason.
 
 ### Review comments
 
