@@ -420,6 +420,63 @@ final class AgentCoordinator implements AcpClient.Host {
      * to what's actually sent to the agent (never merged into the echoed transcript line) so the common
      * "explain this line" case works without the agent having to ask which file.
      */
+    void addToPrompt(String block) {
+        if (!isEnabled()) {
+            host.setStatus(tr("status.agent.disabled"));
+            return;
+        }
+        if (detachedStage != null) {
+            detachedStage.toFront();
+        } else {
+            ops.openToolWindow(true);
+        }
+        panel().addToPrompt(block);
+        host.setStatus(tr("status.agent.addedToPrompt"));
+    }
+
+    /**
+     * {@code agent.addSelection}: the active editor's selection (the caret's line when nothing is selected) with its
+     * file and lines, added to the prompt.
+     */
+    void addSelectionToPrompt() {
+        EditorBuffer b = host.activeBuffer();
+        if (b == null) {
+            host.setStatus(tr("status.agent.noFile"));
+            return;
+        }
+        var area = b.getArea();
+        var sel = area.getSelection();
+        int startPar;
+        int endPar;
+        String text;
+        if (sel.getLength() == 0) {
+            startPar = area.getCurrentParagraph();
+            endPar = startPar;
+            text = area.getParagraph(startPar).getText();
+        } else {
+            startPar = area.offsetToPosition(sel.getStart(), org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
+                    .getMajor();
+            endPar = area.offsetToPosition(sel.getEnd(), org.fxmisc.richtext.model.TwoDimensional.Bias.Backward)
+                    .getMajor();
+            text = area.getSelectedText();
+        }
+        // A narrowed buffer shows part of the file: its lines are counted from where that part starts.
+        int offset = 0;
+        if (b.narrowStart() > 0) {
+            String whole = b.getContent();
+            for (int i = 0; i < b.narrowStart() && i < whole.length(); i++) {
+                if (whole.charAt(i) == '\n') {
+                    offset++;
+                }
+            }
+        }
+        java.nio.file.Path path = b.getPath();
+        int firstLine = startPar + 1 + offset;
+        int lastLine = endPar + 1 + offset;
+        addToPrompt(com.editora.review.AgentPromptBlocks.selection(
+                path == null ? b.getTitle() : path.toString(), firstLine, lastLine, text));
+    }
+
     void sendPrompt(String text) {
         if (!isEnabled()) {
             host.setStatus(tr("status.agent.disabled"));

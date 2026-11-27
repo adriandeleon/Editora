@@ -503,7 +503,8 @@ final class McpTools {
             case "list_commands" -> commandsResult();
             case "execute_command" -> executeResult(text(args, "id"));
             case "open_file" -> openFileResult(args);
-            case "edit_buffer" -> editBufferResult(args);
+            case "edit_buffer" -> editBufferResult(args, params);
+            case "propose_edit" -> proposeEditResult(args, params);
             case "save_buffer" -> saveBufferResult(text(args, "path"));
             case "get_selection" -> selectionResult();
             case "document_symbols" -> symbolsResult(text(args, "path"));
@@ -649,7 +650,64 @@ final class McpTools {
                 : errorResult(error);
     }
 
-    private ObjectNode editBufferResult(JsonNode args) {
+    /**
+     * {@code propose_edit}: the edit shown to the user as a diff to accept or reject; the answer is the user's
+     * decision (and reason), or a tool error when the proposal could not be made.
+     */
+    private ObjectNode proposeEditResult(JsonNode args, @Nullable JsonNode params) {
+        String newText = args != null && args.hasNonNull("new_text")
+                ? args.get("new_text").asText()
+                : null;
+        if (newText == null) {
+            return errorResult("propose_edit requires 'new_text'.");
+        }
+        String oldText = text(args, "old_text");
+        boolean whole = bool(args, "replace_whole_buffer");
+        if (whole && (oldText != null || bool(args, "replace_all"))) {
+            return errorResult(
+                    "propose_edit: 'replace_whole_buffer' cannot be combined with 'old_text' or" + " 'replace_all'.");
+        }
+        if (!whole && oldText == null) {
+            return errorResult("propose_edit requires a non-empty 'old_text', or \"replace_whole_buffer\": true.");
+        }
+        McpBridge.ProposalOutcome o = bridge.proposeEdit(
+                text(args, "path"),
+                oldText,
+                newText,
+                bool(args, "replace_all"),
+                whole,
+                text(args, "reason"),
+                agentName(params));
+        if ("refused".equals(o.outcome())) {
+            return errorResult(o.reason());
+        }
+        ObjectNode r = m.createObjectNode().put("outcome", o.outcome());
+        if (!o.reason().isEmpty()) {
+            r.put("reason", o.reason());
+        }
+        return textResult(r);
+    }
+
+    /** {@code edit_buffer} while the user wants every agent edit approved: proposed, and applied only on Accept. */
+    private ObjectNode approvedEdit(
+            @Nullable String path,
+            @Nullable String oldText,
+            String newText,
+            boolean replaceAll,
+            boolean whole,
+            @Nullable JsonNode params) {
+        McpBridge.ProposalOutcome o =
+                bridge.proposeEdit(path, oldText, newText, replaceAll, whole, null, agentName(params));
+        return switch (o.outcome()) {
+            case "accepted" -> textResult(m.createObjectNode().put("applied", true));
+            case "rejected" ->
+                errorResult("The user rejected the edit" + (o.reason().isEmpty() ? "." : ": " + o.reason()));
+            case "timeout" -> errorResult("The user did not answer the proposed edit in time; nothing was changed.");
+            default -> errorResult(o.reason());
+        };
+    }
+
+    private ObjectNode editBufferResult(JsonNode args, @Nullable JsonNode params) {
         String newText = args != null && args.hasNonNull("new_text")
                 ? args.get("new_text").asText()
                 : null;
@@ -666,11 +724,16 @@ final class McpTools {
                         + " cannot be combined with 'old_text' or 'replace_all'. Pass either old_text (a targeted"
                         + " edit) or replace_whole_buffer: true, not both.");
             }
+            if (bridge.editsNeedApproval()) {
+                return approvedEdit(path, null, newText, false, true, params);
+            }
             error = bridge.replaceBuffer(path, newText);
         } else if (oldText == null) {
             // An absent, misspelled or empty old_text used to mean "replace the whole buffer".
             return errorResult("edit_buffer requires a non-empty 'old_text': the exact text to replace. To replace"
                     + " the buffer's entire text instead, pass \"replace_whole_buffer\": true (and no old_text).");
+        } else if (bridge.editsNeedApproval()) {
+            return approvedEdit(path, oldText, newText, replaceAll, false, params);
         } else {
             error = bridge.editBuffer(path, oldText, newText, replaceAll);
         }

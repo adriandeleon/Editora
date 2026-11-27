@@ -119,6 +119,30 @@ class AgentChangesFxTest {
     }
 
     @Test
+    void anAcceptedProposalIsPartOfTheTurn() throws Exception {
+        EditorBuffer b = open("Proposed.java");
+        String path = b.getPath().toString();
+        var answer = java.util.concurrent.CompletableFuture.supplyAsync(
+                () -> fx.controller.proposeEdit(path, "int a = 1;", "int a = 5;", false, false, null, "Claude Code"));
+        Await.until(
+                () -> {
+                    try {
+                        return FxTestSupport.callOnFx(
+                                () -> fx.controller.editorArea.selectedTab().getUserData() instanceof ProposalPane);
+                    } catch (Exception e) {
+                        return false;
+                    }
+                },
+                "the proposal opened");
+        FxTestSupport.runOnFx(
+                () -> ((ProposalPane) fx.controller.editorArea.selectedTab().getUserData()).accept());
+        assertEquals(
+                "accepted",
+                answer.get(10, java.util.concurrent.TimeUnit.SECONDS).outcome());
+        assertEquals(TEXT, fx.controller.agentChanges.latest().before().get(b.getPath()), "before the accepted edit");
+    }
+
+    @Test
     void sayingNoChangesNothing() throws Exception {
         EditorBuffer b = open("Keep.java");
         assertNull(fx.controller.editBuffer(b.getPath().toString(), "int b = 2;", "int b = 3;", false));

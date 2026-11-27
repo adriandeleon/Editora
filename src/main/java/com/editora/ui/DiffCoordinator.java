@@ -358,6 +358,8 @@ final class DiffCoordinator {
                 ops.prepareDiffPane(pane);
                 if (target != null && editableSide != DiffViewerPane.EditableSide.NONE) {
                     ops.prepareReview(pane, target);
+                    // The editable side is the file: hover, definitions, references and the Map work there.
+                    pane.setLocalFile(target);
                 }
                 pane.setOnExportPatch(this::exportPatch);
                 pane.setOptions(lastDiffOptions);

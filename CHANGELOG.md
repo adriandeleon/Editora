@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A Claude Code plugin for Editora** (`integrations/claude-code`): it sets up `editora mcp` and adds two skills,
   one for reviewing a change and leaving findings as review comments in Editora, one for editing open files
   without losing unsaved changes. Install it with `claude plugin marketplace add ./integrations/claude-code`.
+- **Proposed edits.** An MCP agent can show you an edit before it lands (`propose_edit`): a tab with the diff, its
+  reason, **Accept** (one undoable edit) and **Reject** (with your reason, sent back to it). **Settings → MCP Server
+  → Ask before applying an agent's edits** makes every `edit_buffer` a proposal too.
 - **Line comments on GitHub pull requests.** A pull request's file diff marks its review threads on their side and
   line; a card reads one, replies, resolves or reopens it. **Add Review Comment** on lines of either side drafts a
   comment (a ```` ```suggestion ```` block is a suggested change), and **Submit review…** sends the drafts with the
@@ -35,6 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   their lines are gone. In a side-by-side diff of your file, its gutter marks the threads and you can comment there.
   **Review Comments** lists a repository's threads. They are kept privately in the config folder, or, with Settings
   → Git → Keep review comments in the project, in the repository's `.editora/reviews.json`.
+- **Add to Agent Prompt.** Put a selection, the review thread at the caret, or a diff's change at its cursor in the AI
+  Agent prompt you are writing, with its file and lines, and add your question before you send it.
 - **MCP: the current protocol, resources and notifications.** The MCP server speaks MCP 2026-07-28 as well as
   the revisions from 2024-11-05 to 2025-11-25, and an agent gets the one it asks for. The open files, their
   diagnostics and the Git status are resources an agent can read and watch: it is told when a file opens or
@@ -57,6 +62,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   app), Run File and F5 on the `config.ru`, a Ruby file at the project's top such as `app.rb`, or a file under `app/` or
   `config/` start the app under rackup on the first free port from 9292; under the debugger a request stops in your
   routes. A `config.ru` opens as Ruby.
+- **Code intelligence in diffs.** On the side of a diff that is your file, Show Hover answers over the diff, and Go to
+  Definition, Find References and Reveal in Map act from the file at the same place.
 - **Phoenix: run and debug the web server.** F5 or Run File on a module of a Phoenix app runs `mix phx.server`; under
   the debugger a breakpoint in a controller, LiveView or plug stops while the browser's request waits, and the server
   runs until Stop.

@@ -174,6 +174,17 @@ final class McpToolCatalog {
                         + " rejected, never widened to the whole buffer. Omit 'path' for the active buffer.",
                 editProps,
                 "new_text"));
+        ObjectNode proposeProps = editProps.deepCopy();
+        proposeProps.set("reason", strProp("Optional: why you propose this change, shown to the user with it."));
+        tools.add(toolReq(
+                "propose_edit",
+                "Show the user an edit of an open buffer as a diff, with Accept and Reject, and wait for the"
+                        + " answer (up to 4 minutes). The arguments are edit_buffer's, plus an optional reason."
+                        + " The result's outcome is accepted (applied as one undoable edit, not saved), rejected"
+                        + " (with the user's reason when they gave one) or timeout (nothing changed). Use it for a"
+                        + " change the user should see before it lands; edit_buffer applies at once.",
+                proposeProps,
+                "new_text"));
         tools.add(tool(
                 "save_buffer",
                 "Save an open buffer to its file on disk and wait for the write: the result is 'saved' only"
@@ -286,6 +297,7 @@ final class McpToolCatalog {
             case "execute_command" -> new Info("Run Command", Kind.COMMAND);
             case "open_file" -> new Info("Open File", Kind.VIEW);
             case "edit_buffer" -> new Info("Edit Buffer", Kind.EDIT);
+            case "propose_edit" -> new Info("Propose Edit", Kind.EDIT);
             case "save_buffer" -> new Info("Save Buffer", Kind.WRITE);
             case "get_selection" -> new Info("Get Selection", Kind.READ);
             case "document_symbols" -> new Info("Document Symbols", Kind.READ);

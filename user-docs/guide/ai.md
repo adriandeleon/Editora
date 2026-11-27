@@ -117,6 +117,22 @@ command field replaces its default command.
   transcript up to 1,000,000 characters or 2,000 entries, the oldest going
   first.
 
+### Adding code to the prompt
+
+Three commands put code in the prompt you are writing, without sending it, so
+you can add your question under it:
+
+- **Agent: Add Selection to Prompt**: the selected lines, or the caret's line,
+  with the file's path and line numbers.
+- **Add Review Thread to Agent Prompt**: the [review thread](/docs/code-review)
+  at the caret, its comments and its lines as they are now.
+- **Diff: Add Change to Agent Prompt**: the change at a diff's cursor (move it
+  with the diff's next and previous change), as a unified hunk.
+
+Each one opens the AI Agent panel and adds a block after what you have already
+written. To have the agent fix a thread at once instead, use **Fix Review
+Thread with Agent**.
+
 ### Reviewing what an agent changed
 
 Each AI Agent turn (a prompt and its answer) keeps the files it wrote as they
@@ -136,7 +152,7 @@ bar say how many.
 
 The last 20 turns are kept while the window is open.
 
-Commands: `tool.agent` (the tool window), `agent.reviewChanges`, `agent.revertTurn`, `agent.newSession`,
+Commands: `tool.agent` (the tool window), `agent.addSelection`, `agent.reviewChanges`, `agent.revertTurn`, `agent.newSession`,
 `agent.resumeSession`, `agent.selectClient`, `agent.selectMode`,
 `agent.selectModel`, `agent.stop`. AI is gated behind a master **Enable AI**
 switch (off by default) in **Settings → AI**.

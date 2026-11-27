@@ -40,6 +40,17 @@ final class DiffGitButtonCommands {
                 mc.diffCoordinator.revertTurn(turn);
             }
         }));
+
+        mc.registry.register(Command.of(
+                "diff.addChangeToAgentPrompt",
+                () -> mc.diffCoordinator.withActiveDiff(pane -> {
+                    String block = pane.currentChangePrompt();
+                    if (block == null) {
+                        mc.setStatus(com.editora.i18n.Messages.tr("status.diff.noChange"));
+                    } else {
+                        mc.agentCoordinator.addToPrompt(block);
+                    }
+                })));
         mc.registry.register(Command.of("diff.exitDiffMode", () -> exitDiffMode(mc)));
         mc.registry.register(Command.of(
                 "git.log.showBranchLog",
