@@ -1,0 +1,12 @@
+{
+  "name": "editora",
+  "owner": { "name": "Editora" },
+  "description": "Editora's plugin for Claude Code: its MCP tools, and skills for reviewing and editing in Editora.",
+  "plugins": [
+    {
+      "name": "editora",
+      "source": "./editora",
+      "description": "Connects Claude Code to the running Editora (editora mcp) and teaches it to review and edit there."
+    }
+  ]
+}

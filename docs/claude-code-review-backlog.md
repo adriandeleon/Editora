@@ -1,6 +1,6 @@
 # Backlog: Claude Code integration and first-class code review
 
-Status: 2026-11-27. Decisions D1–D6 answered. Shipped: items 1 and 2 (#1823), 6, 7 and 9 (#1828); item 10 (findings) in its PR. See [code review](subsystems/code-review.md).
+Status: 2026-11-27. Decisions D1–D6 answered. Shipped: items 1 and 2 (#1823), 6, 7 and 9 (#1828), 10 (#1832); items 11 (#1833), 8 (#1834) and 12 (the plugin, in `integrations/claude-code`; its own repository per D5 waits for adl) in their PRs. See [code review](subsystems/code-review.md).
 
 **Goal.** Editora becomes the place where you review code, whoever wrote it: you, a teammate's pull
 request, or Claude Code. Claude can see what you see, propose changes you accept or reject hunk by
