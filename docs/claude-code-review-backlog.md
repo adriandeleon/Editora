@@ -149,8 +149,8 @@ changes. Stored per head commit; synced with GitHub's viewed state (GraphQL `mar
 one, for a PR (force-push aware) and for agent turns.
 *Status (14 and 15):* built. PR tabs use GitHub's `viewerViewedState` and `viewerLatestReview` (GraphQL), and
 the REST compare of the reviewed commit and the head; Git reviews keep marks in `reviews.json` (schema 2) by a
-digest of each file's diff. Not built: the agent-turn interdiff (it comes with item 4), and the 100-file cap on the
-viewed read.
+digest of each file's diff. The viewed read pages through every file (`gh --paginate`). Not built: the agent-turn interdiff
+(it comes with item 4).
 
 **16. Code intelligence in the diff (M/L)**
 On the working-tree side of a diff: hover, go to definition, find references (LSP), and "Show in
