@@ -148,6 +148,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **No "the project did not import" before a folder is trusted.** jdtls runs without the build until you trust the
   folder, so every file is "a non-project file"; the Trust Folder notice says why, and the status bar no longer
   reports a failed import (with a red count) beside it.
+- **The status bar says "No Git" outside a repository**, not "No VCS": Git is the only version control Editora
+  speaks, so the segment and its dropdown now name it.
 - **Kotlin call stacks name a lowercase or hyphenated file's functions after the file.** A frame in `hello.kt` read
   `HelloKt.main` (and its lambdas `HelloKt.main { lambda }`) instead of `hello.main`, because the debugger did not
   capitalise the file name or turn `-` into `_` the way kotlinc names the file's class.

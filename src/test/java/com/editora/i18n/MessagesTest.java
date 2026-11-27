@@ -53,6 +53,19 @@ class MessagesTest {
         }
     }
 
+    /** Outside a repository the Git segment and its dropdown name Git, the only VCS Editora has, not "VCS". */
+    @Test
+    void noRepositoryStateSaysNoGit() {
+        Properties base = loadProps("/com/editora/i18n/messages.properties");
+        assertEquals("No Git", base.getProperty("statusbar.noGit"));
+        assertEquals("No Git", base.getProperty("branchpopup.noGit"));
+        for (String locale : ALL_CATALOGS) {
+            String suffix = locale.isEmpty() ? "" : "_" + locale;
+            Properties p = loadProps("/com/editora/i18n/messages" + suffix + ".properties");
+            assertTrue(p.getProperty("statusbar.noGit", "").contains("Git"), "statusbar.noGit in " + suffix);
+        }
+    }
+
     /**
      * Every line is a comment, blank, a continuation, or {@code key=value}.
      *
