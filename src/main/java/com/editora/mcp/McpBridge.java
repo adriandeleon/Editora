@@ -80,6 +80,34 @@ public interface McpBridge {
             int behind,
             List<GitFileState> files) {}
 
+    /**
+     * What the user decided about a proposed edit: {@code accepted} (applied, undoable), {@code rejected} (with the
+     * user's {@code reason}, may be empty), {@code timeout} (no answer in time; nothing applied), or {@code refused}
+     * (the proposal could not be made or applied; {@code reason} says why).
+     */
+    record ProposalOutcome(String outcome, String reason) {}
+
+    /**
+     * Shows the user an edit of the open buffer for {@code path} (the active one when null) as a diff to accept or
+     * reject, and waits for the answer. The edit is {@code oldText} → {@code newText} as {@code edit_buffer} makes it
+     * ({@code replaceAll}), or the whole text when {@code wholeBuffer}. {@code why} is shown with it. Default: refused.
+     */
+    default ProposalOutcome proposeEdit(
+            @Nullable String path,
+            @Nullable String oldText,
+            String newText,
+            boolean replaceAll,
+            boolean wholeBuffer,
+            @Nullable String why,
+            String agent) {
+        return new ProposalOutcome("refused", "Proposed edits are not available.");
+    }
+
+    /** Whether the user wants every agent edit proposed for approval (the {@code mcpEditsNeedApproval} setting). */
+    default boolean editsNeedApproval() {
+        return false;
+    }
+
     // --- code intelligence and history (read-only) --------------------------------------------------
 
     /** A place in a file: an absolute path, a 1-based line and a 1-based column; or a library {@code uri}. */

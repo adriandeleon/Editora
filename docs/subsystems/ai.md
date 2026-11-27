@@ -109,6 +109,15 @@ each of them keeps to these rules:
 - **Reports are true.** `save_buffer` waits for the write and answers `saved` only when the
   bytes are on disk. A call that timed out before the FX thread started it is cancelled
   (`FxCall`), so a reported failure is not applied later.
+- **A proposal waits for the user.** `propose_edit` (and `edit_buffer` while the
+  `mcpEditsNeedApproval` setting is on) works out the new text on the MCP worker as `edit_buffer`
+  would, computes the diff there too, and opens a `ProposalPane` tab (`ProposalTabs`): a read-only
+  `DiffViewerPane` of the buffer now and after, the agent's reason, a reason field, Reject and
+  Accept. The worker waits up to 4 minutes (`WindowMcpBridge.PROPOSAL_WAIT_MILLIS`, inside the stdio
+  relay's 5-minute request limit). Accept applies the edit as one undoable `applyPreparedWholeText`
+  only when the buffer's version is the one proposed against; text typed meanwhile is never
+  overwritten, and the agent is told to read and propose again. Closing the tab rejects; no answer
+  in time closes the tab and answers `timeout`.
 - **The permission dialog cannot be answered by accident.** It opens with the focus on
   "reject once" (else Cancel), has no default button, and ignores keys and button presses for
   a moment after it appears.

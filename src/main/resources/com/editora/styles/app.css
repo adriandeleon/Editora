@@ -403,6 +403,18 @@
    of surface and used to disagree — Project at 14px, the other three pinned to 12px — so a glance from one
    to the next changed size. Their filter fields follow the same rule. */
 
+/* An agent's proposed edit (MCP propose_edit): the bar over its diff. */
+.proposal-banner {
+    -fx-background-color: -color-accent-subtle;
+    -fx-border-color: transparent transparent -color-border-default transparent;
+}
+.proposal-banner .proposal-banner-lead {
+    -fx-font-weight: bold;
+}
+.proposal-banner .proposal-banner-text {
+    -fx-text-fill: -color-fg-default;
+}
+
 /* Structure tool window: search box + collapsible region tree. */
 .structure-panel {
     -fx-background-color: -color-bg-default;
