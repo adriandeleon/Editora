@@ -70,6 +70,16 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
         /** The window's review threads. */
         ReviewCoordinator reviewCoordinator();
 
+        /** The last test run; null before any (or for a host without tests). */
+        default com.editora.test.@Nullable TestRun lastTestRun() {
+            return null;
+        }
+
+        /** The focused debug session's panel, or null when there is none. */
+        default @Nullable DebugPanel debugPanel() {
+            return null;
+        }
+
         /** What agents changed, turn by turn. */
         default @Nullable AgentChangeSets agentChanges() {
             return null;
@@ -656,6 +666,92 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
         } catch (Exception e) {
             throw new IllegalStateException("The revision could not be read.");
         }
+    }
+
+    // --- test results and debug state (read-only) -------------------------------------------------------
+
+    /** How many characters of a failure's stack trace and message an agent gets. */
+    static final int TEST_TEXT_LIMIT = 4_000;
+
+    /** How many tests, and how many variable rows, one answer lists. */
+    static final int READ_ROWS = 500;
+
+    @Override
+    public TestSummary testResults(boolean includePassed) {
+        return mcpOnFx(() -> {
+            com.editora.test.TestRun run = host.lastTestRun();
+            if (run == null) {
+                return new TestSummary(false, false, 0, 0, 0, 0, 0, 0, java.util.List.of());
+            }
+            java.util.List<TestCase> tests = new java.util.ArrayList<>();
+            collectTests(run.root(), "", includePassed, tests);
+            com.editora.test.TestCounts c = run.counts();
+            return new TestSummary(
+                    true,
+                    run.isRunning(),
+                    run.exitCode(),
+                    c.total(),
+                    c.passed(),
+                    c.failed(),
+                    c.errored(),
+                    c.skipped(),
+                    tests);
+        });
+    }
+
+    /** FX thread: the tests under {@code node} (whose suite is {@code suite}), at most {@link #READ_ROWS}. */
+    private static void collectTests(
+            com.editora.test.TestNode node, String suite, boolean includePassed, java.util.List<TestCase> out) {
+        for (com.editora.test.TestNode child : node.children()) {
+            if (out.size() >= READ_ROWS) {
+                return;
+            }
+            String name = child.displayName() == null ? String.valueOf(child.id()) : child.displayName();
+            if (child.kind() != com.editora.test.TestNodeKind.TEST) {
+                collectTests(child, name, includePassed, out);
+                continue;
+            }
+            if (!includePassed && child.status() == com.editora.test.TestStatus.PASSED) {
+                continue;
+            }
+            out.add(new TestCase(
+                    suite,
+                    name,
+                    child.status().name(),
+                    child.durationMs(),
+                    cut(child.failureMessage()),
+                    cut(child.stackTrace()),
+                    child.sourceFileHint() == null ? "" : child.sourceFileHint(),
+                    Math.max(0, child.sourceLineHint())));
+        }
+    }
+
+    private static String cut(@Nullable String text) {
+        if (text == null) {
+            return "";
+        }
+        return text.length() <= TEST_TEXT_LIMIT ? text : text.substring(0, TEST_TEXT_LIMIT) + "\n…";
+    }
+
+    @Override
+    public DebugState debugState() {
+        return mcpOnFx(() -> {
+            DebugPanel panel = host.debugPanel();
+            if (panel == null) {
+                return new DebugState("INACTIVE", java.util.List.of(), -1, java.util.List.of());
+            }
+            DebugPanel.Snapshot s = panel.snapshot(READ_ROWS);
+            java.util.List<Frame> frames = new java.util.ArrayList<>();
+            for (com.editora.dap.DapModels.StackFrameInfo f : s.frames()) {
+                frames.add(new Frame(
+                        f.id(), f.name(), f.file() == null ? "" : f.file().toString(), f.line(), f.column()));
+            }
+            java.util.List<Variable> vars = new java.util.ArrayList<>();
+            for (DebugPanel.VarLine v : s.variables()) {
+                vars.add(new Variable(v.depth(), v.name(), v.type(), v.value()));
+            }
+            return new DebugState(s.state(), frames, s.selectedFrameId(), vars);
+        });
     }
 
     /** How many times an edit is searched for again when the buffer changed before it was applied. */

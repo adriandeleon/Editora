@@ -148,6 +148,54 @@ public interface McpBridge {
         throw new IllegalStateException("Local History is not available.");
     }
 
+    /**
+     * One test of the last run, as the Test Results window shows it: its suite (or class), name, status
+     * ({@code PASSED}, {@code FAILED}, {@code ERROR}, {@code SKIPPED}, {@code RUNNING}…), time, and for a failure its
+     * message, stack trace and where it is (file "" and line 0 when not known).
+     */
+    record TestCase(
+            String suite,
+            String name,
+            String status,
+            long millis,
+            String message,
+            String stackTrace,
+            String file,
+            int line) {}
+
+    /** The last test run: whether there is one, whether it still runs, its exit code, counts, and its tests. */
+    record TestSummary(
+            boolean ran,
+            boolean running,
+            int exitCode,
+            int total,
+            int passed,
+            int failed,
+            int errored,
+            int skipped,
+            List<TestCase> tests) {}
+
+    /** The window's last test run ({@code includePassed}: its passing tests too, else the others only). */
+    default TestSummary testResults(boolean includePassed) {
+        throw new IllegalStateException("Test results are not available.");
+    }
+
+    /** A frame of the call stack: its id, name, file ("" for none) and 1-based line and column. */
+    record Frame(int id, String name, String path, int line, int column) {}
+
+    /** A variable row as the Debug window shows it: depth (0: a scope), name, type, value. */
+    record Variable(int depth, String name, String type, String value) {}
+
+    /**
+     * The focused debug session: its state ({@code INACTIVE}, {@code RUNNING}, {@code SUSPENDED}…), the call stack,
+     * the selected frame's id (-1 for none), and its variables as far as the Debug window has them expanded.
+     */
+    record DebugState(String state, List<Frame> frames, int selectedFrame, List<Variable> variables) {}
+
+    default DebugState debugState() {
+        throw new IllegalStateException("The debugger is not available.");
+    }
+
     /** One comment of a review thread, as an agent reads it. {@code authorKind}: {@code user}, {@code agent}, {@code github}. */
     record ReviewCommentInfo(
             String id,

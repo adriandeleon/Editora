@@ -164,6 +164,13 @@ final class TestRunCoordinator implements TestRunHook {
     });
 
     private @Nullable TestRun currentRun;
+
+    /** The run the Test Results window shows (the last one, or the one under way); null before any. FX thread. */
+    @Nullable
+    TestRun lastRun() {
+        return currentRun;
+    }
+
     private @Nullable BuildTool currentTool;
     private @Nullable TestResultParser parser;
     private boolean fileBased;

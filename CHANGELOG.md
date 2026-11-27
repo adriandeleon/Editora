@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Test results and debug state for agents.** MCP `test_results` reads the last test run (counts and each failure
+  with its message and stack trace) and `debug_state` the paused session's call stack and the variables you have
+  expanded.
 - **Slash commands for Claude Code.** Editora's MCP server offers prompts, which Claude Code lists as
   `/mcp__editora__review_changes` (review the uncommitted changes and leave findings as review comments),
   `/mcp__editora__fix_open_comments` (fix and resolve the open review threads) and `/mcp__editora__explain_selection`.

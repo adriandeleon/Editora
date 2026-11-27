@@ -168,8 +168,9 @@ generated files, and the walkthrough through AI Actions instead of the agent.
 **18. More read tools for agents (M)** — needs 2
 `lsp_definition`, `lsp_references`, `lsp_hover`, `workspace_symbols`, `test_results`,
 `debug_state` (stack, variables when paused), `local_history`. All read-only and annotated so.
-*Status:* built: `lsp_definition`, `lsp_references`, `lsp_hover`, `workspace_symbols`, `local_history`. Not built:
-`test_results` and `debug_state` (they need a read model of the Test Results window and of a paused session).
+*Status:* built: `lsp_definition`, `lsp_references`, `lsp_hover`, `workspace_symbols`, `local_history`. `test_results`
+(the Test Results window's last run) and `debug_state` (the focused Debug panel's stack and expanded variables;
+no adapter requests) followed.
 
 ## Suggested order
 

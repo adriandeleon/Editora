@@ -443,6 +443,40 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
     private int selectedFrameId = -1;
 
+    /** One variable row as the panel shows it: how deep it sits (0: a scope), its name, type and value. */
+    record VarLine(int depth, String name, String type, String value) {}
+
+    /**
+     * What the panel shows now, for an agent to read ({@code debug_state}): the session's state, the call stack,
+     * the selected frame, and the variables tree as far as it is expanded (at most {@code maxRows} rows). Reads
+     * the panel only: nothing is asked of the debug adapter. FX thread.
+     */
+    record Snapshot(
+            String state, List<DapModels.StackFrameInfo> frames, int selectedFrameId, List<VarLine> variables) {}
+
+    Snapshot snapshot(int maxRows) {
+        List<VarLine> lines = new java.util.ArrayList<>();
+        for (TreeItem<VarRow> scope : variables.getRoot() == null
+                ? List.<TreeItem<VarRow>>of()
+                : variables.getRoot().getChildren()) {
+            walk(scope, 0, lines, maxRows);
+        }
+        return new Snapshot(lastState.name(), List.copyOf(stack.getItems()), selectedFrameId, lines);
+    }
+
+    private static void walk(TreeItem<VarRow> item, int depth, List<VarLine> out, int maxRows) {
+        VarRow row = item.getValue();
+        if (out.size() >= maxRows || row == null || row.kind() == Kind.MORE || row.kind() == Kind.ADD_WATCH) {
+            return;
+        }
+        out.add(new VarLine(depth, row.name(), row.type(), row.value()));
+        if (item.isExpanded()) {
+            for (TreeItem<VarRow> child : item.getChildren()) {
+                walk(child, depth + 1, out, maxRows);
+            }
+        }
+    }
+
     /** The frame shown (its variables are), -1 for none. */
     int selectedFrameId() {
         return selectedFrameId;

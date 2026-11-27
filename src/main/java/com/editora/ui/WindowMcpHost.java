@@ -57,6 +57,18 @@ final class WindowMcpHost implements WindowMcpBridge.Host {
     }
 
     @Override
+    public com.editora.test.@Nullable TestRun lastTestRun() {
+        return mc.testRunCoordinator.lastRun();
+    }
+
+    @Override
+    public @Nullable DebugPanel debugPanel() {
+        return mc.debugCoordinator == null
+                ? null
+                : mc.debugCoordinator.sessions().focused().panel;
+    }
+
+    @Override
     public ReviewCoordinator reviewCoordinator() {
         return mc.reviewCoordinator;
     }
