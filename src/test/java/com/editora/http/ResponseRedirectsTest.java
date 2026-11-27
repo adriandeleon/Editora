@@ -5,6 +5,8 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.editora.i18n.Messages;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -21,6 +23,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * was offered to the guard (Local History), and every file written or refused is reported.
  */
 class ResponseRedirectsTest {
+
+    /**
+     * The reports are checked against their English text: load it here. Without this the class passed only after
+     * another test in the same JVM had loaded it, and failed when a shard ran it first (every report its raw key).
+     */
+    @BeforeAll
+    static void english() {
+        Messages.init("en");
+    }
 
     @TempDir
     Path dir;
