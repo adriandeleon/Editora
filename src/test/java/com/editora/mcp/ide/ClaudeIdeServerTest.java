@@ -171,6 +171,45 @@ class ClaudeIdeServerTest {
                 tools.call("openDiff", args).at("/content/0/text").asText());
     }
 
+    /** Regression: Claude Code asks for the mcp subprotocol and dropped the connection when the answer named none. */
+    @Test
+    void theMcpSubprotocolClaudeCodeAsksForIsAgreed(@TempDir Path dir) throws Exception {
+        try (ClaudeIdeServer server = new ClaudeIdeServer(bridge(java.util.Map.of()), List::of, dir, "1.0")) {
+            String token = m.readTree(Files.readString(server.lockFile()))
+                    .get("authToken")
+                    .asText();
+            WebSocket ws = HttpClient.newHttpClient()
+                    .newWebSocketBuilder()
+                    .header(ClaudeIdeServer.AUTH_HEADER, token)
+                    .subprotocols("mcp")
+                    .buildAsync(URI.create("ws://127.0.0.1:" + server.port()), new Client())
+                    .get(10, TimeUnit.SECONDS);
+            assertEquals("mcp", ws.getSubprotocol());
+            ws.sendClose(WebSocket.NORMAL_CLOSURE, "").get(10, TimeUnit.SECONDS);
+        }
+        assertEquals("mcp", WebSocketServer.subprotocol("chat, mcp"));
+        assertEquals(null, WebSocketServer.subprotocol("chat"));
+        assertEquals(null, WebSocketServer.subprotocol(null));
+    }
+
+    /** Regression: the lock file named no folder when the window learned its project after the server started. */
+    @Test
+    void theLockFileNamesAFolderTheWindowLearnsLater(@TempDir Path dir) throws Exception {
+        List<Path> folders = new java.util.concurrent.CopyOnWriteArrayList<>();
+        try (ClaudeIdeServer server = new ClaudeIdeServer(bridge(java.util.Map.of()), () -> folders, dir, "1.0")) {
+            assertEquals(
+                    0,
+                    m.readTree(Files.readString(server.lockFile()))
+                            .get("workspaceFolders")
+                            .size());
+            folders.add(Path.of("/r/jkit"));
+            server.refreshLockFile();
+            JsonNode lock = m.readTree(Files.readString(server.lockFile()));
+            assertEquals("/r/jkit", lock.get("workspaceFolders").get(0).asText());
+            assertTrue(lock.get("authToken").asText().matches("[0-9a-f]{32}"), "the same token, written again");
+        }
+    }
+
     @Test
     void theLockFolderFollowsClaudesConfigFolder() {
         assertEquals(Path.of("/c/ide"), ClaudeIdeServer.ideDir("/c", Path.of("/home/u")));

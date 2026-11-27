@@ -1210,6 +1210,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         // selector, its per-configuration commands) and half of what gates the toolbar group; the other half
         // (marker detection) re-runs on the tab-selection and focus-regain paths.
         runConfigurations.refreshRunConfigs();
+        refreshClaudeIde(); // the lock file Claude Code finds this window by names its folder
     }
 
     /**
@@ -3203,14 +3204,12 @@ public class MainController implements com.editora.mcp.McpBridge {
     void applyClaudeIde() {
         boolean on = mcpEnabled() && config.getSettings().isClaudeIdeTrial();
         if (on && claudeIde == null) {
-            java.util.List<Path> folders =
-                    windowProjectRoot() == null ? java.util.List.of() : java.util.List.of(windowProjectRoot());
             Path dir = com.editora.mcp.ide.ClaudeIdeServer.ideDir(
                     System.getenv("CLAUDE_CONFIG_DIR"), Path.of(System.getProperty("user.home")));
             Thread.ofVirtual().name("claude-ide-start").start(() -> {
                 try {
                     var server = new com.editora.mcp.ide.ClaudeIdeServer(
-                            this, () -> folders, dir, com.editora.AppInfo.VERSION);
+                            this, this::claudeIdeFolders, dir, com.editora.AppInfo.VERSION);
                     Platform.runLater(() -> {
                         if (claudeIde != null
                                 || !(mcpEnabled() && config.getSettings().isClaudeIdeTrial())) {
@@ -3218,6 +3217,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                             return;
                         }
                         claudeIde = server;
+                        refreshClaudeIde(); // the project may have been set while the server was starting
                         com.editora.terminal.LocalShell.setExtraEnvironment(java.util.Map.of(
                                 "CLAUDE_CODE_SSE_PORT",
                                 String.valueOf(server.port()),
@@ -3232,6 +3232,26 @@ public class MainController implements com.editora.mcp.McpBridge {
             });
         } else if (!on && claudeIde != null) {
             stopClaudeIde();
+        }
+    }
+
+    /** The window's folders as Claude Code's lock file names them: its project's root, or none. */
+    private java.util.List<Path> claudeIdeFolders() {
+        Path root = windowProjectRoot();
+        return root == null ? java.util.List.of() : java.util.List.of(root);
+    }
+
+    /** The window's project changed: the lock file names the new folder (off the FX thread). */
+    private void refreshClaudeIde() {
+        var server = claudeIde;
+        if (server != null) {
+            Thread.ofVirtual().name("claude-ide-lock").start(() -> {
+                try {
+                    server.refreshLockFile();
+                } catch (java.io.IOException e) {
+                    LOG.log(java.util.logging.Level.FINE, "Could not rewrite the Claude Code lock file", e);
+                }
+            });
         }
     }
 
