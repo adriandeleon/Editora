@@ -91,6 +91,17 @@ public final class DiffViewerPane implements TabContent {
     private String headerRight;
     private String leftText;
     private String rightText;
+
+    /** The left side's text as shown (what a viewed mark's digest is taken of). */
+    String shownLeftText() {
+        return leftText;
+    }
+
+    /** The right side's text as shown. */
+    String shownRightText() {
+        return rightText;
+    }
+
     private DiffModel model;
     /**
      * The name the syntax grammar is looked up by, when one is bundled for it. The grammar itself is loaded on the

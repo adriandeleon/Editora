@@ -26,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   first. **Fix with Agent** sends a thread, its lines as they are now and its suggestion to the AI Agent panel, and
   **Copy Fix Prompt** copies the same for Claude Code in a terminal; both also work on the thread at the caret. A
   finding you dismiss stays dismissed: an agent that adds it again on the same lines is refused and told your reason.
+- **Viewed files.** Mark each file of a review viewed: the count shows how far you are, and marking the file you read
+  moves on to the next. A Git review remembers its marks per repository until a file changes; a pull request uses
+  GitHub's own viewed marks. **Changes since your last review** opens what changed in a pull request since the
+  commit you last reviewed.
 - **Agents take part in code review.** Over MCP, an agent lists a repository's review threads, adds its own on
   lines (with a suggestion, and for a finding a severity and a category), replies, and resolves a thread with a note
   of what it did (`list_review_comments`, `add_review_comment`, `reply_to_review_comment`,

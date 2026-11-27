@@ -1591,6 +1591,28 @@ public class SharedConfig {
         saveReviews();
     }
 
+    /** The files of {@code repoKey} marked viewed in review tabs: path → the digest of the diff that was viewed. */
+    public Map<String, String> reviewViewed(String repoKey) {
+        return Map.copyOf(reviewStore.getViewed().getOrDefault(repoKey, Map.of()));
+    }
+
+    /** Marks {@code path} of {@code repoKey} viewed at {@code digest} ({@code null}: not viewed); writes the file. */
+    public void setReviewViewed(String repoKey, String path, @Nullable String digest) {
+        Map<String, Map<String, String>> all = reviewStore.getViewed();
+        Map<String, String> files = new java.util.LinkedHashMap<>(all.getOrDefault(repoKey, Map.of()));
+        if (digest == null) {
+            files.remove(path);
+        } else {
+            files.put(path, digest);
+        }
+        if (files.isEmpty()) {
+            all.remove(repoKey);
+        } else {
+            all.put(repoKey, files);
+        }
+        saveReviews();
+    }
+
     /** Every repository's review threads, by repository key. */
     public Map<String, List<ReviewThread>> allReviewThreads() {
         return java.util.Collections.unmodifiableMap(reviewStore.getByRepo());
