@@ -57,6 +57,19 @@ class McpJsonRpcToolsTest {
         }
 
         @Override
+        public ProposalOutcome proposeEdit(
+                String path,
+                String oldText,
+                String newText,
+                boolean replaceAll,
+                boolean wholeBuffer,
+                String why,
+                String agent) {
+            record("proposeEdit " + path);
+            return new ProposalOutcome("rejected", "");
+        }
+
+        @Override
         public List<OpenFile> listOpenFiles() {
             record("listOpenFiles");
             return openFiles;
@@ -330,6 +343,7 @@ class McpJsonRpcToolsTest {
                         "execute_command",
                         "open_file",
                         "edit_buffer",
+                        "propose_edit",
                         "save_buffer",
                         "get_selection",
                         "document_symbols",
@@ -360,7 +374,7 @@ class McpJsonRpcToolsTest {
             if (arguments.has("path")) {
                 arguments.put("path", "/tmp/x");
             }
-            if (name.equals("edit_buffer")) {
+            if (name.equals("edit_buffer") || name.equals("propose_edit")) {
                 arguments.put("old_text", "y");
             }
             int before = bridge.calls.size();

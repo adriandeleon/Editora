@@ -21,6 +21,11 @@ import org.jspecify.annotations.Nullable;
  */
 final class WindowCommandHost implements WindowCommandRegistrar.Host {
 
+    @Override
+    public DiffCodeIntel diffIntel() {
+        return mc.diffIntel;
+    }
+
     private final MainController mc;
     /** Help → Report a Problem, built on first use. */
     private @Nullable ReportProblemWindow reportProblem;

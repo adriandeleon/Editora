@@ -227,6 +227,14 @@ final class SettingsAiPages {
                 mcpCheck,
                 tr("settings.mcp.hint"),
                 "mcp model context protocol agent server enable ai claude llm loopback token endpoint");
+        w.switchRow(
+                c,
+                Category.MCP,
+                "mcpEditsNeedApproval",
+                true,
+                Settings::isMcpEditsNeedApproval,
+                Settings::setMcpEditsNeedApproval,
+                "mcp agent edits approve approval accept reject propose proposal diff review claude");
         mcpStatusLabel = new Label();
         mcpStatusLabel.setWrapText(true);
         mcpCopyButton = new Button(tr("settings.mcp.copy"));

@@ -46,7 +46,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 187;
+    public static final int SCHEMA_VERSION = 188;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -722,6 +722,8 @@ public class Settings {
     /** MCP server (expose live editor state + the command registry to an LLM agent over a loopback
      *  HTTP JSON-RPC endpoint, gated by a bearer token): off by default. */
     private boolean mcpSupport = false;
+    /** Every MCP agent edit ({@code edit_buffer}) shown as a proposal to accept or reject first; off: applied at once. */
+    private boolean mcpEditsNeedApproval = false;
     /** Master AI kill switch: off by default. When off, {@link #agentSupport}/{@link #aiSupport} (and
      *  everything they gate — the AI Agent chat window, commit-message generation, explain/rewrite
      *  selection, inline ghost-text completion) are effectively disabled regardless of their own
@@ -1655,6 +1657,14 @@ public class Settings {
 
     public void setHtmlPreviewBrowser(String htmlPreviewBrowser) {
         this.htmlPreviewBrowser = htmlPreviewBrowser == null ? "" : htmlPreviewBrowser;
+    }
+
+    public boolean isMcpEditsNeedApproval() {
+        return mcpEditsNeedApproval;
+    }
+
+    public void setMcpEditsNeedApproval(boolean mcpEditsNeedApproval) {
+        this.mcpEditsNeedApproval = mcpEditsNeedApproval;
     }
 
     public boolean isMcpSupport() {

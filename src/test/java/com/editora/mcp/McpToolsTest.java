@@ -56,6 +56,28 @@ class McpToolsTest {
         boolean noRepository;
         String lastAgent;
         String lastReviewArgs;
+        boolean needApproval;
+        ProposalOutcome proposal = new ProposalOutcome("accepted", "");
+        String lastProposal;
+
+        @Override
+        public ProposalOutcome proposeEdit(
+                String path,
+                String oldText,
+                String newText,
+                boolean replaceAll,
+                boolean wholeBuffer,
+                String why,
+                String agent) {
+            lastProposal = path + "|" + oldText + "|" + newText + "|" + replaceAll + "|" + wholeBuffer + "|" + why;
+            lastAgent = agent;
+            return proposal;
+        }
+
+        @Override
+        public boolean editsNeedApproval() {
+            return needApproval;
+        }
 
         @Override
         public List<ReviewThreadInfo> listReviews(String path, boolean all) {

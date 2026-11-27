@@ -59,6 +59,9 @@ final class ReviewCoordinator {
         /** Opens the AI Agent panel and sends {@code prompt} as a turn. */
         void sendToAgent(String prompt);
 
+        /** Opens the AI Agent panel and adds {@code block} to the prompt being written, without sending. */
+        default void addToAgentPrompt(String block) {}
+
         /** Puts {@code text} on the clipboard. */
         void copyText(String text);
 
@@ -782,6 +785,42 @@ final class ReviewCoordinator {
         }
     }
 
+    /** {@code review.addToAgentPrompt}: the thread at the caret, with its lines, added to the agent's prompt. */
+    void addAtCaretToAgentPrompt() {
+        EditorBuffer buffer = host.activeBuffer();
+        Place place = buffer == null ? null : places.get(buffer);
+        ReviewThread t = buffer == null ? null : threadAtCaret(buffer);
+        if (place == null || t == null) {
+            host.setStatus(tr("status.review.none"));
+            return;
+        }
+        if (!ops.agentEnabled()) {
+            host.setStatus(tr("status.review.agentOff"));
+            return;
+        }
+        withThreadText(place, t, (file, text) -> ops.addToAgentPrompt(threadBlock(file, t, text)));
+    }
+
+    /** {@code t} with its lines as they are in {@code text}, as a block for the agent's prompt. */
+    static String threadBlock(Path file, ReviewThread t, String text) {
+        ReviewAnchors.Located at = ReviewAnchors.locate(t, text);
+        return com.editora.review.AgentPromptBlocks.thread(
+                file.toString(), at.startLine() + 1, at.endLine() + 1, t, linesNow(t, at, text));
+    }
+
+    /** The text of {@code at}'s lines in {@code text}; the lines first commented on when they are gone. */
+    private static String linesNow(ReviewThread t, ReviewAnchors.Located at, String text) {
+        String[] lines = text.split("\n", -1);
+        StringBuilder shown = new StringBuilder();
+        for (int i = at.startLine(); i <= at.endLine() && i < lines.length; i++) {
+            if (!shown.isEmpty()) {
+                shown.append('\n');
+            }
+            shown.append(lines[i].endsWith("\r") ? lines[i].substring(0, lines[i].length() - 1) : lines[i]);
+        }
+        return at.outdated() ? t.anchor().selectedText() : shown.toString();
+    }
+
     /** Sends the AI Agent panel what to fix for thread {@code t}; you resolve the thread once it is done. */
     void fixWithAgent(Place place, ReviewThread t) {
         if (!ops.agentEnabled()) {
@@ -804,10 +843,15 @@ final class ReviewCoordinator {
 
     /** The fix prompt for {@code t}, built from its file as it is now (read off the FX thread when not open). */
     private void withFixPrompt(Place place, ReviewThread t, Consumer<String> then) {
+        withThreadText(place, t, (file, text) -> then.accept(fixPrompt(file, t, text)));
+    }
+
+    /** {@code t}'s file and its text now: the open buffer's, else read off the FX thread. */
+    private void withThreadText(Place place, ReviewThread t, java.util.function.BiConsumer<Path, String> then) {
         Path file = ReviewKeys.resolve(place.root(), t.path());
         EditorBuffer open = ops.bufferForPath(file);
         if (open != null) {
-            then.accept(fixPrompt(file, t, open.getContent()));
+            then.accept(file, open.getContent());
             return;
         }
         com.editora.perf.OffFx.then(
@@ -821,23 +865,14 @@ final class ReviewCoordinator {
                 },
                 read -> {
                     String text = read.value();
-                    then.accept(fixPrompt(file, t, text == null ? "" : text));
+                    then.accept(file, text == null ? "" : text);
                 });
     }
 
     /** {@code t}'s fix prompt against {@code text}: its lines where they are now. */
     static String fixPrompt(Path file, ReviewThread t, String text) {
         ReviewAnchors.Located at = ReviewAnchors.locate(t, text);
-        String[] lines = text.split("\n", -1);
-        StringBuilder shown = new StringBuilder();
-        for (int i = at.startLine(); i <= at.endLine() && i < lines.length; i++) {
-            if (!shown.isEmpty()) {
-                shown.append('\n');
-            }
-            shown.append(lines[i].endsWith("\r") ? lines[i].substring(0, lines[i].length() - 1) : lines[i]);
-        }
-        String lineText = at.outdated() ? t.anchor().selectedText() : shown.toString();
-        return ReviewText.fixPrompt(file.toString(), at.startLine() + 1, at.endLine() + 1, t, lineText);
+        return ReviewText.fixPrompt(file.toString(), at.startLine() + 1, at.endLine() + 1, t, linesNow(t, at, text));
     }
 
     /** Dismisses {@code t} from the tool window, asking the reason first. */

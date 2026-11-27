@@ -78,6 +78,8 @@ Instead of writing, the agent proposes: Editora opens the proposal in `DiffViewe
 Result editor, and the user accepts, edits or rejects. The tool result reports what happened
 (`accepted`, `accepted_with_changes` + final text, `rejected` + optional reason). Long waits use a long
 timeout first, MCP Tasks later. A setting picks "agent writes directly" or "agent proposes".
+*Status:* built (`propose_edit`, `mcpEditsNeedApproval`). Not built: `accepted_with_changes` (editing the
+proposal before Accept; you accept, then edit the buffer) and MCP Tasks for waits past 4 minutes.
 
 **6. Review comment model (M)**
 `ReviewComment`: file, side (old/new), line range, anchor (the line texts plus a digest, so a comment
@@ -125,6 +127,9 @@ Changes tab. Distributed through a marketplace repo (decision D5).
 **13. Send to Claude (S/M)** — needs 7
 From a comment, a finding, a selection or a diff hunk: **Send to Claude** puts it in the agent panel
 prompt (ACP, works today), or as an @-mention over the IDE protocol if item 3 lands.
+*Status:* built as **Add to Agent Prompt** (`agent.addSelection`, `review.addToAgentPrompt`,
+`diff.addChangeToAgentPrompt`): the block goes into the prompt being written, unsent. Findings already had
+Fix with Agent (item 10). Not built: the IDE-protocol @-mention (item 3).
 
 ### Tier 4: review ergonomics
 
@@ -139,6 +144,8 @@ one, for a PR (force-push aware) and for agent turns.
 **16. Code intelligence in the diff (M/L)**
 On the working-tree side of a diff: hover, go to definition, find references (LSP), and "Show in
 Map". Read-only sides can use the same LSP through a temporary document where the server allows it.
+*Status:* built for the file side (`DiffCodeIntel`): hover over the diff; definition, references and Reveal in Map
+from the file at the same place. Not built: the read-only side (a temporary document), and the unified view.
 
 **17. Review order and walkthrough (M)**
 Group files (source, tests, config, generated, lockfiles collapsed), order by dependency, and an

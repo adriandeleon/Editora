@@ -457,7 +457,10 @@ public enum ConfigSchema {
                     Map.entry(185, (Migration) ConfigMigrations::identity),
                     // v186→187: + reviewsInProject (off) — review threads in the repository's .editora/reviews.json
                     // instead of the config folder. Additive: absent is the default.
-                    Map.entry(186, (Migration) ConfigMigrations::identity)),
+                    Map.entry(186, (Migration) ConfigMigrations::identity),
+                    // v187→188: + mcpEditsNeedApproval (off) — an MCP agent's edit_buffer shown as a proposal to
+                    // accept or reject. Additive: absent is the default.
+                    Map.entry(187, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without

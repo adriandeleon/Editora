@@ -488,6 +488,23 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     @Override
+    public ProposalOutcome proposeEdit(
+            @Nullable String path,
+            @Nullable String oldText,
+            String newText,
+            boolean replaceAll,
+            boolean wholeBuffer,
+            @Nullable String why,
+            String agent) {
+        return mcpBridge.proposeEdit(path, oldText, newText, replaceAll, wholeBuffer, why, agent);
+    }
+
+    @Override
+    public boolean editsNeedApproval() {
+        return mcpBridge.editsNeedApproval();
+    }
+
+    @Override
     public @Nullable String saveBuffer(@Nullable String path) {
         return mcpBridge.saveBuffer(path);
     }
@@ -2570,6 +2587,9 @@ public class MainController implements com.editora.mcp.McpBridge {
     final WindowChromeCoordinator chrome = new WindowChromeCoordinator(new WindowChromeHost(this));
 
     final WindowMcpBridge mcpBridge = new WindowMcpBridge(new WindowMcpHost(this));
+
+    /** Hover, definitions, references and the Map on a diff's file side. */
+    final DiffCodeIntel diffIntel = new DiffCodeIntel(this);
 
     final FileWorkflowCoordinator fileWorkflows = new FileWorkflowCoordinator(new FileWorkflowHost(this));
 

@@ -244,6 +244,9 @@ final class WindowCommandRegistrar {
 
         ReviewCoordinator reviewCoordinator();
 
+        /** Code intelligence on a diff's file side. */
+        DiffCodeIntel diffIntel();
+
         HttpClientCoordinator httpClient();
 
         AgentCoordinator agentCoordinator();
@@ -522,6 +525,9 @@ final class WindowCommandRegistrar {
             if (!host.projectsEnabled()) {
                 host.setStatus(projectsOff());
                 return;
+            }
+            if (host.diffIntel().fromFile(() -> host.registry().run("projectMap.revealActiveFile"))) {
+                return; // a diff's file side: that file
             }
             ProjectPanel panel = host.builtProjectPanel();
             if (panel.isMapShowing() || panel.getRoot() != null) {
@@ -1385,6 +1391,7 @@ final class WindowCommandRegistrar {
                                         })));
         host.registry().register(Command.of("tool.agent", host.agentCoordinator()::toggleToolWindow));
         host.registry().register(Command.of("agent.newSession", host.agentCoordinator()::newSession));
+        host.registry().register(Command.of("agent.addSelection", host.agentCoordinator()::addSelectionToPrompt));
         host.registry().register(Command.of("agent.stop", host.agentCoordinator()::stopTurn));
         host.registry().register(Command.of("agent.selectModel", host.agentCoordinator()::pickModel));
         host.registry().register(Command.of("agent.selectMode", host.agentCoordinator()::pickMode));
@@ -2120,6 +2127,10 @@ final class WindowCommandRegistrar {
                         "review.copyFixPrompt", () -> host.reviewCoordinator().fixAtCaret(true)));
         host.registry()
                 .register(Command.of(
+                        "review.addToAgentPrompt",
+                        () -> host.reviewCoordinator().addAtCaretToAgentPrompt()));
+        host.registry()
+                .register(Command.of(
                         "tool.notes",
                         () -> host.notesCoordinator()
                                 .ifEnabled(() -> host.toolWindows().toggle(host.notesToolWindow()))));
@@ -2727,6 +2738,9 @@ final class WindowCommandRegistrar {
                                             host.settingsWindow().syncAll();
                                         })));
         host.registry().register(Command.of("lsp.gotoDefinition", () -> {
+            if (host.diffIntel().fromFile(() -> host.registry().run("lsp.gotoDefinition"))) {
+                return; // from a diff's file side: from the file, at the same place
+            }
             // A server's answer first; without one (LSP off, no server for the file, nothing found) an HTML
             // page's href/src opens its file (HTML review B6), else the server-free symbol index answers for
             // the languages it reads.
@@ -2745,7 +2759,13 @@ final class WindowCommandRegistrar {
                 .register(Command.of(
                         "lsp.gotoDefinitionInSplit", () -> host.ifLsp(host.navigation()::gotoDefinitionInSplit)));
         host.registry()
-                .register(Command.of("lsp.findReferences", () -> host.ifLsp(host.lspCoordinator()::findReferences)));
+                .register(Command.of(
+                        "lsp.findReferences",
+                        () -> host.ifLsp(() -> {
+                            if (!host.diffIntel().fromFile(() -> host.registry().run("lsp.findReferences"))) {
+                                host.lspCoordinator().findReferences();
+                            }
+                        })));
         host.registry()
                 .register(Command.of(
                         "lsp.gotoImplementation", () -> host.ifLsp(host.lspCoordinator()::gotoImplementation)));
@@ -2758,7 +2778,14 @@ final class WindowCommandRegistrar {
                 .register(Command.of("lsp.gotoSuperMethod", () -> host.ifLsp(host.lspCoordinator()::gotoSuperMethod)));
         host.registry()
                 .register(Command.of("lsp.gotoSymbol", () -> host.ifLsp(host.lspCoordinator()::gotoSymbolInWorkspace)));
-        host.registry().register(Command.of("lsp.hover", () -> host.ifLsp(host.lspCoordinator()::showHover)));
+        host.registry()
+                .register(Command.of(
+                        "lsp.hover",
+                        () -> host.ifLsp(() -> {
+                            if (!host.diffIntel().hover()) { // a diff's file side: answered over the diff
+                                host.lspCoordinator().showHover();
+                            }
+                        })));
         host.registry()
                 .register(Command.of("lsp.restartServers", () -> host.ifLsp(host.lspCoordinator()::restartServers)));
         host.registry()
@@ -3049,6 +3076,16 @@ final class WindowCommandRegistrar {
                                         () -> host.config().getSettings().isGitAutoFetch(),
                                         v -> host.config().getSettings().setGitAutoFetch(v),
                                         host.git()::applySupport)));
+        // Whether an MCP agent's edits are proposed for approval (a diff to accept or reject) or applied at once.
+        host.registry()
+                .register(Command.of(
+                        "mcp.toggleEditApproval",
+                        () -> host.editorSettings()
+                                .toggleSetting(
+                                        "mcp.toggleEditApproval",
+                                        () -> host.config().getSettings().isMcpEditsNeedApproval(),
+                                        v -> host.config().getSettings().setMcpEditsNeedApproval(v),
+                                        () -> {})));
         // Where review threads are kept: the config folder, or each repository's .editora/reviews.json.
         host.registry()
                 .register(Command.of(
