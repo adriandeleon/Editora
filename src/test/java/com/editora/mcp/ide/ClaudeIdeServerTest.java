@@ -153,12 +153,18 @@ class ClaudeIdeServerTest {
     void openDiffIsAProposalOfTheWholeFile(@TempDir Path dir) throws Exception {
         CompletableFuture<String> proposed = new CompletableFuture<>();
         String[] outcome = {"accepted"};
+        int[] saves = {0};
         McpBridge bridge = bridge(java.util.Map.of(
                 "listOpenFiles", a -> List.of(new McpBridge.OpenFile("/r/A.java", "A.java", "java", false, true)),
-                "proposeEdit",
+                "reviewProposal",
                         a -> {
-                            proposed.complete(a[0] + "|" + a[4] + "|" + a[2] + "|" + a[6]);
+                            proposed.complete(a[0] + "|" + a[1] + "|" + a[3]);
                             return new McpBridge.ProposalOutcome(outcome[0], "");
+                        },
+                "saveBuffer",
+                        a -> {
+                            saves[0]++;
+                            return null;
                         }));
         ClaudeIdeTools tools = new ClaudeIdeTools(m, bridge, List::of);
         var args = m.readTree("{\"old_file_path\":\"/r/A.java\",\"new_file_path\":\"/r/A.java\","
@@ -166,7 +172,8 @@ class ClaudeIdeServerTest {
         var saved = tools.call("openDiff", args);
         assertEquals("FILE_SAVED", saved.at("/content/0/text").asText());
         assertEquals("x\n", saved.at("/content/1/text").asText());
-        assertEquals("/r/A.java|true|x\n|Claude Code", proposed.get());
+        assertEquals("/r/A.java|x\n|Claude Code", proposed.get());
+        assertEquals(0, saves[0], "Claude Code writes the file itself: Editora neither applies nor saves");
         outcome[0] = "rejected";
         assertEquals(
                 "DIFF_REJECTED",

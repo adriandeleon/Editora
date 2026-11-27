@@ -505,6 +505,11 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     @Override
+    public ProposalOutcome reviewProposal(@Nullable String path, String newText, @Nullable String why, String agent) {
+        return mcpBridge.reviewProposal(path, newText, why, agent);
+    }
+
+    @Override
     public java.util.List<Location> navigate(@Nullable String path, int line, int column, boolean references) {
         return mcpBridge.navigate(path, line, column, references);
     }

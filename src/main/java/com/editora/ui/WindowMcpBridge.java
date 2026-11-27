@@ -424,6 +424,24 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
             boolean wholeBuffer,
             @Nullable String why,
             String agent) {
+        return propose(path, oldText, newText, replaceAll, wholeBuffer, why, agent, true);
+    }
+
+    @Override
+    public ProposalOutcome reviewProposal(@Nullable String path, String newText, @Nullable String why, String agent) {
+        return propose(path, null, newText, false, true, why, agent, false);
+    }
+
+    /** A proposal, shown and waited for; {@code apply}: an accepted one is applied here, else the agent writes it. */
+    private ProposalOutcome propose(
+            @Nullable String path,
+            @Nullable String oldText,
+            String newText,
+            boolean replaceAll,
+            boolean wholeBuffer,
+            @Nullable String why,
+            String agent,
+            boolean apply) {
         Taken taken = mcpOnFx(() -> take(path));
         if (taken.refusal() != null) {
             return new ProposalOutcome("refused", taken.refusal());
@@ -478,6 +496,9 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
         }
         if (!d.accepted()) {
             return new ProposalOutcome(d.timedOut() ? "timeout" : "rejected", d.reason());
+        }
+        if (!apply) {
+            return new ProposalOutcome("accepted", ""); // the agent writes it: applying it here too wrote it twice
         }
         EditorBuffer.PreparedEdit prepared = EditorBuffer.PreparedEdit.between(taken.version(), text, proposed);
         Applied applied = mcpOnFx(() -> {
