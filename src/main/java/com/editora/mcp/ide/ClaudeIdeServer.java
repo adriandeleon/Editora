@@ -40,6 +40,7 @@ public final class ClaudeIdeServer implements AutoCloseable {
     private final Supplier<List<Path>> folders;
     private final String token;
     private final Path lockFile;
+    private final Path ideDir;
     private final WebSocketServer ws;
     private final String version;
 
@@ -67,6 +68,7 @@ public final class ClaudeIdeServer implements AutoCloseable {
             @Override
             public void closed(WebSocketServer.Connection c) {}
         });
+        this.ideDir = ideDir;
         this.lockFile = ideDir.resolve(ws.port() + ".lock");
         writeLockFile(ideDir);
     }
@@ -102,7 +104,15 @@ public final class ClaudeIdeServer implements AutoCloseable {
                 && MessageDigest.isEqual(sent.getBytes(StandardCharsets.UTF_8), token.getBytes(StandardCharsets.UTF_8));
     }
 
-    private void writeLockFile(Path ideDir) throws IOException {
+    /**
+     * Writes the lock file again with the window's folders as they are now: a window learns its project after it
+     * starts (a restored session), and {@code /ide} offers a window only to a Claude Code started in one of them.
+     */
+    public synchronized void refreshLockFile() throws IOException {
+        writeLockFile(ideDir);
+    }
+
+    private synchronized void writeLockFile(Path ideDir) throws IOException {
         Files.createDirectories(ideDir);
         ObjectNode lock = m.createObjectNode();
         lock.put("pid", ProcessHandle.current().pid());

@@ -192,6 +192,24 @@ class ClaudeIdeServerTest {
         assertEquals(null, WebSocketServer.subprotocol(null));
     }
 
+    /** Regression: the lock file named no folder when the window learned its project after the server started. */
+    @Test
+    void theLockFileNamesAFolderTheWindowLearnsLater(@TempDir Path dir) throws Exception {
+        List<Path> folders = new java.util.concurrent.CopyOnWriteArrayList<>();
+        try (ClaudeIdeServer server = new ClaudeIdeServer(bridge(java.util.Map.of()), () -> folders, dir, "1.0")) {
+            assertEquals(
+                    0,
+                    m.readTree(Files.readString(server.lockFile()))
+                            .get("workspaceFolders")
+                            .size());
+            folders.add(Path.of("/r/jkit"));
+            server.refreshLockFile();
+            JsonNode lock = m.readTree(Files.readString(server.lockFile()));
+            assertEquals("/r/jkit", lock.get("workspaceFolders").get(0).asText());
+            assertTrue(lock.get("authToken").asText().matches("[0-9a-f]{32}"), "the same token, written again");
+        }
+    }
+
     @Test
     void theLockFolderFollowsClaudesConfigFolder() {
         assertEquals(Path.of("/c/ide"), ClaudeIdeServer.ideDir("/c", Path.of("/home/u")));
