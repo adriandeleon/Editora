@@ -42,9 +42,12 @@ final class PatchReviewPane implements TabContent {
 
     PatchReviewPane(String title, List<Entry> entries) {
         this.title = title;
-        this.entries = List.copyOf(entries);
+        // Source first, then tests, configuration, docs, and generated files last (each group as it came).
+        List<Integer> order = com.editora.review.ReviewFileGroups.order(
+                entries.stream().map(e -> e.label() == null ? "" : e.label()).toList());
+        this.entries = order.stream().map(entries::get).toList();
         root.getStyleClass().add("patch-review");
-        files.getItems().setAll(entries);
+        files.getItems().setAll(this.entries);
         files.getStyleClass().add("patch-file-list");
         files.setAccessibleText(title); // the list of the review's files, named for a screen reader (ACC-01)
         files.setCellFactory(v -> new FileCell());
@@ -67,7 +70,7 @@ final class PatchReviewPane implements TabContent {
         reviewSplit.getItems().addAll(left, content);
         SplitPane.setResizableWithParent(left, false);
         root.setCenter(reviewSplit);
-        if (!entries.isEmpty()) {
+        if (!this.entries.isEmpty()) {
             files.getSelectionModel().select(0);
         }
     }
@@ -96,6 +99,11 @@ final class PatchReviewPane implements TabContent {
         return applyBar == null
                 ? List.of()
                 : applyBar.getChildren().stream().map(Button.class::cast).toList();
+    }
+
+    /** The review's files, in the order shown. */
+    List<Entry> entries() {
+        return entries;
     }
 
     List<DiffViewerPane> panes() {
@@ -128,6 +136,16 @@ final class PatchReviewPane implements TabContent {
         }
         content.getChildren().setAll(entries.get(index).pane().node());
         position.setText(tr("diff.filePosition", index + 1, entries.size()));
+    }
+
+    private com.editora.review.ReviewFileGroups.Group groupOf(int index) {
+        Entry e = index >= 0 && index < entries.size() ? entries.get(index) : null;
+        return com.editora.review.ReviewFileGroups.classify(e == null || e.label() == null ? "" : e.label());
+    }
+
+    /** Whether the files are of more than one kind: a review of one kind has no headings. */
+    private boolean groupsShown() {
+        return !entries.isEmpty() && groupOf(0) != groupOf(entries.size() - 1);
     }
 
     private static Button button(Node icon, String tip, Runnable action) {
@@ -174,7 +192,7 @@ final class PatchReviewPane implements TabContent {
         return "diff.applyResult";
     }
 
-    private static final class FileCell extends ListCell<Entry> {
+    private final class FileCell extends ListCell<Entry> {
         @Override
         protected void updateItem(Entry entry, boolean empty) {
             super.updateItem(entry, empty);
@@ -194,7 +212,18 @@ final class PatchReviewPane implements TabContent {
             status.setManaged(!entry.status().isBlank());
             HBox row = UiZoom.spacing(new HBox(status, name, stat), 8);
             row.setAlignment(Pos.CENTER_LEFT);
-            setGraphic(row);
+            int index = getIndex();
+            com.editora.review.ReviewFileGroups.Group group = groupOf(index);
+            if (group == com.editora.review.ReviewFileGroups.Group.GENERATED) {
+                row.getStyleClass().add("patch-file-generated");
+            }
+            if (index >= 0 && (index == 0 || groupOf(index - 1) != group) && groupsShown()) {
+                Label heading = new Label(tr(group.key()));
+                heading.getStyleClass().add("patch-file-group");
+                setGraphic(new VBox(heading, row)); // the first file of each kind is headed by the kind
+            } else {
+                setGraphic(row);
+            }
             setText(null);
             setAccessibleText(entry.label()
                     + (entry.status().isBlank() ? "" : ", " + entry.status())

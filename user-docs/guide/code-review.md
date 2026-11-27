@@ -73,6 +73,21 @@ side's gutter marks the lines with a thread. A click on the mark opens the
 file at the thread with its card. **Add Review Comment** and **Suggest
 Change** work there too, with the caret or the selection on your file's side.
 
+## Reviewing several files
+
+A review of several files (**Review Working Changes**, **Review Staged
+Changes**, a stash, two revisions or a patch file) lists them by kind: source
+first, then tests, configuration, docs, and generated files such as lock files
+and minified or built output, which are dimmed. Within a kind, files keep
+their order. When the review has more than one kind, a small heading marks
+where each kind starts.
+
+**Diff: Ask Agent for a Review Walkthrough** sends the review's diffs, in that
+order, to the [AI Agent](/docs/ai) and asks what the change does, where it is
+most likely wrong, and in what order to read it. The agent is asked not to
+change any file. Up to 80,000 characters of diff are sent; the prompt says how
+many files were left out.
+
 ## The Review Comments window
 
 **Tool Window: Review Comments** (`tool.reviews`) lists the threads of the

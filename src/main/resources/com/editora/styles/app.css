@@ -7136,3 +7136,14 @@
     -fx-font-size: 11px;
     -fx-font-style: italic;
 }
+
+/* A review's files by kind: a small heading over the first of each kind; generated files quieter. */
+.patch-file-group {
+    -fx-font-size: 0.85em;
+    -fx-font-weight: bold;
+    -fx-text-fill: -color-fg-muted;
+    -fx-padding: 4 0 2 0;
+}
+.patch-file-generated .label {
+    -fx-opacity: 0.6;
+}

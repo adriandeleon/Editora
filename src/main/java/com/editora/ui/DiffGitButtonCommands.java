@@ -23,6 +23,7 @@ final class DiffGitButtonCommands {
                 Command.of("diff.saveResult", () -> mc.diffCoordinator.withActiveDiff(DiffViewerPane::saveResult)));
         mc.registry.register(
                 Command.of("diff.exportPatch", () -> mc.diffCoordinator.withActiveDiff(DiffViewerPane::exportPatch)));
+        mc.registry.register(Command.of("diff.reviewWalkthrough", () -> ReviewWalkthrough.ask(mc)));
         mc.registry.register(Command.of("diff.exitDiffMode", () -> exitDiffMode(mc)));
         mc.registry.register(Command.of(
                 "git.log.showBranchLog",

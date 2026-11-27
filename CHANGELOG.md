@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Review order and walkthrough.** A review of several files lists source first, then tests, configuration, docs and
+  generated files (dimmed), with a heading for each kind. **Diff: Ask Agent for a Review Walkthrough** asks the AI
+  Agent what the change does, where it is risky and in what order to read it.
 - **Slash commands for Claude Code.** Editora's MCP server offers prompts, which Claude Code lists as
   `/mcp__editora__review_changes` (review the uncommitted changes and leave findings as review comments),
   `/mcp__editora__fix_open_comments` (fix and resolve the open review threads) and `/mcp__editora__explain_selection`.

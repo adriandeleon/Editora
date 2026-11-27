@@ -143,6 +143,9 @@ Map". Read-only sides can use the same LSP through a temporary document where th
 **17. Review order and walkthrough (M)**
 Group files (source, tests, config, generated, lockfiles collapsed), order by dependency, and an
 optional AI walkthrough through AI Actions: summary, risky spots, suggested order.
+*Status:* built: grouping by kind in every `PatchReviewPane` (`ReviewFileGroups`), generated files dimmed, and the
+walkthrough through the AI Agent (`diff.reviewWalkthrough`). Not built: ordering by dependency, collapsing
+generated files, and the walkthrough through AI Actions instead of the agent.
 
 **18. More read tools for agents (M)** — needs 2
 `lsp_definition`, `lsp_references`, `lsp_hover`, `workspace_symbols`, `test_results`,
