@@ -19,12 +19,27 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class ReviewStore {
 
     /** Current on-disk schema version of {@code reviews.json}. */
-    public static final int SCHEMA_VERSION = 1;
+    public static final int SCHEMA_VERSION = 2;
 
     private int schemaVersion = SCHEMA_VERSION;
 
     /** Repository key → its threads, oldest first. */
     private Map<String, List<ReviewThread>> byRepo = new LinkedHashMap<>();
+
+    /**
+     * Repository key → path → a digest of the file's diff when you marked it viewed in a review tab (kept here, in
+     * the config folder only: what you have looked at is yours, also when the threads are kept in the project). A
+     * file whose diff no longer has that digest is unviewed again.
+     */
+    private Map<String, Map<String, String>> viewed = new LinkedHashMap<>();
+
+    public Map<String, Map<String, String>> getViewed() {
+        return viewed;
+    }
+
+    public void setViewed(Map<String, Map<String, String>> viewed) {
+        this.viewed = viewed == null ? new LinkedHashMap<>() : viewed;
+    }
 
     public int getSchemaVersion() {
         return schemaVersion;

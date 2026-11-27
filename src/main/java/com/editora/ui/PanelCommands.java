@@ -111,6 +111,7 @@ final class PanelCommands {
             "diff.applyLine",
             "diff.previousFile",
             "diff.nextFile",
+            "diff.toggleViewed",
             "diff.applyPatchToWorkingTree",
             "diff.applyPatchToIndex",
             "merge.saveResult",

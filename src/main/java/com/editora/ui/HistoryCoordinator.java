@@ -1068,6 +1068,11 @@ final class HistoryCoordinator {
         return merged;
     }
 
+    /** {@code file}'s revisions in every bucket, newest first (what its File History shows). FX thread. */
+    List<HistoryRevision> revisionsFor(Path file) {
+        return revisionsOf(historyKey(file));
+    }
+
     /** The per-file key used in the history bucket (absolute path string). */
     private static String historyKey(Path file) {
         return PathKeys.normalizedKey(file);

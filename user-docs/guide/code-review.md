@@ -73,6 +73,19 @@ side's gutter marks the lines with a thread. A click on the mark opens the
 file at the thread with its card. **Add Review Comment** and **Suggest
 Change** work there too, with the caret or the selection on your file's side.
 
+## Viewed files
+
+A review of several files (**Review Working Changes**, **Review Staged
+Changes**, a stash or two revisions) has a box by each file to mark it viewed,
+and counts the files viewed so far. Marking the file you are reading moves on
+to the next one you have not viewed. **Diff: Mark File in Review Viewed**
+does the same from the keyboard.
+
+The marks are kept per repository in Editora's config folder, never in the
+project, so a review you open again remembers them. A file whose diff changed
+since you marked it shows as not viewed again. For pull requests, see
+[GitHub](/docs/github): their marks are GitHub's.
+
 ## The Review Comments window
 
 **Tool Window: Review Comments** (`tool.reviews`) lists the threads of the

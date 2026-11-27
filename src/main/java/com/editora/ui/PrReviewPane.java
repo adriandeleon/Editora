@@ -74,6 +74,15 @@ public final class PrReviewPane extends Region implements TabContent {
 
     private java.util.function.Supplier<String> reviewSummary = () -> "";
 
+    /** Which files you marked viewed on GitHub, and your last reviewed commit; {@code NONE} until read. */
+    private com.editora.github.PrViewed.State viewed = com.editora.github.PrViewed.State.NONE;
+
+    /** Marks a file (by its pull-request path) viewed or not, on GitHub; null: no Viewed boxes. */
+    private java.util.function.@Nullable BiConsumer<String, Boolean> onViewed;
+
+    /** Opens what changed since your last review. */
+    private Runnable onSinceReview = () -> {};
+
     private final VBox content = new VBox();
     private final StackPane centerHost = new StackPane(content);
     private final ScrollPane scroll = new ScrollPane(centerHost);
@@ -115,6 +124,22 @@ public final class PrReviewPane extends Region implements TabContent {
         this.draftCount = drafts;
         this.reviewSummary = summary;
         rebuild();
+    }
+
+    /** Wires the Viewed boxes ({@code onViewed}: path, now viewed) and the "changes since your last review" link. */
+    void setViewedActions(java.util.function.BiConsumer<String, Boolean> onViewed, Runnable onSinceReview) {
+        this.onViewed = onViewed;
+        this.onSinceReview = onSinceReview;
+    }
+
+    /** What GitHub says you viewed (read again after every mark and Refresh). */
+    void setViewed(com.editora.github.PrViewed.State state) {
+        this.viewed = state == null ? com.editora.github.PrViewed.State.NONE : state;
+        rebuild();
+    }
+
+    com.editora.github.PrViewed.State viewed() {
+        return viewed;
     }
 
     /** The drafts or threads changed: the summary line is written again. */
@@ -295,6 +320,12 @@ public final class PrReviewPane extends Region implements TabContent {
         Label filesLabel = new Label(tr("github.review.filesChanged", files.size()));
         filesLabel.getStyleClass().add("pr-review-stats");
         HBox line = UiZoom.spacing(new HBox(filesLabel, adds(adds), dels(dels)), 10);
+        if (!viewed.prId().isBlank()) {
+            List<String> paths = rows.stream().map(FileRow::path).toList();
+            Label progress = new Label(tr("github.review.viewedProgress", viewed.viewedCount(paths), paths.size()));
+            progress.getStyleClass().add("pr-review-stats");
+            line.getChildren().add(progress);
+        }
         line.setAlignment(Pos.BASELINE_LEFT);
         return line;
     }
@@ -315,6 +346,9 @@ public final class PrReviewPane extends Region implements TabContent {
             row.getChildren()
                     .add(FocusCommands.press(
                             link(tr("github.review.openAll", files.size()), onOpenAll), "github.openReviewedFiles"));
+        }
+        if (shown != null && viewed.changedSinceReview(shown.headRefOid())) {
+            row.getChildren().add(link(tr("github.review.sinceReview"), onSinceReview));
         }
         row.getChildren()
                 .add(FocusCommands.press(link(tr("github.review.submit"), onSubmitReview), "github.submitReviewedPr"));
@@ -355,6 +389,20 @@ public final class PrReviewPane extends Region implements TabContent {
 
         HBox row =
                 UiZoom.spacing(new HBox(status, iconHolder, link, spacer, adds(r.additions()), dels(r.deletions())), 6);
+        java.util.function.BiConsumer<String, Boolean> mark = onViewed;
+        if (mark != null && !viewed.prId().isBlank()) {
+            javafx.scene.control.CheckBox box = new javafx.scene.control.CheckBox(tr("github.review.viewed"));
+            box.getStyleClass().add("pr-review-viewed");
+            box.setSelected(viewed.viewed(r.path()));
+            box.setAccessibleText(tr("github.review.viewedFile", r.displayPath()));
+            box.setOnAction(e -> mark.accept(r.path(), box.isSelected()));
+            box.addEventHandler(
+                    javafx.scene.input.MouseEvent.MOUSE_CLICKED, javafx.event.Event::consume); // not the row's open
+            row.getChildren().add(box);
+            if (box.isSelected()) {
+                row.getStyleClass().add("pr-review-file-viewed");
+            }
+        }
         // The status class colors the letter + icon (the .pr-review-file-row.git-status-* CSS).
         row.getStyleClass().addAll("pr-review-file-row", r.status().cssClass());
         row.setAlignment(Pos.CENTER_LEFT);

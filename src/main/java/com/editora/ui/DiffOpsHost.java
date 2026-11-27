@@ -32,6 +32,11 @@ final class DiffOpsHost implements DiffCoordinator.Ops {
     }
 
     @Override
+    public com.editora.config.SharedConfig sharedConfig() {
+        return mc.config.shared();
+    }
+
+    @Override
     public void prepareDiffPane(DiffViewerPane pane) {
         pane.setExitDiffUiAction(mc.chrome.diffUiActive() ? mc.chrome::exitDiffUiMode : null);
     }

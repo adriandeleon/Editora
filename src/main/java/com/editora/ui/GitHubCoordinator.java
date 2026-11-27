@@ -878,6 +878,7 @@ final class GitHubCoordinator {
                 inline.pinned(st, shown.headRefOid(), shown.url());
             }
             inline.loadThreads(st);
+            loadViewed(key, existing);
             return;
         }
         reviewPanes.remove(key); // a stale entry whose tab was closed — rebuild
@@ -910,7 +911,79 @@ final class GitHubCoordinator {
             inline.pinned(st, detail.headRefOid(), detail.url());
         }
         inline.loadThreads(st);
+        pane.setViewedActions((path, now) -> markViewed(key, pane, path, now), () -> openSinceReview(key, pane));
+        loadViewed(key, pane);
         ops.addReviewTab(pane);
+    }
+
+    // --- viewed files and changes since your last review (GitHub's own per-user state) --------------
+
+    /** Reads which files you viewed and your last reviewed commit, and shows them in {@code pane}. */
+    private void loadViewed(ReviewKey key, PrReviewPane pane) {
+        PrViewParser.PrDetail d = pane.detail();
+        com.editora.github.GhInvocation call =
+                d == null ? null : com.editora.github.PrViewed.read(d.url(), key.number());
+        if (call == null) {
+            return;
+        }
+        service.prThreads(key.dir(), call, r -> {
+            if (r.exit() == 0) {
+                pane.setViewed(com.editora.github.PrViewed.parse(r.out()));
+            }
+        });
+    }
+
+    /** Marks {@code path} viewed or not on GitHub, then reads the state again (GitHub's answer is what shows). */
+    private void markViewed(ReviewKey key, PrReviewPane pane, String path, boolean viewed) {
+        PrViewParser.PrDetail d = pane.detail();
+        com.editora.github.GhInvocation call = d == null
+                ? null
+                : com.editora.github.PrViewed.mark(
+                        d.url(), key.number(), pane.viewed().prId(), path, viewed);
+        if (call == null) {
+            return;
+        }
+        service.prThreads(key.dir(), call, r -> {
+            if (r.exit() != 0 || com.editora.github.PrThreads.failed(r.out())) {
+                host.setStatus(tr("status.github.viewedFailed", path));
+            }
+            loadViewed(key, pane);
+        });
+    }
+
+    /** Opens what changed between your last reviewed commit and the head, as one review tab. */
+    private void openSinceReview(ReviewKey key, PrReviewPane pane) {
+        PrViewParser.PrDetail d = pane.detail();
+        String from = pane.viewed().lastReviewedOid();
+        com.editora.github.GhInvocation call =
+                d == null ? null : com.editora.github.PrViewed.compare(d.url(), key.number(), from, d.headRefOid());
+        if (call == null) {
+            return;
+        }
+        host.setStatus(tr("status.github.sinceReviewLoading"));
+        service.prThreads(key.dir(), call, r -> {
+            if (r.exit() != 0) {
+                // A force-push can drop the reviewed commit from GitHub altogether: say so rather than show nothing.
+                ghError(tr("status.github.sinceReviewFailed"), r.message());
+                return;
+            }
+            String status = com.editora.github.PrViewed.compareStatus(r.out());
+            List<PatchParser.FilePatch> files = com.editora.github.PrFilesParser.parse(
+                            com.editora.github.PrViewed.compareFiles(r.out()))
+                    .files();
+            String shortFrom = from.length() > 7 ? from.substring(0, 7) : from;
+            diff.openFilePatchReview(
+                    tr("github.review.sinceReviewTab", key.number(), files.size()),
+                    tr("github.review.sinceReviewLeft", shortFrom),
+                    tr("diff.side.prHead"),
+                    files,
+                    shown -> host.setStatus(
+                            shown == 0
+                                    ? tr("status.github.sinceReviewNone")
+                                    : "diverged".equals(status)
+                                            ? tr("status.github.sinceReviewRewritten", shown)
+                                            : tr("status.github.sinceReviewOpened", shown)));
+        });
     }
 
     /**

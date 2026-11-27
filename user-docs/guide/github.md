@@ -114,6 +114,20 @@ Inside any read-only diff, `n` and `p` step to the next and previous change, so
 you can read a file end to end without reaching for the mouse. Each hunk is shown
 at its real line numbers, and a missing final newline is marked.
 
+### Viewed files and changes since your last review
+
+Each file row has a **Viewed** box, and the header counts how many files you
+have viewed. The marks are GitHub's own, the same as on the website: they
+follow you to other computers, and GitHub clears the mark of a file that
+changes after you viewed it.
+
+When the pull request has new commits since your last submitted review,
+**Changes since your last review** opens one review tab with only what changed
+between the commit you reviewed and the head. If the branch was rebased or
+merged since, GitHub compares the two commits as they are, so changes from the
+base branch can show too; the status bar says so. If a force-push removed the
+commit you reviewed, GitHub cannot compare it and Editora says so.
+
 ### Large pull requests
 
 GitHub refuses to produce a single diff for a pull request with more than 300
