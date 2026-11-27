@@ -550,6 +550,16 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
     }
 
     @Override
+    public void applyClaudeIde() {
+        mc.applyClaudeIde();
+    }
+
+    @Override
+    public void sendSelectionToClaude() {
+        mc.sendSelectionToClaude();
+    }
+
+    @Override
     public void copyMcpEndpoint() {
         mc.copyMcpEndpoint();
     }

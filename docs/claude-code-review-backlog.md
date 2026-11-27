@@ -62,6 +62,9 @@ selection context, @-mentions, and `openDiff` so Claude's proposed edits show in
 `PROTOCOL.md`), and an issue there reports drift in Claude Code 2.0.42. Spike first: implement
 discovery + `getDiagnostics` + `openDiff` behind an experimental setting, and measure against the
 current CLI. Build it out (item 3b, L) only if it holds up. Items 1–2 are the documented route and don't wait on this.
+*Status:* trial built behind `claudeIdeTrial` (off): lock file, token, WebSocket MCP, the IDE tools (openDiff as a
+`propose_edit` then save), `at_mentioned`, and the terminal's `CLAUDE_CODE_SSE_PORT`. Not done: measured against a
+real Claude Code (needs adl), `selection_changed` pushes, diagnostics ranges (the bridge has points only).
 
 ### Tier 2: review core
 
