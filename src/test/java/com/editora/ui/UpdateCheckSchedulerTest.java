@@ -32,6 +32,33 @@ class UpdateCheckSchedulerTest {
         UpdateCheckScheduler.resetForTest();
     }
 
+    /** Settings whose user said yes to the check (a fresh install is asked first). */
+    private static Settings answeredYes() {
+        Settings settings = new Settings();
+        settings.chooseUpdateCheck(true);
+        return settings;
+    }
+
+    /**
+     * Regression (HN dry run, 2026-11-27): the check ran on the very first launch, five seconds in, before it could
+     * be turned off. A fresh install asks nothing of GitHub until the Welcome page's question is answered.
+     */
+    @Test
+    void aFreshInstallDoesNotCheckUntilItsUserSaysSo() {
+        Settings settings = new Settings();
+        settings.setLastUpdateCheckEpoch(0);
+        schedule(settings);
+        assertTrue(delayed.isEmpty(), "not asked yet: nothing goes to GitHub");
+
+        settings.chooseUpdateCheck(false);
+        schedule(settings);
+        assertTrue(delayed.isEmpty(), "answered no");
+
+        settings.chooseUpdateCheck(true);
+        schedule(settings);
+        assertEquals(1, delayed.size(), "answered yes: the check is scheduled");
+    }
+
     private void schedule(Settings settings) {
         UpdateCheckScheduler.maybeSchedule(
                 () -> settings,
@@ -46,7 +73,7 @@ class UpdateCheckSchedulerTest {
 
     @Test
     void waitsForTheFirstPaintThenTheDelayThenStampsAndChecks() {
-        Settings settings = new Settings();
+        Settings settings = answeredYes();
         settings.setLastUpdateCheckEpoch(0);
         AfterFirstPaint.hold();
         schedule(settings);
@@ -61,7 +88,7 @@ class UpdateCheckSchedulerTest {
 
     @Test
     void onlyOnceASessionAndNotWhenOffOrNotDue() {
-        Settings settings = new Settings();
+        Settings settings = answeredYes();
         settings.setLastUpdateCheckEpoch(0);
         schedule(settings);
         schedule(settings); // a second window
@@ -81,7 +108,7 @@ class UpdateCheckSchedulerTest {
 
     @Test
     void aWindowClosedBeforeTheDelayEndsDoesNotCheck() {
-        Settings settings = new Settings();
+        Settings settings = answeredYes();
         settings.setLastUpdateCheckEpoch(0);
         schedule(settings);
         closed = true;

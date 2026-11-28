@@ -245,8 +245,11 @@ java -jar target/Editora-*.jar
 A fresh install opens on the **Welcome** page. At the top it asks **Which keys
 do your fingers know?**: click Emacs, CUA, Sublime Text, VS Code or IntelliJ
 IDEA and every shortcut in Editora follows, or **Keep Emacs**. It asks once;
-[Choose your keymap](#choose-your-keymap) below changes it later. The buttons
-under it are the quickest way in:
+[Choose your keymap](#choose-your-keymap) below changes it later. Under it,
+**Check for new versions?** asks whether Editora may ask GitHub once a day for a
+newer release (**Check Daily** or **Don't Check**); nothing is sent until you
+answer, and **Settings → Advanced** changes it later. The buttons under those
+are the quickest way in:
 
 - **Open Folder…** opens a folder as a project, with its file tree in the
   Project tool window. A click opens your system's folder dialog; its shortcut

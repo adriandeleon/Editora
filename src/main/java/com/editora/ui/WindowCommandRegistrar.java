@@ -2081,7 +2081,7 @@ final class WindowCommandRegistrar {
                                 .toggleSetting(
                                         "view.toggleUpdateCheck",
                                         () -> host.config().getSettings().isUpdateCheck(),
-                                        host.config().getSettings()::setUpdateCheck,
+                                        host.config().getSettings()::chooseUpdateCheck, // an answer: not asked again
                                         null)));
         host.registry().register(Command.of("view.welcome", host::showWelcome));
         host.registry().register(Command.of("view.doctor", host::showDoctor));
