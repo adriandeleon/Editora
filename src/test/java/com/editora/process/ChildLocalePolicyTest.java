@@ -3,6 +3,7 @@ package com.editora.process;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
@@ -50,7 +51,10 @@ class ChildLocalePolicyTest {
     private static final Set<String> PARSE_STABLE_FILES = Set.of(
             "AppInfo.java", // git rev-parse of the build's own checkout
             "crypto/Pinentry.java", // `gpgconf --list-dirs homedir`: a path
-            "dap/DapManager.java", // probe(): `node --version` (also js-debug's minimum), `python -c "import debugpy"`
+            "dap/AdapterDetection.java", // probe(): `node --version` (also js-debug's minimum), `python -c "import
+            // debugpy"`
+            "dap/JsSessions.java", // where a remote host's vscode-js-debug is: a path
+            "dap/PythonSessions.java", // whether debugpy, and pytest for a test, import on a remote host (exit codes)
             "dap/DotnetLaunch.java", // `dotnet build -getProperty:TargetPath`: the assembly to debug
             "dap/LocalProcesses.java", // Windows: Win32_Process command lines, parsed
             "dap/RustLaunch.java", // Cargo's JSON artifact messages, parsed for the executable to debug
@@ -96,7 +100,9 @@ class ChildLocalePolicyTest {
             Map.entry("build/BuildService.java", 1), // Maven/Gradle/npm/cargo/go builds
             Map.entry("build/BuildTool.java", 1), // `gradle tasks` (a JVM in the project dir)
             Map.entry("build/GradleHostClasspath.java", 1), // Gradle building a deployment's copy on its host
-            Map.entry("dap/DapManager.java", 2), // debugpy adapter, js-debug adapter (one helper: launch and attach)
+            Map.entry("dap/ExternalLaunches.java", 1), // an external adapter (Delve, CodeLLDB, GDB, …)
+            Map.entry("dap/JsSessions.java", 1), // the js-debug adapter (one helper: launch and attach)
+            Map.entry("dap/PythonSessions.java", 1), // the debugpy adapter
             Map.entry("dap/JavaCompilation.java", 2), // javac of the user's file, here and on its host
             Map.entry("dap/jvm/JvmDebugAdapter.java", 1), // the debugged program, when the client cannot start it
             Map.entry("diagram/DiagramRenderer.java", 2), // render + export, scrubbed (PlantUML is a JVM)
@@ -132,7 +138,10 @@ class ChildLocalePolicyTest {
             "container/ContainerExecTarget.java", // the engine's exec client: the user's environment, here only
             "wsl/WslExecTarget.java", // wsl.exe: the user's environment, here only
             "build/BuildService.java",
-            "dap/DapManager.java",
+            "dap/AdapterDetection.java", // the availability probe, applyStandardEnv
+            "dap/ExternalLaunches.java", // an external adapter, applyUserEnv
+            "dap/JsSessions.java", // the js-debug adapter, applyUserEnv
+            "dap/PythonSessions.java", // the debugpy adapter, applyUserEnv
             "http/NodeResponseScripts.java", // applyUserEnv, then reduced to a minimal environment
             "install/JvmLspSmoke.java", // the post-install smoke: a JVM server, applyUserEnv like a session
             "lsp/LanguageServerSession.java",
@@ -180,11 +189,16 @@ class ChildLocalePolicyTest {
 
     @Test
     void theOneParseStableChildOfTheDebuggerIsItsProbe() throws IOException {
-        // DapManager starts both kinds. Its adapters (and JavaCompilation's javac) are counted above; what
+        // The debugger starts both kinds. Its adapters (and JavaCompilation's javac) are counted above; what
         // may still use the C locale is the local availability probe and, for a remote file, the host's three
         // (whether debugpy imports there, and pytest for a test: exit codes; where its vscode-js-debug is: a
         // path), plus the Node version js-debug needs.
-        assertTrue(count(PARSE_STABLE).getOrDefault("dap/DapManager.java", 0) <= 5);
+        Map<String, Integer> parseStable = count(PARSE_STABLE);
+        int debugger = 0;
+        for (String file : List.of("dap/AdapterDetection.java", "dap/JsSessions.java", "dap/PythonSessions.java")) {
+            debugger += parseStable.getOrDefault(file, 0);
+        }
+        assertTrue(debugger <= 5);
         // The language server session has none at all.
         assertEquals(0, count(PARSE_STABLE).getOrDefault("lsp/LanguageServerSession.java", 0));
     }

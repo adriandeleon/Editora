@@ -419,8 +419,8 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
   check stat their files on the workspace worker first (`LspWorkspaceEdits.withDiskView`), and the apply-time
   re-checks, which must run in the FX turn that lands the edit, read a `WorkspaceFileSnapshot` the worker took
   after staging. A local edit still stats in place, which is cheap.
-- **Debugging (Python, JavaScript):** a remote file is debugged on its host (`DapManager.startRemoteStdio` /
-  `startRemoteSocket`), asked for its adapter when the session starts rather than detected up front.
+- **Debugging (Python, JavaScript):** a remote file is debugged on its host (`PythonSessions.startRemoteStdio` /
+  `JsSessions.startRemoteSocket`), asked for its adapter when the session starts rather than detected up front.
   Python: the host's `dap.python` tool, else the Debugging setting when it is a bare name, else `python3`; a
   leading `env NAME=value …` and interpreter arguments are taken apart (`DapManager.HostPython`) into the
   adapter's environment, the launch's `env`, `python` and `pythonArgs`, because debugpy uses only the first
@@ -437,7 +437,7 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
 - **Debugging Java:** java-debug runs inside the host's jdtls. Its jar is the host's `dap.java` tool, else this
   machine's copied into `<cache>/java-debug/` (`LspManager.remoteDebugBundles`; sent again only when the size
   differs, the name carries the version). The port `vscode.java.startDebugSession` returns is on the host and
-  is tunnelled (`DapManager.connectJava`). jdtls's main class is matched to the file by host path, the
+  is tunnelled (`JavaLaunches.connectJava`). jdtls's main class is matched to the file by host path, the
   working directory is named as the host names it, and the JDK is the one the host's jdtls resolves (a JDK
   setting on this machine is not used). With the program console on, `runInTerminal` starts the debuggee
   through `RunService` in the host folder the adapter names, or in a Terminal tab on the host with

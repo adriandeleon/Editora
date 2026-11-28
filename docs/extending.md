@@ -146,7 +146,7 @@ by file name.
 
 An adapter that the language's **server** starts on request is `Kind.LANGUAGE_SERVER`: the start command and its
 arguments go in its profile (`hostedStartCommand`: Metals' `debug-adapter-start`) and
-[`dap/HostedDebugAdapter`](../src/main/java/com/editora/dap/HostedDebugAdapter.java), which also reads the reply's socket; `DapManager.startHosted` does the rest. A file the
+[`dap/HostedDebugAdapter`](../src/main/java/com/editora/dap/HostedDebugAdapter.java), which also reads the reply's socket; `JvmSessions.startHosted` does the rest. A file the
 server does not debug can fall back to another kind (the profile's `fallbackKind`). jdtls keeps its own
 `JDTLS` path, since Java's launch is resolved by the client first.
 
