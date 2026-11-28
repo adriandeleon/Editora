@@ -59,6 +59,7 @@ class ChildLocalePolicyTest {
             "git/GitService.java", // background reads: porcelain output
             "git/SshHosts.java", // ssh -G: its hostname line
             "git/QuietGit.java", // settings sync: hooks are off, and push rejections are read from the output
+            "git/RepoFilters.java", // git config --get-regexp: the filter keys, parsed
             "github/GitHubService.java", // gh JSON
             "install/InstallService.java", // `npm root -g`: a path
             "lsp/JavaServerEnvironment.java", // whether a host's jdtls is the launcher script (exit code)

@@ -737,12 +737,12 @@ each waits until you trust the folder. Trust is one list, shared by all of them:
 | Git's [background auto-fetch](/docs/git) run (also after you fetch, pull or push there yourself) | No background fetch |
 | Python use the folder's own [virtual environment](/docs/python#the-python-interpreter) (`.venv`, `venv`, …) for Pyright, the status bar, Doctor and formatting: its `python` is whatever the folder ships | Your setting or `PATH`'s Python; the status item's tooltip says the folder's environment waits for trust. An interpreter you pick yourself is used either way |
 
-Two things are deliberately or not yet outside this: [Go](/docs/go) builds and
-`gopls` run without trust, because Go's own tools never execute a module's code
-for a build, and Git's [filter drivers](/docs/git) run when Git re-hashes a
-file. A driver is defined in Git's configuration, which `git clone` does not
-copy from the remote, so this only matters for a repository unpacked from an
-archive that brings its own `.git/config`.
+One thing is deliberately outside this: [Go](/docs/go) builds and `gopls` run
+without trust, because Go's own tools never execute a module's code for a
+build. Git's [filter drivers](/docs/git#what-runs-automatically) that a
+repository's own `.git/config` defines (`git clone` never copies one, but an
+unpacked archive can bring it) are emptied in Editora's background Git reads
+until you trust the folder; your own, such as Git LFS, run as usual.
 
 An MCP client can't trust a folder for you: every trust command is
 [refused to agents](/docs/mcp#plugins-and-trust).
