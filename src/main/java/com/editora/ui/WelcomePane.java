@@ -223,6 +223,18 @@ public final class WelcomePane extends Region implements TabContent {
         this.keymapKeep = keep;
     }
 
+    /**
+     * Wires the first-run update question: shown while {@code offer} answers true, Check Daily and Don't Check, each
+     * running {@code choose} with the answer. Unwired, the page has no card.
+     */
+    public void setUpdateCheckChoice(BooleanSupplier offer, Consumer<Boolean> choose) {
+        this.updateOffer = offer;
+        this.updateChoose = choose;
+    }
+
+    private @Nullable BooleanSupplier updateOffer;
+    private @Nullable Consumer<Boolean> updateChoose;
+
     private @Nullable BooleanSupplier keymapOffer;
     private @Nullable Consumer<String> keymapChoose;
     private @Nullable Runnable keymapKeep;
@@ -352,6 +364,9 @@ public final class WelcomePane extends Region implements TabContent {
         nodes.add(header());
         if (keymapOffer != null && keymapOffer.getAsBoolean()) {
             nodes.add(keymapCard()); // first run: the keys come before everything the page names a chord for
+        }
+        if (updateOffer != null && updateOffer.getAsBoolean()) {
+            nodes.add(updateCard()); // first run: nothing goes to GitHub until this is answered
         }
         nodes.add(section(tr("welcome.start")));
         nodes.add(startActions());
@@ -697,6 +712,36 @@ public final class WelcomePane extends Region implements TabContent {
         VBox card = new VBox(UiZoom.px(8 * zoom), title, caption, choices, keep);
         card.getStyleClass().add("welcome-keymap-card");
         return card;
+    }
+
+    // --- First-run update check ---
+
+    /**
+     * Whether to ask GitHub once a day for a newer release, asked once before anything is sent (HN dry run,
+     * 2026-11-27: the check ran on the first launch, five seconds in, before it could be turned off).
+     */
+    private Node updateCard() {
+        Label title = new Label(tr("welcome.updateCard.title"));
+        title.getStyleClass().add("welcome-keymap-title");
+        Label caption = caption(tr("welcome.updateCard.caption"));
+        caption.setWrapText(true);
+        Button check = new Button(tr("welcome.updateCard.check"));
+        check.getStyleClass().add("welcome-keymap-choice");
+        check.setOnAction(e -> answerUpdate(true));
+        Button skip = new Button(tr("welcome.updateCard.skip"));
+        skip.getStyleClass().add("welcome-keymap-choice");
+        skip.setOnAction(e -> answerUpdate(false));
+        FlowPane choices = new FlowPane(UiZoom.px(8 * zoom), UiZoom.px(8 * zoom), check, skip);
+        VBox card = new VBox(UiZoom.px(8 * zoom), title, caption, choices);
+        card.getStyleClass().add("welcome-keymap-card");
+        return card;
+    }
+
+    private void answerUpdate(boolean on) {
+        if (updateChoose != null) {
+            updateChoose.accept(on);
+        }
+        refresh();
     }
 
     // --- Customize ---

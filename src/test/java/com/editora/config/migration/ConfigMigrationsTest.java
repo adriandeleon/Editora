@@ -68,7 +68,27 @@ class ConfigMigrationsTest {
         expected.put("aiModelCodex", ""); // v133→134 copies aiModel, which v126→127 had moved to the OpenAI field
         expected.put("keymapChosen", true); // v189→190: an existing install is not asked for its keymap
         expected.put("mcpEditsNeedApproval", true); // v190→191: agent edits are proposed first
+        expected.put("updateCheckAsked", true); // v191→192: an existing install is not asked about updates
         assertEquals(expected, ConfigMigrations.upgrade(ConfigSchema.SETTINGS, previous, mapper));
+    }
+
+    /**
+     * Regression (HN dry run, 2026-11-27): the update check ran on a fresh install's first launch, before it could be
+     * turned off; a fresh install is now asked first. An existing file has checked all along and is not asked.
+     */
+    @Test
+    void anExistingInstallIsNotAskedAboutUpdatesAndAStoredAnswerIsKept() throws Exception {
+        ObjectNode old = mapper.createObjectNode().put("schemaVersion", 191).put("updateCheck", false);
+        ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, old, mapper);
+        assertTrue(out.get("updateCheckAsked").asBoolean());
+        assertFalse(out.get("updateCheck").asBoolean(), "its own answer stays");
+        ObjectNode unanswered =
+                mapper.createObjectNode().put("schemaVersion", 191).put("updateCheckAsked", false);
+        assertFalse(
+                ConfigMigrations.updateCheckAskedForExistingInstalls(unanswered)
+                        .get("updateCheckAsked")
+                        .asBoolean(),
+                "a stored value is kept: safe to repeat");
     }
 
     /**

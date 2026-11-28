@@ -11,7 +11,7 @@ import com.editora.perf.AfterFirstPaint;
 import com.editora.update.UpdateCheck;
 
 /**
- * When the automatic release check runs: once per app session (a static guard, so several windows do not
+ * When the automatic release check runs: once the user has said yes (asked on the Welcome page), once per app session (a static guard, so several windows do not
  * each hit GitHub), once per day (the persisted timestamp), and {@link #DELAY} after the first painted
  * frame — it is a once-a-day HTTPS request whose TLS and HTTP-client setup has no business competing with
  * the session restore. The throttle timestamp is stamped when the check really starts, so a window closed
@@ -58,8 +58,8 @@ final class UpdateCheckScheduler {
             Runnable check,
             BiConsumer<Duration, Runnable> delay) {
         Settings settings = settingsSupplier.get();
-        if (!settings.isUpdateCheck() || startedThisSession) {
-            return;
+        if (!settings.isUpdateCheck() || !settings.isUpdateCheckAsked() || startedThisSession) {
+            return; // not asked yet: the Welcome page asks before anything goes to GitHub
         }
         if (!UpdateCheck.isDue(
                 settings.getLastUpdateCheckEpoch(), System.currentTimeMillis(), UpdateCheck.DEFAULT_INTERVAL_MS)) {

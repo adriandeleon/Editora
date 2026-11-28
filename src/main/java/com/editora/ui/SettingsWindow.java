@@ -1370,7 +1370,12 @@ public class SettingsWindow {
 
         gitPages.buildControls();
 
-        updateCheckCheck = viewCheck(tr("settings.checkForUpdates"), Settings::setUpdateCheck);
+        // A change here is the user's answer too, so the Welcome page stops asking (a sync sets the stored value).
+        updateCheckCheck = viewCheck(tr("settings.checkForUpdates"), (s, on) -> {
+            if (s.isUpdateCheck() != on) {
+                s.chooseUpdateCheck(on);
+            }
+        });
 
         crashRecoveryCheck = viewCheck(tr("settings.crashRecovery"), Settings::setCrashRecovery);
         localHistoryCheck = new CheckBox(tr("settings.enableLocalHistory"));

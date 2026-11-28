@@ -138,7 +138,8 @@ by this repository's release workflow from the tagged commit:
 gh attestation verify Editora-0.29.0-linux-x64.deb --repo adriandeleon/Editora --source-ref refs/tags/v0.29.0
 ```
 
-A few seconds after it starts (the first launch included), Editora asks GitHub's API at most once a day
+On the first launch the Welcome page asks whether to check for new versions, and nothing is sent until you
+answer. Said yes, a few seconds after it starts Editora asks GitHub's API at most once a day
 whether a newer release exists, and shows an "Update: X.Y.Z" indicator in the status bar when there is one.
 The request carries nothing about you or your files: GitHub sees your IP address, as with any request, and
 Editora's version in the User-Agent. Switch it off under Settings → Advanced → Updates, or start with

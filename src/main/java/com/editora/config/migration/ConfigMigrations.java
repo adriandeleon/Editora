@@ -1084,6 +1084,19 @@ public final class ConfigMigrations {
     }
 
     /**
+     * v191→192: {@code updateCheckAsked} on for a settings file that has no such key. The key is new and off by
+     * default, so a fresh install is asked on the Welcome page before anything is sent to GitHub; a file written
+     * before it belongs to an install that has checked all along (or turned it off), and is not asked. A stored value
+     * is kept. Safe to repeat.
+     */
+    static JsonNode updateCheckAskedForExistingInstalls(JsonNode input) {
+        if (input instanceof ObjectNode o && !o.has("updateCheckAsked")) {
+            o.put("updateCheckAsked", true);
+        }
+        return input;
+    }
+
+    /**
      * v178→179: turns the extended window (the menu bar in the title bar) on for existing installs, now that it
      * is the default on Windows and Linux (Pauta WIN-03).
      *
