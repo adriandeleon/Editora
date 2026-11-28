@@ -40,9 +40,10 @@ is collected. This is everything Editora itself sends over the network:
   provider you supply a key for). That is how the feature works, and it is the
   one part of Editora that transmits your code, so it stays opt-in.
 
-The tools Editora starts for you (git, a language server, `dotnet`, `npm` and
-the rest) are your own programs, with their own settings: one that has its own
-telemetry, such as the .NET SDK, keeps it unless you turn it off there.
+The tools Editora starts for you (runs, builds, the terminal, language servers)
+are your own programs. The .NET SDK and PowerShell are told to opt out of their
+telemetry (`DOTNET_CLI_TELEMETRY_OPTOUT=1`, `POWERSHELL_TELEMETRY_OPTOUT=1`)
+unless you set those variables yourself; any other tool keeps its own settings.
 
 [Settings sync](/docs/settings-sync), also off by default, sends your snippets,
 abbreviations, templates, dictionary, and the shortcuts you changed to a Git

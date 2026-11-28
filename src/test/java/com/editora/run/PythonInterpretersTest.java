@@ -59,8 +59,9 @@ class PythonInterpretersTest {
         venv(root.resolve(".venv"));
         Path file = root.resolve("app.py");
 
-        var withoutVenvs = PythonInterpreters.resolve(in(file, root, "", "", "/opt/py/bin/python3", Map.of()), false);
-        assertEquals("/opt/py/bin/python3", withoutVenvs.executable());
+        String setting = tmp.resolve("opt/py/bin/python3").toString(); // absolute on Windows too
+        var withoutVenvs = PythonInterpreters.resolve(in(file, root, "", "", setting, Map.of()), false);
+        assertEquals(setting, withoutVenvs.executable());
         assertEquals(Source.SETTING, withoutVenvs.source());
 
         var picked = PythonInterpreters.resolve(in(file, root, "", "/opt/mine/python", "", Map.of()), false);

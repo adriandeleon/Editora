@@ -295,7 +295,9 @@ final class SearchEverywherePopup {
 
     /** Whether the rows shown are not yet those for the text in the field (a test waits on it). */
     boolean searching() {
-        return debounce.getStatus() == javafx.animation.Animation.Status.RUNNING || search.pending();
+        // A project walk in flight counts: the rows shown lack the files and symbols it brings, so an Enter pressed
+        // now waits for them. It acted on the partial list, which was empty on a big project (HN dry run, 2026-11-27).
+        return debounce.getStatus() == javafx.animation.Animation.Status.RUNNING || search.pending() || awaitingIndex;
     }
 
     /**
@@ -485,7 +487,10 @@ final class SearchEverywherePopup {
             }
         }
         rows.setAll(built);
-        status.setText(built.isEmpty() ? tr("searchEverywhere.none") : "");
+        // While the first walk of a project is under way an empty list is not an answer yet: "Nothing found" sent
+        // people away from a search that a few seconds later had the file (HN dry run, 2026-11-27).
+        status.setText(
+                !built.isEmpty() ? "" : awaitingIndex ? tr("searchEverywhere.indexing") : tr("searchEverywhere.none"));
         int keep = moved && selected instanceof ItemRow was ? indexOfItem(was.item()) : -1;
         if (keep >= 0) {
             list.getSelectionModel().select(keep); // the user moved before the late rows came: stay there

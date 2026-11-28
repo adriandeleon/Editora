@@ -491,7 +491,17 @@ public final class ProcessRunner {
     /** {@link #applyUserEnv(ProcessBuilder)} on a bare environment map. */
     public static void applyUserEnv(Map<String, String> env) {
         env.put(pathKey(env), augmentedPath());
+        TELEMETRY_OPT_OUTS.forEach(env::putIfAbsent);
     }
+
+    /**
+     * The opt-outs of the tools Editora drives whose usage telemetry is on unless told otherwise: the .NET SDK
+     * (csharp-ls, debugging and tests through {@code dotnet}) and PowerShell (PowerShell Editor Services, Run). Editora
+     * sends no telemetry, and the tools it starts for you should not either; set the variable yourself to keep a
+     * tool's own (a value already set is left alone). HN dry run, 2026-11-27.
+     */
+    static final Map<String, String> TELEMETRY_OPT_OUTS =
+            Map.of("DOTNET_CLI_TELEMETRY_OPTOUT", "1", "POWERSHELL_TELEMETRY_OPTOUT", "1");
 
     /**
      * {@link #applyUserEnv(Map)} followed by a launcher's own {@code overrides} (a run configuration's

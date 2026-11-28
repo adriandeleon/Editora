@@ -111,4 +111,24 @@ class ProcessRunnerEnvTest {
             org.junit.jupiter.api.Assertions.assertEquals("cat", env.get("GIT_PAGER"));
         }
     }
+
+    /**
+     * Regression (HN dry run, 2026-11-27): the .NET SDK and PowerShell that Editora starts kept their usage telemetry
+     * on. Every child is told to opt out, unless the user set the variable themselves.
+     */
+    @Test
+    void launchedToolsAreToldToOptOutOfTelemetryUnlessTheUserChose() {
+        Map<String, String> env = new java.util.HashMap<>();
+        ProcessRunner.applyUserEnv(env);
+        assertEquals("1", env.get("DOTNET_CLI_TELEMETRY_OPTOUT"));
+        assertEquals("1", env.get("POWERSHELL_TELEMETRY_OPTOUT"));
+
+        Map<String, String> standard = new java.util.HashMap<>();
+        ProcessRunner.applyStandardEnv(standard);
+        assertEquals("1", standard.get("DOTNET_CLI_TELEMETRY_OPTOUT"), "the C-locale path too");
+
+        Map<String, String> chose = new java.util.HashMap<>(Map.of("DOTNET_CLI_TELEMETRY_OPTOUT", "0"));
+        ProcessRunner.applyUserEnv(chose);
+        assertEquals("0", chose.get("DOTNET_CLI_TELEMETRY_OPTOUT"), "the user's own value stands");
+    }
 }

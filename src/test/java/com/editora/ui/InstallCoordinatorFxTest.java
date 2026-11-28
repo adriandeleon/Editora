@@ -141,6 +141,7 @@ class InstallCoordinatorFxTest {
             web = scope.own(new LoopbackDownloads());
             service = InstallTestAccess.service(web.client(), 1024 * 1024);
             InstallTestAccess.bareJvmLspZip(service); // the fake Maven bundle is two text files in a zip
+            InstallTestAccess.anyJdtlsTarball(service); // the fake jdtls is a few files in a tarball
             coordinator = new InstallCoordinator(host, window, service);
             coordinator.setAlertForTest((type, message) -> alerts.add(type + ": " + message));
             scope.onClose(coordinator::shutdown);

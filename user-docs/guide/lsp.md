@@ -665,7 +665,9 @@ channels:
   C#, Rust, PHP, and SQL, whose `sqls` installs with `go install`), which run
   only when that toolchain is already on your `PATH`.
 - **Binary** releases downloaded per OS/architecture (clangd, terraform-ls,
-  Lua, and tinymist for Typst), extracted into your config folder.
+  Lua, and tinymist for Typst), each checked against the SHA-256 its publisher
+  lists (GitHub's release digest, or HashiCorp's `SHA256SUMS`) and extracted
+  into your config folder. A download that does not match is not installed.
 - **ElixirLS**, the Elixir server and debugger in one, from its pinned 0.31.1
   release zip checked against its SHA-256 (**Install…** on the Elixir card of
   **Settings → Debugging**). Its first start compiles it with your Elixir,
@@ -676,7 +678,7 @@ channels:
   SHA-256 (see [Installing lemminx](/docs/xml#installing-lemminx)).
 - A **pinned release** for the Java server, Eclipse JDT LS (the version is
   under [The Java server and your project](/docs/java#language-server)),
-  unpacked into your config folder. A server installed earlier keeps its version until
+  checked against its pinned SHA-256 and unpacked into your config folder. A server installed earlier keeps its version until
   you install it again.
 - A **pinned distribution** for the Kotlin server, checked against its published
   checksum. It is about 370 MB to download and about 1.2 GB once installed,

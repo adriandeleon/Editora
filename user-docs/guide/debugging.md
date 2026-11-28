@@ -2103,6 +2103,8 @@ that waits (debugpy installs without Node.js, for example). When Python has no
 status bar says where to turn it on.
 
 Editora does not install those runtimes for you. A downloaded server or adapter
+is checked against a pinned SHA-256 or the one its publisher lists (Open VSX
+for the java-debug plugin), and one that does not match is not installed. It
 is unpacked beside the installed version and replaces it only once it is
 complete, so a failed install leaves the working one in place.
 

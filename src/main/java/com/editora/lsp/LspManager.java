@@ -1956,6 +1956,19 @@ public final class LspManager {
         return s != null && !s.isDisposed() && s.isInitialized();
     }
 
+    /**
+     * Whether a session of {@code serverId} in this window is still starting: made, its {@code initialize} not
+     * answered yet. ElixirLS's debug adapter waits for this ({@code ElixirDebugLaunch}).
+     */
+    public boolean isStarting(String serverId) {
+        for (LanguageServerSession s : sessionsByRoot.values()) {
+            if (serverId.equals(s.serverId()) && !s.isDisposed() && !s.isInitialized()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public boolean isManaged(@Nullable Path file) {
         // A remote (SFTP) file is never LSP-managed; bail before uri(), whose toUri() throws for such paths.
         return file != null && servable(file) && sessionByDocUri.containsKey(uri(file));

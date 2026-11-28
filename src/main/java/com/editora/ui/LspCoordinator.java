@@ -2478,7 +2478,9 @@ final class LspCoordinator {
         if (sdkRequests.stream().anyMatch(r -> r.startsWith(com.editora.lsp.TypeScriptServer.SERVER_ID + ": "))) {
             lspManager.shutdownServer(com.editora.lsp.TypeScriptServer.SERVER_ID); // now on the folder's own TypeScript
         }
-        projectScope.reload(); // now trusted: the editor, build and debug values apply too
+        // Now trusted: the editor, build and debug values apply too, and what else follows trust (the folder's own
+        // .venv, a pom's lemminx-maven, ESLint) switches over here as it does for Workspace: Trust This Folder.
+        reloadProjectSettings();
         applySupport();
         host.syncSettingsWindow();
         host.setStatus(tr("status.lsp.projectSettingsTrusted"));

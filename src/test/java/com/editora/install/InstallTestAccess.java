@@ -25,6 +25,11 @@ public final class InstallTestAccess {
         service.setJvmLspSmokeForTest((argv, dir) -> java.util.Optional.empty());
     }
 
+    /** Makes {@code service} accept a test's own jdtls tarball, which cannot have the pinned milestone's SHA-256. */
+    public static void anyJdtlsTarball(InstallService service) {
+        service.setJdtlsSha256ForTest(null);
+    }
+
     /** Makes {@code service} install pinned tools from {@code recipes} (hashes matching a test's own files). */
     public static void pinnedTools(
             InstallService service,

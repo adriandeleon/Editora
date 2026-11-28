@@ -75,7 +75,13 @@ exists.
 **Go to File** (`nav.gotoFile`: Ctrl+P in the VS Code and Sublime keymaps,
 Ctrl+Shift+N in IntelliJ's, ⌘P and ⌘⇧O on macOS) opens it with `#` already
 typed, so the name you type next finds a project file wherever it sits. In a
-window with no project it opens Find File (`file.find`) instead.
+window with no project it opens Find File (`file.find`) instead. Sources come
+first: build output (`.class` files, and files under folders such as `target/`
+and `build/`) is listed after every source file that matches.
+
+While a project's first index is still being built, the picker says
+**Indexing the project…** rather than **Nothing found**, and an Enter pressed
+then opens the top file as soon as the index lands.
 
 Results stay **grouped by source** rather than interleaved on raw score. The
 sources differ in size by orders of magnitude (tens of thousands of symbols,
@@ -313,7 +319,9 @@ the list further as you type.
 
 ## Find in files
 
-`C-S-f` opens the **Find in Files** tool window and focuses it. It searches the
+`C-S-f` opens the **Find in Files** tool window and puts the cursor in its
+query field; when the window is already open, it moves the cursor there, and
+pressing it again from inside the window closes it. It searches the
 active project (skipping dot-dirs, binary files and files over 2 MB) plus the
 in-memory text of open buffers, so unsaved edits are included. Results are
 grouped by file; Enter or double-click jumps to a match. Case, regex, and

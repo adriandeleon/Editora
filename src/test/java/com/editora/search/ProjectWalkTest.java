@@ -311,4 +311,21 @@ class ProjectWalkTest {
         assertFalse(ProjectWalk.offers(root, root.resolve("pkg/.hidden"), ignore));
         assertFalse(ProjectWalk.offers(root, root, ignore));
     }
+
+    @Test
+    void buildOutputFilesAreClassFilesAndFilesUnderOutputFolders() {
+        assertTrue(ProjectWalk.isBuildOutputFile("target/classes/demo/App.class"));
+        assertTrue(ProjectWalk.isBuildOutputFile("lib/App.class"), "a compiled class anywhere");
+        assertTrue(ProjectWalk.isBuildOutputFile("build/generated/Gen.java"));
+        assertTrue(ProjectWalk.isBuildOutputFile("web/node_modules/x/index.js"));
+        org.junit.jupiter.api.Assertions.assertFalse(ProjectWalk.isBuildOutputFile("src/main/java/demo/App.java"));
+        org.junit.jupiter.api.Assertions.assertFalse(
+                ProjectWalk.isBuildOutputFile("src/main/java/com/acme/build/Tool.java"), "a package named build");
+        assertEquals(
+                java.util.List.of("src/A.java", "target/A.class"),
+                ProjectWalk.sourcesFirst(java.util.List.of("target/A.class", "src/A.java"), s -> s, 5));
+        assertEquals(
+                java.util.List.of("src/A.java"),
+                ProjectWalk.sourcesFirst(java.util.List.of("target/A.class", "src/A.java"), s -> s, 1));
+    }
 }

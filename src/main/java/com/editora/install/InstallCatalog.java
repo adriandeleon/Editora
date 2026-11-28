@@ -170,6 +170,13 @@ public final class InstallCatalog {
     /** The build stamp of the {@link #JDTLS_VERSION} tarball. */
     public static final String JDTLS_BUILD = "202610191322";
 
+    /**
+     * The SHA-256 of the {@link #JDTLS_VERSION} tarball, as Eclipse publishes it beside the tarball
+     * ({@code <tarball URL>.sha256}). Raise it together with the version and build: the pinned version was
+     * downloaded unchecked (HN dry run, 2026-11-27).
+     */
+    public static final String JDTLS_SHA256 = "b1f2abe0b3cccb462cf64fb4a5587c7d09df60cf8be7748b152cbd89d018bdc4";
+
     /** Eclipse JDT-LS pinned milestone; extracts to top-level {@code bin/ config/ features/ plugins/}. */
     public static final String JDTLS_TARBALL_URL = "https://download.eclipse.org/jdtls/milestones/"
             + JDTLS_VERSION
@@ -195,11 +202,11 @@ public final class InstallCatalog {
             "ad8d04ede9d4b75cc290fd5438a65047a06f786d04f604b6112485b36f090772";
 
     /**
-     * Why a downloaded release asset of step {@code stepId} is refused, or null: js-debug's must have the pinned
-     * {@code expected} checksum (none expected: anything goes).
+     * Why a downloaded release asset of step {@code stepId} is refused, or null: it must have the pinned
+     * {@code expected} checksum ({@link #JS_DEBUG_SHA256}, {@link #JDTLS_SHA256}; none expected: anything goes).
      */
     public static @Nullable String checksumProblem(String stepId, byte[] data, @Nullable String expected) {
-        if (!"js-debug".equals(stepId) || expected == null || expected.isBlank()) {
+        if (expected == null || expected.isBlank()) {
             return null;
         }
         String actual = sha256Hex(data);
@@ -1734,6 +1741,86 @@ public final class InstallCatalog {
                 installedToolIfPresent(configDir, id);
             }
         }
+    }
+
+    /**
+     * What a release's metadata says about the SHA-256 of the asset at {@code url}: the digest itself ({@code
+     * sha256}), or where its publisher lists it ({@code sumsUrl}, a file to look the asset's name up in); both null
+     * when it says nothing.
+     */
+    public record PublishedSha256(
+            @Nullable String sha256, @Nullable String sumsUrl) {}
+
+    /**
+     * The checksum the release metadata {@code json} (from a step's {@code apiUrl}) publishes for the asset at {@code
+     * url}: GitHub lists a {@code "digest": "sha256:…"} on each asset, Open VSX a {@code files.sha256} link beside
+     * {@code files.download}, HashiCorp a {@code url_shasums} file for its builds. A download from a "latest" release
+     * was installed unchecked (HN dry run, 2026-11-27). Pure; malformed JSON says nothing.
+     */
+    public static PublishedSha256 publishedSha256(@Nullable String json, @Nullable String url) {
+        PublishedSha256 none = new PublishedSha256(null, null);
+        if (json == null || json.isBlank() || url == null) {
+            return none;
+        }
+        com.fasterxml.jackson.databind.JsonNode root;
+        try {
+            root = new com.fasterxml.jackson.databind.ObjectMapper().readTree(json);
+        } catch (java.io.IOException | RuntimeException e) {
+            return none;
+        }
+        if (root == null) {
+            return none;
+        }
+        for (com.fasterxml.jackson.databind.JsonNode asset : root.path("assets")) {
+            if (url.equals(asset.path("browser_download_url").asText())) {
+                String digest = asset.path("digest").asText("");
+                return digest.startsWith("sha256:") && isSha256(digest.substring(7))
+                        ? new PublishedSha256(digest.substring(7).toLowerCase(java.util.Locale.ROOT), null)
+                        : none;
+            }
+        }
+        com.fasterxml.jackson.databind.JsonNode files = root.path("files");
+        if (url.equals(files.path("download").asText())
+                && !files.path("sha256").asText("").isBlank()) {
+            return new PublishedSha256(null, files.path("sha256").asText());
+        }
+        String sums = root.path("url_shasums").asText("");
+        if (!sums.isBlank()) {
+            for (com.fasterxml.jackson.databind.JsonNode build : root.path("builds")) {
+                if (url.equals(build.path("url").asText())) {
+                    return new PublishedSha256(null, sums);
+                }
+            }
+        }
+        return none;
+    }
+
+    /**
+     * The SHA-256 a checksums file lists for {@code fileName}: a {@code SHA256SUMS} line ({@code <hex>  <name>}, or
+     * {@code <hex> *<name>}), or a {@code .sha256} file that holds just the one digest. Null when it is not there. Pure.
+     */
+    public static @Nullable String sha256FromSums(@Nullable String text, String fileName) {
+        if (text == null) {
+            return null;
+        }
+        String[] lines = text.strip().split("\\R");
+        for (String line : lines) {
+            String[] tokens = line.strip().split("\\s+");
+            if (tokens.length == 0 || !isSha256(tokens[0])) {
+                continue;
+            }
+            if (lines.length == 1 && tokens.length == 1) {
+                return tokens[0].toLowerCase(java.util.Locale.ROOT); // a .sha256 file of one digest
+            }
+            if (tokens.length >= 2 && (tokens[1].equals(fileName) || tokens[1].equals("*" + fileName))) {
+                return tokens[0].toLowerCase(java.util.Locale.ROOT);
+            }
+        }
+        return null;
+    }
+
+    private static boolean isSha256(String s) {
+        return s.length() == 64 && s.chars().allMatch(ch -> Character.digit(ch, 16) >= 0);
     }
 
     /** Lower-case hex SHA-256 of {@code data}. Pure. */

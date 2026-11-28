@@ -53,6 +53,25 @@ class InstallServiceTarTest {
         Files.writeString(outside.resolve("victim.txt"), "original");
         web = new LoopbackDownloads();
         service = new InstallService(web.client(), 1024 * 1024);
+        service.setJdtlsSha256ForTest(null); // each test builds its own jdtls tarball (the pin is tested below)
+    }
+
+    /**
+     * Regression (HN dry run, 2026-11-27): the pinned jdtls milestone was downloaded unchecked. A tarball without its
+     * pinned SHA-256 is refused.
+     */
+    @Test
+    void aJavaLanguageServerTarballWithAnotherChecksumIsRefused() throws IOException {
+        service.setJdtlsSha256ForTest(InstallCatalog.JDTLS_SHA256);
+        web.serve(
+                InstallCatalog.JDTLS_TARBALL_URL,
+                TestArchives.tar().executable("bin/jdtls", "#!/bin/sh").gz());
+
+        InstallService.Result result = install(jdtls());
+
+        assertFalse(result.ok());
+        assertTrue(result.message().contains("pinned checksum"), result.message());
+        assertFalse(Files.exists(jdtlsDir().resolve("bin/jdtls")), "nothing installed");
     }
 
     @AfterEach

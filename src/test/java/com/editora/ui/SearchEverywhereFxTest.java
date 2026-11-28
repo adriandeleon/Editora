@@ -586,6 +586,80 @@ class SearchEverywhereFxTest {
         }
     }
 
+    /**
+     * Regression (HN dry run, 2026-11-27): on a big project the first Go to File said "Nothing found" while the walk
+     * ran, and an Enter pressed then did nothing. It says the project is being indexed, and the Enter opens the top
+     * file once the walk lands.
+     */
+    @Test
+    void enterDuringTheFirstWalkOpensTheTopFileWhenItLands() throws Exception {
+        List<Runnable> parked = new java.util.ArrayList<>();
+        List<String> chosen = new java.util.ArrayList<>();
+        boolean[] built = {false};
+        SearchEverywherePopup local = FxTestSupport.callOnFx(() -> new SearchEverywherePopup(
+                FxTestSupport.<OverlayHost>field(fx.controller, "overlayHost"), new SearchEverywherePopup.Ops() {
+                    @Override
+                    public List<Item> commands(String query) {
+                        return List.of();
+                    }
+
+                    @Override
+                    public List<Item> files(String query) {
+                        return built[0] ? List.of(new Item(Kind.FILE, "file:" + query, "", 1, "f")) : List.of();
+                    }
+
+                    @Override
+                    public List<Item> symbols(String query) {
+                        return List.of();
+                    }
+
+                    @Override
+                    public void ensureIndex(Runnable then) {
+                        if (built[0]) {
+                            then.run();
+                        } else {
+                            parked.add(then);
+                        }
+                    }
+
+                    @Override
+                    public void choose(Item item) {
+                        chosen.add(item.label());
+                    }
+
+                    @Override
+                    public String disabledReason(Item item) {
+                        return null;
+                    }
+
+                    @Override
+                    public void openDocs(Item item) {}
+                }));
+        try {
+            FxTestSupport.runOnFxUnchecked(() -> {
+                local.showFiles();
+                FxTestSupport.<javafx.scene.control.TextField>field(local, "input")
+                        .setText("#Main");
+                FxTestSupport.invoke(local, "refresh");
+            });
+            javafx.scene.control.Label status = FxTestSupport.field(local, "status");
+            assertEquals(
+                    com.editora.i18n.Messages.tr("searchEverywhere.indexing"),
+                    FxTestSupport.callOnFx(status::getText),
+                    "not \"Nothing found\" while the walk runs");
+            FxTestSupport.runOnFxUnchecked(() -> FxTestSupport.invoke(local, "chooseSelected")); // Enter, early
+            assertTrue(chosen.isEmpty(), "nothing to open yet");
+
+            FxTestSupport.runOnFxUnchecked(() -> {
+                built[0] = true;
+                parked.get(0).run(); // the walk lands
+            });
+            assertEquals(List.of("file:Main"), chosen, "the early Enter opens the top file once it is there");
+        } finally {
+            hide();
+        }
+    }
+
     /** A language server's classes arrive after the index's own symbols and join them, for the live query only. */
     @Test
     void lateSymbolsJoinTheListForTheQueryTheyAnswer() throws Exception {

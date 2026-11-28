@@ -240,6 +240,42 @@ public final class ProjectWalk {
     }
 
     /**
+     * Whether the file at root-relative {@code relFile} is build output: a compiled {@code .class} file, or any file
+     * under a directory {@link #isBuildOutputDir} names. Go to File lists such files after the sources, so a
+     * project without a {@code .gitignore} does not offer {@code target/classes/App.class} before {@code App.java}
+     * (HN dry run, 2026-11-27). '/'-separated.
+     */
+    public static boolean isBuildOutputFile(String relFile) {
+        if (relFile == null || relFile.isEmpty()) {
+            return false;
+        }
+        if (relFile.endsWith(".class")) {
+            return true;
+        }
+        for (int slash = relFile.indexOf('/'); slash > 0; slash = relFile.indexOf('/', slash + 1)) {
+            if (isBuildOutputDir(relFile.substring(0, slash))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * {@code items} with the build output ({@link #isBuildOutputFile} of {@code relPath}) moved after everything else,
+     * each part in its order, cut to {@code limit}. Pure.
+     */
+    public static <T> java.util.List<T> sourcesFirst(
+            java.util.List<T> items, java.util.function.Function<T, String> relPath, int limit) {
+        java.util.List<T> sources = new java.util.ArrayList<>();
+        java.util.List<T> output = new java.util.ArrayList<>();
+        for (T item : items) {
+            (isBuildOutputFile(relPath.apply(item)) ? output : sources).add(item);
+        }
+        sources.addAll(output);
+        return java.util.List.copyOf(sources.subList(0, Math.min(limit, sources.size())));
+    }
+
+    /**
      * Whether a walk of {@code root} with {@code gitignore} would offer {@code file} — for a caller told about
      * one changed file that must apply the walk's pruning without repeating the walk: no dot-directory or
      * ignored directory on the way down, and the file itself neither a dot-file nor ignored.
