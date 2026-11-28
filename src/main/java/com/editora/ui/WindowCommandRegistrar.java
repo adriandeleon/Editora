@@ -3116,6 +3116,23 @@ final class WindowCommandRegistrar {
                                         () -> host.config().getSettings().isMcpEditsNeedApproval(),
                                         v -> host.config().getSettings().setMcpEditsNeedApproval(v),
                                         () -> {})));
+        // Whether each command an MCP agent runs is asked about first (Run, Always Allow, Don't Run).
+        host.registry()
+                .register(Command.of(
+                        "mcp.toggleCommandApproval",
+                        () -> host.editorSettings()
+                                .toggleSetting(
+                                        "mcp.toggleCommandApproval",
+                                        () -> host.config().getSettings().isMcpCommandsNeedApproval(),
+                                        v -> host.config().getSettings().setMcpCommandsNeedApproval(v),
+                                        () -> {})));
+        // The commands answered "Always Allow" are asked about again.
+        host.registry().register(Command.of("mcp.forgetAllowedCommands", () -> {
+            int forgotten = host.config().getSettings().getMcpAllowedCommands().size();
+            host.config().getSettings().getMcpAllowedCommands().clear();
+            host.requestSave();
+            host.setStatus(tr("status.mcp.allowedCommandsForgotten", forgotten));
+        }));
         // Where review threads are kept: the config folder, or each repository's .editora/reviews.json.
         host.registry()
                 .register(Command.of(

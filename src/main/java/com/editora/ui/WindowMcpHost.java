@@ -32,6 +32,26 @@ final class WindowMcpHost implements WindowMcpBridge.Host {
     }
 
     @Override
+    public boolean mayRunUnasked(String id) {
+        return mc.config.getSettings().mcpMayRunUnasked(id);
+    }
+
+    @Override
+    public Runnable askToRun(
+            String id,
+            String title,
+            String agent,
+            java.util.concurrent.CompletableFuture<WindowMcpBridge.CommandAnswer> answered) {
+        return McpCommandPrompt.ask(mc.stage, id, title, agent, answered);
+    }
+
+    @Override
+    public void allowAlways(String id) {
+        mc.config.getSettings().allowMcpCommand(id);
+        mc.requestSave();
+    }
+
+    @Override
     public void openProposal(
             EditorBuffer buffer,
             String before,

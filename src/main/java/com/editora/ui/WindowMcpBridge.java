@@ -85,8 +85,26 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
             return null;
         }
 
-        /** Whether agent edits are proposed for approval rather than applied (a setting, off by default). */
+        /** Whether agent edits are proposed for approval rather than applied (a setting, on by default). */
         boolean editsNeedApproval();
+
+        /** Whether an agent may run command {@code id} without asking (asking off, or "Always Allow" given). */
+        default boolean mayRunUnasked(String id) {
+            return true;
+        }
+
+        /**
+         * Asks whether {@code agent} may run the command {@code title} ({@code id}); {@code answered} hears the
+         * answer. Returns what closes the question when it is answered too late.
+         */
+        default Runnable askToRun(
+                String id, String title, String agent, java.util.concurrent.CompletableFuture<CommandAnswer> answered) {
+            answered.complete(CommandAnswer.RUN);
+            return () -> {};
+        }
+
+        /** Remembers "Always Allow" for command {@code id}. */
+        default void allowAlways(String id) {}
 
         /** Opens a proposed edit of {@code buffer} for the user to accept or reject; {@code decided} hears which. */
         void openProposal(
@@ -304,6 +322,56 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
     @Override
     public @Nullable String commandRefusal(String id) {
         return McpAccess.commandRefusal(id);
+    }
+
+    /** The user's answer to an agent's command. */
+    enum CommandAnswer {
+        RUN,
+        ALWAYS,
+        DECLINE
+    }
+
+    /**
+     * Asks the user before command {@code id} runs for {@code agent} (HN dry run, 2026-11-27: {@code execute_command}
+     * ran anything but plugin and trust commands unasked, Run, build and git push included), and waits for the
+     * answer as a proposed edit does.
+     */
+    @Override
+    public @Nullable String commandDenial(String id, String agent) {
+        String title = mcpOnFx(() -> host.mayRunUnasked(id)
+                ? null
+                : host.registry().get(id).map(c -> c.title()).orElse(null));
+        if (title == null) {
+            return null; // asked for nothing, or no such command: the run says which
+        }
+        java.util.concurrent.CompletableFuture<CommandAnswer> answered = new java.util.concurrent.CompletableFuture<>();
+        Runnable close = mcpOnFx(() -> host.askToRun(id, title, agent, answered));
+        CommandAnswer answer;
+        try {
+            answer = answered.get(proposalWaitMillis, java.util.concurrent.TimeUnit.MILLISECONDS);
+        } catch (java.util.concurrent.TimeoutException e) {
+            mcpOnFx(() -> {
+                close.run();
+                return null;
+            });
+            return "The user did not answer in time; " + id + " did not run.";
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return "Interrupted while waiting for the user; " + id + " did not run.";
+        } catch (java.util.concurrent.ExecutionException e) {
+            return id + " did not run: " + e.getCause();
+        }
+        return switch (answer) {
+            case RUN -> null;
+            case ALWAYS -> {
+                mcpOnFx(() -> {
+                    host.allowAlways(id);
+                    return null;
+                });
+                yield null;
+            }
+            case DECLINE -> "The user chose not to run " + id + ".";
+        };
     }
 
     @Override

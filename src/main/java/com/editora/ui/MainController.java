@@ -473,6 +473,16 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     @Override
+    public @Nullable String commandRefusal(String id) {
+        return mcpBridge.commandRefusal(id);
+    }
+
+    @Override
+    public @Nullable String commandDenial(String id, String agent) {
+        return mcpBridge.commandDenial(id, agent); // the user is asked before an agent's command runs
+    }
+
+    @Override
     public String openFile(String path, int line, int col) {
         return mcpBridge.openFile(path, line, col);
     }

@@ -136,7 +136,8 @@ final class McpToolCatalog {
                 "execute_command",
                 "Run a registered command by id (edits go through the undo stack). See list_commands."
                         + " The result says only that the command was run, not what it achieved: to save a"
-                        + " buffer and learn whether it reached the disk, use save_buffer.",
+                        + " buffer and learn whether it reached the disk, use save_buffer. Unless the user turned it"
+                        + " off, they are asked before each command runs and may decline: the error then says so.",
                 obj().set("id", strProp("The command id, e.g. \"file.save\".")),
                 "id"));
         ObjectNode openProps = obj();

@@ -46,7 +46,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 190;
+    public static final int SCHEMA_VERSION = 191;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -728,8 +728,18 @@ public class Settings {
     /** MCP server (expose live editor state + the command registry to an LLM agent over a loopback
      *  HTTP JSON-RPC endpoint, gated by a bearer token): off by default. */
     private boolean mcpSupport = false;
-    /** Every MCP agent edit ({@code edit_buffer}) shown as a proposal to accept or reject first; off: applied at once. */
-    private boolean mcpEditsNeedApproval = false;
+    /**
+     * Every MCP agent edit ({@code edit_buffer}) shown as a proposal to accept or reject first; off: applied at once.
+     * On by default since v191 (HN dry run, 2026-11-27), existing installs included.
+     */
+    private boolean mcpEditsNeedApproval = true;
+    /**
+     * Every command an MCP agent runs ({@code execute_command}) asked about first, unless it is in
+     * {@link #mcpAllowedCommands}: a command can run a program, write files or push. On by default (v191).
+     */
+    private boolean mcpCommandsNeedApproval = true;
+    /** Command ids the user answered "Always Allow" for: an MCP agent runs them without asking. */
+    private java.util.List<String> mcpAllowedCommands = new java.util.ArrayList<>();
     /** Experimental: Claude Code may connect to a window as to an IDE (a lock file in ~/.claude/ide). Off. */
     private boolean claudeIdeTrial = false;
     /** Master AI kill switch: off by default. When off, {@link #agentSupport}/{@link #aiSupport} (and
@@ -1691,6 +1701,37 @@ public class Settings {
 
     public void setMcpEditsNeedApproval(boolean mcpEditsNeedApproval) {
         this.mcpEditsNeedApproval = mcpEditsNeedApproval;
+    }
+
+    public boolean isMcpCommandsNeedApproval() {
+        return mcpCommandsNeedApproval;
+    }
+
+    public void setMcpCommandsNeedApproval(boolean mcpCommandsNeedApproval) {
+        this.mcpCommandsNeedApproval = mcpCommandsNeedApproval;
+    }
+
+    public java.util.List<String> getMcpAllowedCommands() {
+        if (mcpAllowedCommands == null) {
+            mcpAllowedCommands = new java.util.ArrayList<>();
+        }
+        return mcpAllowedCommands;
+    }
+
+    public void setMcpAllowedCommands(java.util.List<String> mcpAllowedCommands) {
+        this.mcpAllowedCommands = mcpAllowedCommands == null ? new java.util.ArrayList<>() : mcpAllowedCommands;
+    }
+
+    /** Whether an MCP agent may run command {@code id} without being asked first. */
+    public boolean mcpMayRunUnasked(String id) {
+        return !mcpCommandsNeedApproval || getMcpAllowedCommands().contains(id);
+    }
+
+    /** Records "Always Allow" for command {@code id}. */
+    public void allowMcpCommand(String id) {
+        if (!getMcpAllowedCommands().contains(id)) {
+            getMcpAllowedCommands().add(id);
+        }
     }
 
     public boolean isMcpSupport() {
