@@ -115,6 +115,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **More language servers wait for trust.** An audit of what each server runs found five that ran a folder's own code
+  on open: Ruby LSP loads any `ruby_lsp/**/addon.rb` in the folder and a `.ruby-lsp` bundle it ships (Ruby now always
+  waits), the Groovy server resolves a Gradle or Maven build (it was not held back at all), rust-analyzer found crates
+  in dot folders, `build/` and parent folders that the check skipped, and astro-ls loads the project's packages from
+  `node_modules`. Terraform (providers in `.terraform`), PHP (the Composer autoloader), Clojure (`.lsp/config.edn`),
+  Scala (`.bsp`, `.bloop`), C# and Dart (parent folders) wait too, and a folder too big to search counts as having a
+  build.
 - **A repository's own Git filter drivers wait for trust.** A `.git/config` that came with an unpacked archive could
   name a program as a filter driver, which `.gitattributes` selects, and the gutter diff of a changed file ran it in a
   folder nobody had trusted. Editora's background Git reads now empty the filters the repository's own config defines

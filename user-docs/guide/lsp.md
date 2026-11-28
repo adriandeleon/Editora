@@ -618,20 +618,28 @@ for a host in Settings → Remote instead (see
 
 Some servers run the project's own code just to load it: a Gradle build's
 scripts, Maven build extensions, Rust build scripts and proc macros, a
-`Gemfile`, MSBuild projects, Leiningen. In a folder you have not
-[trusted](/docs/workspace#trusted-folders), Editora holds that back:
+`Gemfile` and Ruby LSP add-ons, MSBuild projects, Leiningen, a project's own
+npm packages, Terraform providers, a Composer autoloader. In a folder you have
+not [trusted](/docs/workspace#trusted-folders), Editora holds that back:
 
 | Server | In an untrusted folder |
 | --- | --- |
 | Java (jdtls) | Starts without the Maven or Gradle build. Syntax checks, the JDK's types and navigation within the file still work. |
 | Kotlin | Waits when the folder has a `pom.xml`, `build.gradle(.kts)` or `settings.gradle(.kts)`. |
-| Scala (Metals) | Waits when the folder has a `build.sbt`, `build.sc`, `build.mill`, `build.mill.yaml` or `project.scala`. |
-| Rust (rust-analyzer) | Waits when the folder, or a folder one level down, has a `Cargo.toml`. |
-| Ruby (Ruby LSP) | Waits when the folder has a `Gemfile` or `gems.rb`. |
-| C# (csharp-ls) | Waits when the folder, or a folder up to two levels down, has a solution, a project file or `Directory.Build.props`/`.targets`. |
-| Clojure (clojure-lsp) | Waits when the folder has a `project.clj`, `build.boot` or `shadow-cljs.edn`. A `deps.edn` or `bb.edn` is read as data and does not hold it back. |
-| Dart (analysis server) | Waits when the folder has an `analysis_options.yaml`, which can name analyzer plugins that the server runs. |
+| Groovy | Waits when the folder, or a folder one level down, has a Gradle or Maven build (or its wrapper) or a `.bsp` folder, or a parent folder has a `settings.gradle(.kts)`: the server resolves the build's dependencies when it starts. |
+| Scala (Metals) | Waits when the folder has a `build.sbt`, `build.sc`, `build.mill`, `build.mill.yaml` or `project.scala`, or a `.bsp` or `.bloop` folder. |
+| Rust (rust-analyzer) | Waits when the folder or any folder one level down (dot folders and `build/` included) has a `Cargo.toml` or `rust-project.json`, or a parent folder has one. |
+| Ruby (Ruby LSP) | Always waits: the server loads every Ruby LSP add-on (`ruby_lsp/**/addon.rb`) anywhere in the folder, and runs Bundler on a `Gemfile` here or in a parent folder. |
+| C# (csharp-ls) | Waits when the folder, or a folder up to two levels down, has a solution, a project file or `Directory.Build.props`/`.targets`, or a parent folder has `Directory.Build.props`/`.targets`. |
+| Clojure (clojure-lsp) | Waits when the folder has a `project.clj`, `build.boot`, `shadow-cljs.edn` or `.lsp/config.edn` (which can name the classpath command). A `deps.edn` or `bb.edn` is read as data and does not hold it back. |
+| Dart (analysis server) | Waits when the folder or a parent folder has an `analysis_options.yaml`, which can name analyzer plugins that the server runs. |
 | Elixir (ElixirLS) | Waits when the folder has a `mix.exs`: the server compiles the Mix project, and `mix.exs` is Elixir code. |
+| Astro (astro-ls) | Waits when the folder or a parent folder has a `node_modules`: the server loads the project's framework packages and Prettier from it. |
+| Terraform (terraform-ls) | Waits when a module up to three levels down has a `.terraform` folder: the server starts the providers installed there for their schemas. |
+| PHP (Phpactor) | Waits when the folder has a `vendor/autoload.php`, `.phpactor.json` or `.phpactor.yml`: the server loads the Composer autoloader, and its config can turn on tools from `vendor/bin`. |
+
+A folder too big to finish searching (over 400 folders) is taken to have a
+build, so the server waits rather than start on a folder not fully looked at.
 
 A file of one of these languages says so, with **Trust Folder** and **Not
 now**. The button trusts the folder at once; **What does trusting allow?**

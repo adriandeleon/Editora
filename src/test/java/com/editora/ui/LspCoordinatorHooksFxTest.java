@@ -679,7 +679,9 @@ class LspCoordinatorHooksFxTest {
         Files.createFile(Files.createDirectories(site.resolve("node_modules/typescript/lib"))
                 .resolve("typescript.js"));
         Path page = Files.writeString(site.resolve("index.astro"), "---\n---\n");
-        String explained = tr("status.lsp.astroSdkUntrusted", tr("command.lsp.trustProjectSettings"));
+        // astro-ls loads the folder's own packages from node_modules: it is not started at all, and the status says
+        // why (HN dry-run audit, 2026-11-27; before, it started without the folder's TypeScript).
+        String explained = tr("lsp.trust.withheldNotice", tr("install.lang.astro"));
         var told = new CountDownLatch(1);
         var settings = new com.editora.config.Settings();
         settings.setAstroLspCommand(root.resolve("absent/astro-ls") + " --stdio");

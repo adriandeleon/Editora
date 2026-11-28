@@ -22,7 +22,7 @@ project's own tool for the classpath (`clojure -Spath`, `lein classpath`,
 `bb print-deps` or `npx shadow-cljs classpath`), which it finds on the same
 `PATH` Editora gives every language server. Without that tool it still works on
 the project's own files. In a folder you have not trusted, a `project.clj`,
-`build.boot` or `shadow-cljs.edn` makes the server wait until you trust it
+`build.boot`, `shadow-cljs.edn` or `.lsp/config.edn` makes the server wait until you trust it
 (see [Servers that load a project's build](/docs/lsp#servers-that-load-a-projects-build)).
 
 A server runs per project root: the folder with a `deps.edn`, `project.clj`,
