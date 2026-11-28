@@ -1,0 +1,37 @@
+{
+  "manifest_version": "0.3",
+  "name": "editora",
+  "display_name": "Editora",
+  "version": "0.1.0",
+  "description": "Lets Claude see and work in the running Editora: open files with unsaved text, edits you can undo or approve first, diagnostics, search, code review comments and Git status.",
+  "long_description": "Connects Claude Desktop to Editora's MCP server through `editora mcp`, which finds the running editor by itself, so nothing needs setting up again after a restart or a new token. Turn the server on in Editora under Settings > MCP Server. Editora must be running for its tools to answer.",
+  "author": { "name": "Editora", "url": "https://editora-project.dev" },
+  "homepage": "https://editora-project.dev/docs/mcp",
+  "documentation": "https://editora-project.dev/docs/mcp",
+  "repository": { "type": "git", "url": "https://github.com/adriandeleon/Editora" },
+  "license": "MIT",
+  "icon": "icon.png",
+  "keywords": ["editor", "code-review", "mcp", "editora"],
+  "server": {
+    "type": "node",
+    "entry_point": "server/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/index.js"],
+      "env": { "EDITORA_COMMAND": "${user_config.editora_command}" }
+    }
+  },
+  "user_config": {
+    "editora_command": {
+      "type": "string",
+      "title": "Editora command",
+      "description": "The command that starts Editora's launcher, or its full path (editora-cli.exe on Windows). Editora's Settings > MCP Server > Copy Connect Command shows the one for your install.",
+      "default": "editora",
+      "required": true
+    }
+  },
+  "compatibility": {
+    "platforms": ["darwin", "win32", "linux"],
+    "runtimes": { "node": ">=18.0.0" }
+  }
+}
