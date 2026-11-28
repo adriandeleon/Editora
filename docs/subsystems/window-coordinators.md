@@ -13,13 +13,33 @@ state of its own, resolves everything when called, and is constructed exactly wh
 was (mostly a field initializer of `MainController`). The owner still sees just its `Host`/`Ops`
 interface. The members of `MainController` an adapter reaches are package-private for that reason, and
 `WindowAdapterSweepFxTest` picks the adapter up as long as its name ends in `Host` and it holds the
-controller. The small adapters (a few methods) remain anonymous classes inside `MainController`.
+controller. The adapters still written inline (the `MacroCoordinator`, `PluginCoordinator`,
+`ContainerCoordinator`, `ExternalToolCoordinator` and `HttpVariableHints` ones among them) moved out the same
+way once `MainController` passed 6,000 lines, so it holds none now; the one anonymous adapter left of its
+code is the `BuildTrustOps` subclass in `WindowBuildTools`.
 
 Some window-composition pieces live beside the controller for the same reason: `WindowToolbar` (button
 setup, the fixed tail, edit/split/paste enablement; the `@FXML` widgets stay injected into the
 controller), `EditorTabListeners` (the tab-selection fan-out, closed-tab tear-down and the MRU order) and
 `SettingsWindowWiring` (the Settings pages' callbacks). Each runs at the point of `init` where its code
 used to be inline.
+
+The controller's own methods are grouped the same way, also only for its size. Each group is a
+package-private `final class` holding the controller, built in a field declared before every other field
+(the field initializers below take method references to them): `WindowTabActions` (closing, reopening,
+pinning, renaming and stepping through tabs; editor groups), `WindowProjectActions` (projects, the window
+title, files the Project tree renames or deletes), `WindowPanels` (the panels built on first use),
+`BufferWiring` (what a buffer and its tab are wired to), `WindowFileOpens` (background, preview and
+asynchronous opens), `WindowFileState` (folds and the read-only pin per file), `WindowViewModes` (Zen,
+Expert, zoom, the editor theme), `WindowGates` (palette gates and tool-window availability),
+`WindowLifecycle` (focus regain, close, quit, disposal), `WindowEditCommands` (find bar, multiple carets,
+AceJump, cancel), `WindowWelcome` (Welcome, Doctor and recent files), `WindowMcpSupport` (MCP server and
+the Claude Code IDE trial), `WindowTrust` (folder-trust questions), `WindowBuildTools` (build coordinators
+and the Git/GitHub transcripts), `WindowRunSuggestions`, `WindowAppActions` and `KeyDispatcherWiring`. The
+state they read stays a field of `MainController`, because tests reach fields by name through
+`FxTestSupport.field`; and every method another class or a test calls keeps a one-line forwarder on
+`MainController` under its old name and signature, gathered at the end of the file, because
+`FxTestSupport.call`/`invoke` find methods by name too and the compiler does not check those calls.
 
 | Owner | Responsibility |
 | --- | --- |
