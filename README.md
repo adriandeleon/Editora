@@ -29,7 +29,7 @@ The site's source is [adriandeleon/editora-website](https://github.com/adriandel
 
 Working toward [Pauta (the adl desktop apps guidelines)](https://pauta-project.dev/), edition [6.2.0](https://pauta-project.dev/6.2.0/), [Pauta conformance: Partial](https://editora-project.dev/docs/pauta/).
 
-Editora is built with the help of AI coding tools.
+Editora is written with Claude Code, under guardrails the build enforces: see [How it's built](#how-its-built).
 
 ## Highlights
 
@@ -213,6 +213,26 @@ A curated, signed registry of ready-to-install plugins lives at
 then **Browse plugins…**. Plugins run with full trust (no sandbox), so install only ones you trust.
 To write your own, start with [`docs/plugins.md`](docs/plugins.md) and
 [`examples/example-plugin/`](examples/example-plugin/).
+
+## How it's built
+
+Editora is written with [Claude Code](https://claude.com/claude-code): 3,916 of its 4,170 commits (94%, as of
+November 2026) are co-authored by Claude. The instructions it works under are in the repository, in
+[`AGENTS.md`](AGENTS.md) and [`CLAUDE.md`](CLAUDE.md), and the [architecture docs](docs/README.md) it keeps up to date.
+What keeps the code honest is enforced by the build, not promised:
+
+- **Null safety is a build error.** Every package is checked by NullAway in JSpecify mode, with no suppressions in
+  the main code.
+- **Architecture rules are tests.** 36 guard test classes fail the build when, for example, the editor package
+  depends on the UI, a source file passes the size cap, a test sleeps instead of waiting for what it waits on, or a
+  message is missing from one of the six languages.
+- **Every bug fix ships with a regression test** that fails before the fix and passes after it.
+- **No change may make Editora slower.** A change on a hot path is measured against `master` before its pull request
+  opens, and a frame-budget test runs in CI.
+- **Changes reach `master` through pull requests and CI**, release version bumps aside.
+
+What it has not fixed yet: some classes are far too large (`MainController`, `EditorBuffer` and `DapManager` are 6,000
+to 7,400 lines), and splitting them is the next cleanup.
 
 ## Contributing
 
