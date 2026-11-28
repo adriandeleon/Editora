@@ -575,8 +575,12 @@ A partial clone is also told not to fetch missing objects on demand; that needs
 Git 2.45 or newer (or a 2.39.4–2.44.1 maintenance release), and older versions
 ignore it.
 
-One thing is not covered: filter drivers selected through `.gitattributes`
-(Git LFS, for example) still run when Git has to re-hash a modified file.
+Filter drivers, selected through `.gitattributes`, run when Git has to re-hash
+a modified file. In a folder you have not [trusted](/docs/workspace#trusted-folders),
+the background reads empty the ones the repository's own `.git/config` defines,
+so a repository unpacked from an archive can't name a program to run that way;
+the ones in your own Git configuration (Git LFS, for example) run as usual. A
+trusted folder's filters all run.
 
 Commands you start yourself (commit, checkout, pull, push and the rest) are
 not restricted, so your hooks run as they do in a terminal. A revision name

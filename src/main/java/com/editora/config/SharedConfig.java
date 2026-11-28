@@ -1406,9 +1406,11 @@ public class SharedConfig {
     private void loadTrust() {
         // Read even when absent: a copy an older build set aside may be waiting to be restored.
         trustStore = read(getTrustFile(), new TrustStore(), ConfigSchema.TRUST);
+        TrustStore.publish(trustStore);
     }
 
     public void saveTrust() {
+        TrustStore.publish(trustStore); // what Git's background commands go by (RepoFilters)
         writeStore(getTrustFile(), trustStore, ConfigSchema.TRUST);
     }
 

@@ -43,6 +43,36 @@ public class TrustStore {
     public Map<String, Boolean> roots = new LinkedHashMap<>();
 
     /**
+     * The roots as trust was last loaded or saved, for threads other than the one that changes {@link #roots} (the
+     * FX thread): Git's background commands ask on their own threads ({@code RepoFilters}).
+     */
+    private static volatile Map<String, Boolean> published = Map.of();
+
+    /** Makes {@code store}'s roots the ones {@link #trustedNow} answers from: called as trust is loaded or saved. */
+    public static void publish(TrustStore store) {
+        Map<String, Boolean> copy = new LinkedHashMap<>();
+        store.roots.forEach((k, v) -> {
+            if (k != null && v != null) {
+                copy.put(k, v);
+            }
+        });
+        published = java.util.Collections.unmodifiableMap(copy);
+    }
+
+    /**
+     * Whether {@code root} was trusted when trust was last loaded or saved, as {@link #isTrusted} answers it: safe
+     * on any thread. Every change of trust is saved at once (a security decision must survive a crash).
+     */
+    public static boolean trustedNow(@Nullable Path root) {
+        if (root == null) {
+            return false;
+        }
+        TrustStore copy = new TrustStore();
+        copy.roots = new LinkedHashMap<>(published);
+        return copy.isTrusted(root);
+    }
+
+    /**
      * Whether {@code root} may run a repo-shipped wrapper: true when it, or any ancestor of it, is explicitly
      * trusted. A null path is never trusted.
      */

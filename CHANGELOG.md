@@ -115,6 +115,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A repository's own Git filter drivers wait for trust.** A `.git/config` that came with an unpacked archive could
+  name a program as a filter driver, which `.gitattributes` selects, and the gutter diff of a changed file ran it in a
+  folder nobody had trusted. Editora's background Git reads now empty the filters the repository's own config defines
+  until its folder is trusted; filters in your own Git configuration (Git LFS) are not touched.
 - **An MCP agent asks before it runs a command or edits.** `execute_command` ran any command but plugin and trust
   ones unasked, Run, build and git push included. Each command an agent runs is now asked about first (**Run**,
   **Always Allow** for that command, **Don't Run**, which is the default), and an agent's `edit_buffer` is proposed as

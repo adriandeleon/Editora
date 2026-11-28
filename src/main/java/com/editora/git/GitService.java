@@ -327,7 +327,7 @@ public final class GitService {
 
     /** {@link #backgroundArgv(String...)} with the git of the machine {@code dir} is on. */
     static List<String> backgroundArgv(Path dir, String... args) {
-        return GitSafety.backgroundArgv(commandFor(dir), args);
+        return GitSafety.backgroundArgv(commandFor(dir), RepoFilters.overrides(dir), args);
     }
 
     /**
