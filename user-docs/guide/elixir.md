@@ -69,7 +69,10 @@ ElixirLS runs Mix tasks only, so a script outside a Mix project isn't debugged:
 Editora says so, and *Run File* runs it with `elixir`. Debug asks the same
 trust question as Run File. The first debug run of a project compiles it and
 its dependencies first, which can take a minute or more; the compiler's output
-shows in the Debug console meanwhile.
+shows in the Debug console meanwhile. Pressed while Elixir's language server is
+still starting, Debug waits for it first (the status bar says so): both start
+from the one ElixirLS install, and ElixirLS's debugger fails when it starts
+beside it.
 
 ## Installing ElixirLS
 

@@ -278,10 +278,6 @@ class ElixirDebugProbeFxTest {
         seed.load();
         seed.getSettings().setDebugSupport(true);
         seed.getSettings().setElixirDebugPath(configured);
-        // No Elixir language server: it compiles the project as the window opens, and ElixirLS's debug adapter, made
-        // to wait for Mix's build lock while it boots, dies before the program starts (CI, PR #1859). The debugger is
-        // what is probed here.
-        seed.getSettings().setLspSupport(false);
         seed.getTrustStore().trust(dir.toRealPath()); // the trust question (Mix compiles the project), answered
         assertTrue(seed.saveSettings());
         seed.saveTrust();

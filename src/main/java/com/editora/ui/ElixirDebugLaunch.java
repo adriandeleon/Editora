@@ -104,8 +104,8 @@ final class ElixirDebugLaunch {
             return; // Mix compiles the project and its dependencies: their code runs only in a trusted folder
         }
         Map<String, Object> launch = ElixirLaunch.launch(plan);
-        Runnable start =
-                () -> d.withClosedBreakpoints(() -> d.dap().startExternal(file, DebugLanguages.ELIXIR, launch));
+        Runnable start = () -> afterServerStarts(
+                () -> d.withClosedBreakpoints(() -> d.dap().startExternal(file, DebugLanguages.ELIXIR, launch)));
         Runnable go = () -> {
             d.s().relaunch = start;
             start.run();
@@ -115,5 +115,51 @@ final class ElixirDebugLaunch {
         if (d.savedOrThen(d.buffersUnder(project, "elixir"), go)) {
             go.run();
         }
+    }
+
+    /** How long the debugger waits for the Elixir language server to start before it starts anyway. */
+    static final java.time.Duration SERVER_START_WAIT = java.time.Duration.ofMinutes(2);
+
+    /** How often it looks. */
+    static final javafx.util.Duration SERVER_START_POLL = javafx.util.Duration.millis(250);
+
+    /**
+     * Runs {@code start} once this window's Elixir language server has started (FX thread). Both boot from the one
+     * ElixirLS install, whose build lock the later one waits for, and ElixirLS's debug adapter, made to wait while it
+     * boots, dies before the program starts ("Waiting for lock on the build directory", ElixirLS 0.31.1 on Elixir
+     * 1.18): pressed right after a project's file opened, Debug failed. The server answers {@code initialize} once
+     * it has booted. Nothing waits when no server is starting, nor longer than {@link #SERVER_START_WAIT}.
+     */
+    private void afterServerStarts(Runnable start) {
+        whenStarted(
+                () -> d.lspManager.isStarting("elixir"),
+                System.nanoTime() + SERVER_START_WAIT.toNanos(),
+                System::nanoTime,
+                again -> {
+                    javafx.animation.PauseTransition pause = new javafx.animation.PauseTransition(SERVER_START_POLL);
+                    pause.setOnFinished(e -> again.run());
+                    pause.play();
+                },
+                () -> d.host.setStatus(tr("status.debug.elixirWaitsForServer")),
+                start);
+    }
+
+    /**
+     * Runs {@code start} now when {@code starting} says no or {@code deadline} (of {@code now}) has passed; else says
+     * so once ({@code waiting}) and asks again through {@code later}. Pure apart from what it is given.
+     */
+    static void whenStarted(
+            java.util.function.BooleanSupplier starting,
+            long deadline,
+            java.util.function.LongSupplier now,
+            java.util.function.Consumer<Runnable> later,
+            Runnable waiting,
+            Runnable start) {
+        if (!starting.getAsBoolean() || now.getAsLong() - deadline >= 0) {
+            start.run();
+            return;
+        }
+        waiting.run();
+        later.accept(() -> whenStarted(starting, deadline, now, later, () -> {}, start));
     }
 }

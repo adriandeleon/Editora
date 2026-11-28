@@ -165,6 +165,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   field instead of closing it; pressed from inside the window, it still closes it.
 - **Sources before build output in Go to File.** `.class` files and files under `target/`, `build/` and the other
   output folders are listed after the matching sources, even in a project with no `.gitignore`.
+- **Debugging Elixir right after opening a project.** Debug pressed while ElixirLS's language server was still
+  starting failed with *The Elixir debugger exited before the program started*: both start from the one ElixirLS
+  install, and its debugger died waiting for that install's build lock. Debug now waits for the language server
+  first, and the status bar says so.
+- **Trust Project Settings releases the folder's own Python environment** at once, as Workspace: Trust This Folder
+  does.
 - **Launched tools opt out of telemetry.** Runs, builds, the terminal, language servers and debuggers start with
   `DOTNET_CLI_TELEMETRY_OPTOUT=1` and `POWERSHELL_TELEMETRY_OPTOUT=1` unless you set them yourself.
 - **No "restricted method" warnings on every JavaFX run.** With JavaFX 24 or later, Run and Debug grant
