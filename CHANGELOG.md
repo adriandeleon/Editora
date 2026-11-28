@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Claude Desktop extension.** `integrations/claude-desktop` packs as an `editora.mcpb` that Claude Desktop installs
+  with a double-click, giving its chats Editora's MCP tools through `editora mcp`.
 - **Pick your keymap on first launch.** A fresh install's Welcome page asks which keys your fingers know, with a
   button for each of the five keymaps and **Keep Emacs**; it asks once. An existing install is not asked.
 - **Library sources, offered once.** The first time a Maven project imports with library sources off, its Java file
@@ -144,6 +146,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Security: an untrusted folder's Python environment no longer runs when you open a `.py` file.** Editora used
+  the `.venv` (or `venv`, `env`, `.env`) it found in the folder for the status bar's version and told Pyright to
+  analyse with it, and Pyright runs the interpreter it is told: a repository shipping its own `.venv/bin/python` ran
+  it within seconds, before anything was trusted. Until the folder is trusted, Pyright, the status bar, Doctor and
+  formatting use your setting or `PATH`'s Python, and the status item says the folder's environment waits for
+  trust; trusting it switches over at once. An interpreter you pick yourself is used either way.
+- **The Claude Code lock file is private from the moment it exists.** It carries the connection's token and was
+  written at the default permissions before being restricted to its owner, so other users of the machine could read
+  it for a moment. A `~/.claude/ide` folder Editora creates is its owner's only.
+- **What Editora sends over the network is listed in full.** The README said the update check "sends no data" from
+  Settings → Workspace; it runs from the first launch, GitHub sees your IP and Editora's version, and the switch is
+  in Settings → Advanced (or `-Deditora.updateCheck=off`). The FAQ now also lists the GitHub calls made through your
+  own `gh`, what a trusted folder downloads, and what only happens when you click.
 - **Go to File while the project is indexing.** Ctrl+P says **Indexing the project…** instead of **Nothing found**
   during the first walk, and an Enter pressed then opens the top file when it lands.
 - **Find in Files focuses on Ctrl+Shift+F.** With the window already open, the shortcut puts the cursor in its query
@@ -152,7 +167,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   output folders are listed after the matching sources, even in a project with no `.gitignore`.
 - **Launched tools opt out of telemetry.** Runs, builds, the terminal, language servers and debuggers start with
   `DOTNET_CLI_TELEMETRY_OPTOUT=1` and `POWERSHELL_TELEMETRY_OPTOUT=1` unless you set them yourself.
-
 - **No "restricted method" warnings on every JavaFX run.** With JavaFX 24 or later, Run and Debug grant
   `--enable-native-access` to the JavaFX modules that load native code, so JDK 24+ no longer prints four red WARNING
   lines.

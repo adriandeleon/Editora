@@ -52,7 +52,11 @@ class PythonInterpreterRemoteFxTest {
         ExecTargets.setRemoteEnabled(null);
     }
 
-    private static PythonInterpreterCoordinator coordinator(Path projectRoot, String[] item) {
+    private PythonInterpreterCoordinator coordinator(Path projectRoot, String[] item) throws Exception {
+        // The host's folder is trusted: an untrusted folder's own .venv is never used (HN dry run, 2026-11-27).
+        com.editora.config.ConfigManager config =
+                new com.editora.config.ConfigManager(Files.createDirectories(base.resolve("cfg")));
+        config.getTrustStore().trust(projectRoot);
         return new PythonInterpreterCoordinator(new PythonInterpreterCoordinator.Host() {
             @Override
             public Path projectRoot() {
@@ -61,7 +65,7 @@ class PythonInterpreterRemoteFxTest {
 
             @Override
             public com.editora.config.ConfigManager config() {
-                return null;
+                return config;
             }
 
             @Override

@@ -180,6 +180,40 @@ class ClaudeIdeServerTest {
                 tools.call("openDiff", args).at("/content/0/text").asText());
     }
 
+    /**
+     * Regression (HN dry run, 2026-11-27): the lock file, which carries the token, was written at the umask's
+     * permissions and only then restricted, so another user could read the token for a moment. It is owner-only from
+     * the moment it exists, before the token is in it, and a folder this creates is the owner's only.
+     */
+    @Test
+    void theLockFileIsPrivateBeforeTheTokenIsWritten(@TempDir Path dir) throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                dir.getFileSystem().supportedFileAttributeViews().contains("posix"), "POSIX permissions");
+        Path ide = dir.resolve("claude/ide");
+        List<String> atCreation = new java.util.concurrent.CopyOnWriteArrayList<>();
+        ClaudeIdeServer.lockFileCreatedForTest = tmp -> {
+            try {
+                atCreation.add(java.nio.file.attribute.PosixFilePermissions.toString(Files.getPosixFilePermissions(tmp))
+                        + " " + Files.size(tmp));
+            } catch (java.io.IOException e) {
+                throw new java.io.UncheckedIOException(e);
+            }
+        };
+        try (ClaudeIdeServer server = new ClaudeIdeServer(bridge(java.util.Map.of()), List::of, ide, "1.0")) {
+            assertEquals(List.of("rw------- 0"), atCreation, "owner-only and still empty when it is created");
+            assertEquals(
+                    "rw-------",
+                    java.nio.file.attribute.PosixFilePermissions.toString(
+                            Files.getPosixFilePermissions(server.lockFile())));
+            assertEquals(
+                    "rwx------",
+                    java.nio.file.attribute.PosixFilePermissions.toString(Files.getPosixFilePermissions(ide)),
+                    "the folder this created is the owner's only");
+        } finally {
+            ClaudeIdeServer.lockFileCreatedForTest = null;
+        }
+    }
+
     /** Regression: Claude Code asks for the mcp subprotocol and dropped the connection when the answer named none. */
     @Test
     void theMcpSubprotocolClaudeCodeAsksForIsAgreed(@TempDir Path dir) throws Exception {

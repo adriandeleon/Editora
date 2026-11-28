@@ -49,6 +49,29 @@ class PythonInterpretersTest {
         assertEquals(v, py.venv());
     }
 
+    /**
+     * Without project environments (a folder not trusted yet: HN dry run, 2026-11-27) the setting, then PATH, answer
+     * instead of the {@code .venv} the folder ships; a project pick stays the user's and still wins.
+     */
+    @Test
+    void projectEnvironmentsCanBeLeftOut() throws Exception {
+        Path root = tmp.resolve("proj");
+        venv(root.resolve(".venv"));
+        Path file = root.resolve("app.py");
+
+        var withoutVenvs = PythonInterpreters.resolve(in(file, root, "", "", "/opt/py/bin/python3", Map.of()), false);
+        assertEquals("/opt/py/bin/python3", withoutVenvs.executable());
+        assertEquals(Source.SETTING, withoutVenvs.source());
+
+        var picked = PythonInterpreters.resolve(in(file, root, "", "/opt/mine/python", "", Map.of()), false);
+        assertEquals(Source.PROJECT_CHOICE, picked.source(), "a pick is the user's, trusted or not");
+
+        assertEquals(
+                Source.PROJECT_VENV,
+                PythonInterpreters.resolve(in(file, root, "", "", "", Map.of()), true)
+                        .source());
+    }
+
     @Test
     void aFolderWithoutPyvenvCfgIsNotAVenv() throws Exception {
         Path root = tmp.resolve("proj");

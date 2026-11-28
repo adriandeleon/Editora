@@ -68,6 +68,7 @@ class PythonInterpreterStatusFxTest {
 
         try (FxWindowFixture fx = FxWindowFixture.create(Files.createDirectories(work.resolve("cfg")), shared -> {})) {
             MainController c = fx.controller;
+            FxTestSupport.runOnFx(() -> c.config.getTrustStore().trust(project)); // a folder's .venv needs its trust
             FxTestSupport.runOnFx(() -> c.openAndNavigate(app, 1));
 
             assertEquals("Python 3.99.1 (.venv)", waitForItem(c, "Python 3.99.1 (.venv)"));
@@ -125,6 +126,7 @@ class PythonInterpreterStatusFxTest {
                 fx.shared.getSettings().setProjectSupport(true);
                 c.setWindowContext(fx.windowManager, new com.editora.config.Project("repo", "repo", repo.toString()));
             });
+            FxTestSupport.runOnFx(() -> c.config.getTrustStore().trust(repo)); // a folder's .venv needs its trust
             FxTestSupport.runOnFx(() -> c.openAndNavigate(test, 1));
             assertEquals("Python 3.97.2 (.venv)", waitForItem(c, "Python 3.97.2 (.venv)"));
             Path serverRoot = FxTestSupport.callOnFx(() -> c.lspCoordinator.lspRootFor(c.activeBuffer(), "python"));
@@ -135,6 +137,55 @@ class PythonInterpreterStatusFxTest {
                     venvPython.toString(),
                     c.lspCoordinator.pythonInterpreters.pythonPathForServerRoot(serverRoot),
                     "the server is told the backend's venv, not PATH's python3");
+        }
+    }
+
+    /**
+     * Regression (HN dry run, 2026-11-27): opening a {@code .py} file in a folder nobody trusted ran the folder's own
+     * {@code .venv/bin/python} twice within two seconds — the status item's version probe, and Pyright asking it for
+     * its {@code sys.path}. Until the folder is trusted its environment is not run, and Pyright is not told it.
+     */
+    @Test
+    void anUntrustedFoldersOwnEnvironmentNeverRunsUntilTheFolderIsTrusted() throws Exception {
+        assumeTrue(!com.editora.run.PythonInterpreters.isWindows(), "POSIX stand-in interpreter");
+        assumeTrue(
+                System.getenv("VIRTUAL_ENV") == null && System.getenv("CONDA_PREFIX") == null,
+                "an activated environment would win, by design");
+        FxTestSupport.bootToolkit();
+        Path project = Files.createDirectories(work.resolve("cloned"));
+        Files.writeString(Files.createDirectories(project.resolve(".venv")).resolve("pyvenv.cfg"), "home = /usr\n");
+        Path marker = work.resolve("ran.txt");
+        Path venvPython = project.resolve(".venv/bin/python");
+        Files.createDirectories(venvPython.getParent());
+        // What a hostile repository could ship: it records that it ran, then answers like CPython.
+        Files.writeString(venvPython, "#!/bin/sh\necho ran >> '" + marker + "'\necho \"Python 3.99.7\"\n");
+        Files.setPosixFilePermissions(venvPython, PosixFilePermissions.fromString("rwxr-xr-x"));
+        Path app = Files.writeString(project.resolve("app.py"), "import os\n");
+
+        try (FxWindowFixture fx = FxWindowFixture.create(Files.createDirectories(work.resolve("cfg")), shared -> {})) {
+            MainController c = fx.controller;
+            FxTestSupport.runOnFx(() -> c.openAndNavigate(app, 1));
+            PythonInterpreterCoordinator interpreters = c.lspCoordinator.pythonInterpreters;
+
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
+            String item = statusItem(c);
+            while (item == null && System.nanoTime() < deadline) {
+                FxTestSupport.drainFx();
+                item = statusItem(c);
+            }
+            assertTrue(item == null || !item.contains(".venv"), "not the folder's environment: " + item);
+            FxTestSupport.runOnFx(interpreters::captureSnapshot);
+            assertTrue(
+                    !venvPython.toString().equals(interpreters.pythonPathForServerRoot(project)),
+                    "Pyright is not told the untrusted folder's interpreter");
+            assertTrue(!Files.exists(marker), "the folder's python never ran");
+
+            FxTestSupport.runOnFx(() -> {
+                c.config.getTrustStore().trust(project);
+                c.lspCoordinator.reloadProjectSettings(); // what Trust Folder's broadcast runs in every window
+            });
+            assertEquals("Python 3.99.7 (.venv)", waitForItem(c, "Python 3.99.7 (.venv)"), "trusted: it is used");
+            assertEquals(venvPython.toString(), interpreters.pythonPathForServerRoot(project));
         }
     }
 }

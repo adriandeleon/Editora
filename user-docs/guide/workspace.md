@@ -722,7 +722,7 @@ because Windows cannot watch the `\\wsl.localhost` share.
 
 ## Trusted folders
 
-Opening a folder never runs code that came with it. Several features would, so
+Opening a folder does not run code that came with it. Several features would, so
 each waits until you trust the folder. Trust is one list, shared by all of them:
 
 | Trusting a folder lets… | Until then |
@@ -735,6 +735,14 @@ each waits until you trust the folder. Trust is one list, shared by all of them:
 | [ESLint](/docs/javascript-typescript#eslint) load the project's configuration and plugins, and Prettier or Biome format | ESLint says once that it is not running; the *Auto* formatter uses the TypeScript server, and an explicit Prettier or Biome choice says it needs trust |
 | An `.http` file's [response handlers](/docs/http-client#response-handlers) run, and read [secrets](/docs/http-client#secrets-and-trusted-folders) from the environment or `.env` | Editora asks before the first run |
 | Git's [background auto-fetch](/docs/git) run (also after you fetch, pull or push there yourself) | No background fetch |
+| Python use the folder's own [virtual environment](/docs/python#the-python-interpreter) (`.venv`, `venv`, …) for Pyright, the status bar, Doctor and formatting: its `python` is whatever the folder ships | Your setting or `PATH`'s Python; the status item's tooltip says the folder's environment waits for trust. An interpreter you pick yourself is used either way |
+
+Two things are deliberately or not yet outside this: [Go](/docs/go) builds and
+`gopls` run without trust, because Go's own tools never execute a module's code
+for a build, and Git's [filter drivers](/docs/git) run when Git re-hashes a
+file. A driver is defined in Git's configuration, which `git clone` does not
+copy from the remote, so this only matters for a repository unpacked from an
+archive that brings its own `.git/config`.
 
 An MCP client can't trust a folder for you: every trust command is
 [refused to agents](/docs/mcp#plugins-and-trust).

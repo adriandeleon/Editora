@@ -152,8 +152,20 @@ public final class ClaudeIdeServer implements AutoCloseable {
         writeLockFile(ideDir);
     }
 
+    /**
+     * TEST SEAM: called with the temporary lock file once it exists and before the token is written to it, so a test
+     * can see the permissions it was created with.
+     */
+    static volatile java.util.function.@org.jspecify.annotations.Nullable Consumer<Path> lockFileCreatedForTest;
+
+    /**
+     * Writes the lock file. It carries the token, so it is private from the moment it exists: created with owner-only
+     * permissions, then written. It used to be written at the umask's permissions and only then restricted, which left
+     * the token readable by other users for a moment in a folder (Claude Code's {@code ~/.claude/ide}) that need not
+     * be private (HN dry run, 2026-11-27). The folder, when this creates it, is the owner's only.
+     */
     private synchronized void writeLockFile(Path ideDir) throws IOException {
-        Files.createDirectories(ideDir);
+        createPrivateDirectories(ideDir);
         ObjectNode lock = m.createObjectNode();
         lock.put("pid", ProcessHandle.current().pid());
         ArrayNode ws = lock.putArray("workspaceFolders");
@@ -164,17 +176,40 @@ public final class ClaudeIdeServer implements AutoCloseable {
         lock.put("transport", "ws");
         lock.put("authToken", token);
         Path tmp = ideDir.resolve(lockFile.getFileName() + ".tmp");
-        Files.writeString(tmp, m.writeValueAsString(lock));
+        Files.deleteIfExists(tmp); // one left by a crash keeps the permissions it had: start afresh
         try {
-            Files.setPosixFilePermissions(tmp, java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"));
+            Files.createFile(
+                    tmp,
+                    java.nio.file.attribute.PosixFilePermissions.asFileAttribute(
+                            java.nio.file.attribute.PosixFilePermissions.fromString("rw-------")));
         } catch (UnsupportedOperationException e) {
-            // Windows: the user's profile folder is private already
+            Files.createFile(tmp); // Windows: the user's profile folder is private already
         }
+        java.util.function.Consumer<Path> seam = lockFileCreatedForTest;
+        if (seam != null) {
+            seam.accept(tmp);
+        }
+        Files.writeString(tmp, m.writeValueAsString(lock)); // truncates and writes; the permissions stay
         Files.move(
                 tmp,
                 lockFile,
                 java.nio.file.StandardCopyOption.REPLACE_EXISTING,
                 java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+    }
+
+    /** Creates {@code dir} and any missing parents owner-only (POSIX); an existing folder is left as it is. */
+    private static void createPrivateDirectories(Path dir) throws IOException {
+        if (Files.isDirectory(dir)) {
+            return;
+        }
+        try {
+            Files.createDirectories(
+                    dir,
+                    java.nio.file.attribute.PosixFilePermissions.asFileAttribute(
+                            java.nio.file.attribute.PosixFilePermissions.fromString("rwx------")));
+        } catch (UnsupportedOperationException e) {
+            Files.createDirectories(dir);
+        }
     }
 
     // --- notifications to Claude Code ------------------------------------------------------------------

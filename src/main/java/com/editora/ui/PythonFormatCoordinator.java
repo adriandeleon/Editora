@@ -40,6 +40,14 @@ final class PythonFormatCoordinator {
         @Nullable
         Path venvOf(@Nullable Path file);
 
+        /**
+         * The environment the folder of {@code file} ships but that is not used because the folder is not trusted, or null
+         * (a formatter in it would run the folder's code: HN dry run, 2026-11-27).
+         */
+        default @Nullable Path withheldVenvOf(@Nullable Path file) {
+            return null;
+        }
+
         void setStatus(String message);
 
         void setError(@Nullable String message);
@@ -148,12 +156,17 @@ final class PythonFormatCoordinator {
         }
         Thread.ofVirtual().name("python-format").start(() -> {
             Optional<PythonFormatter.Found> found = PythonFormatter.findLocal(host.venvOf(path));
+            Path withheld = found.isEmpty() ? host.withheldVenvOf(path) : null;
+            // The folder's own environment has one, waiting for trust: say so, not "install one" (only looked at).
+            String why = withheld != null && PythonFormatter.findLocal(withheld).isPresent()
+                    ? tr("status.python.formatNeedsTrust", String.valueOf(withheld.getFileName()))
+                    : tr("status.python.noFormatter");
             if (found.isEmpty()) {
                 Platform.runLater(() -> {
                     if (quiet) {
-                        host.setStatus(tr("status.python.noFormatter")); // every save: told, not alarmed
+                        host.setStatus(why); // every save: told, not alarmed
                     } else {
-                        host.setError(tr("status.python.noFormatter"));
+                        host.setError(why);
                     }
                     done.accept(false);
                 });

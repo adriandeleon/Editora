@@ -169,8 +169,21 @@ public final class PythonInterpreters {
     /** Resolves for a local file with the real file system, environment, OS and augmented PATH. */
     public static PythonInterpreter resolveLocal(
             @Nullable Path file, @Nullable Path projectRoot, String configured, String projectChoice, String setting) {
-        return resolve(Inputs.local(
-                file, projectRoot, configured, projectChoice, setting, PythonInterpreters::onAugmentedPath));
+        return resolveLocal(file, projectRoot, configured, projectChoice, setting, true);
+    }
+
+    /** As above; {@code projectVenvs} false skips the environment found in the project ({@link Source#PROJECT_VENV}). */
+    public static PythonInterpreter resolveLocal(
+            @Nullable Path file,
+            @Nullable Path projectRoot,
+            String configured,
+            String projectChoice,
+            String setting,
+            boolean projectVenvs) {
+        return resolve(
+                Inputs.local(
+                        file, projectRoot, configured, projectChoice, setting, PythonInterpreters::onAugmentedPath),
+                projectVenvs);
     }
 
     private static @Nullable Path userHome() {
@@ -189,6 +202,17 @@ public final class PythonInterpreters {
 
     /** Resolves the interpreter for {@code in}. Never null: the last step always answers. */
     public static PythonInterpreter resolve(Inputs in) {
+        return resolve(in, true);
+    }
+
+    /**
+     * As {@link #resolve(Inputs)}; {@code projectVenvs} false skips the environment found in the project's folders
+     * ({@link Source#PROJECT_VENV}), so the setting or PATH answers instead. An environment found there is the
+     * folder's content: its {@code python} is whatever the folder ships, and running it (for its version, or by
+     * a language server asking it for {@code sys.path}) runs that folder's code. In a folder not trusted yet, only
+     * an interpreter the user chose may run.
+     */
+    public static PythonInterpreter resolve(Inputs in, boolean projectVenvs) {
         if (!in.configured().isEmpty()) {
             return explicit(in.configured(), in, Source.CONFIGURATION);
         }
@@ -199,7 +223,9 @@ public final class PythonInterpreters {
         if (active.isPresent()) {
             return active.get();
         }
-        Optional<Path> venv = findProjectVenv(in.file(), in.projectRoot(), in.isFile(), in.windows());
+        Optional<Path> venv = projectVenvs
+                ? findProjectVenv(in.file(), in.projectRoot(), in.isFile(), in.windows())
+                : Optional.empty();
         if (venv.isPresent()) {
             Path python = venvPython(venv.get(), in.windows());
             return new PythonInterpreter(List.of(python.toString()), Source.PROJECT_VENV, venv.get());

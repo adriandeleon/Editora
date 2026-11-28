@@ -24,6 +24,11 @@ import static com.editora.i18n.Messages.tr;
  * project's pick ({@code WorkspaceState.pythonInterpreter}) and the global setting. Resolution touches the file
  * system and PATH, so it runs off the FX thread; results come back with {@link Platform#runLater}. A no-project
  * window keeps its pick in its own (no-project) workspace state, so it applies to every loose file there.
+ *
+ * <p>An environment found in a folder that is not trusted is not used here: its {@code python} is whatever the folder
+ * ships, and the status item's version probe and Pyright (which runs the interpreter it is told for its
+ * {@code sys.path}) would run it the moment a {@code .py} file opened. Until the folder is trusted they get the
+ * setting or PATH's Python; one the user picked is theirs and is used (HN dry run, 2026-11-27).
  */
 final class PythonInterpreterCoordinator {
 
@@ -56,9 +61,12 @@ final class PythonInterpreterCoordinator {
 
     /** The values a resolution reads, captured on the FX thread so a background thread can use them. */
     private record Snapshot(
-            @Nullable Path projectRoot, String choice, com.editora.config.@Nullable Settings settings) {}
+            @Nullable Path projectRoot,
+            String choice,
+            com.editora.config.@Nullable Settings settings,
+            com.editora.config.TrustStore trust) {}
 
-    private volatile Snapshot snapshot = new Snapshot(null, "", null);
+    private volatile Snapshot snapshot = new Snapshot(null, "", null, new com.editora.config.TrustStore());
 
     /** Bumped per status request, so a slow answer for a tab the user has left is dropped. */
     private int statusGen;
@@ -92,7 +100,25 @@ final class PythonInterpreterCoordinator {
     void captureSnapshot() {
         com.editora.config.ConfigManager config = host.config();
         String choice = config == null ? "" : config.getWorkspaceState().getPythonInterpreter();
-        snapshot = new Snapshot(host.projectRoot(), choice, config == null ? null : config.getSettings());
+        // A copy: resolution reads it off the FX thread, while Trust Folder changes the store's map on it.
+        com.editora.config.TrustStore trust = new com.editora.config.TrustStore();
+        if (config != null) {
+            trust.roots = new java.util.LinkedHashMap<>(config.getTrustStore().roots);
+        }
+        snapshot = new Snapshot(host.projectRoot(), choice, config == null ? null : config.getSettings(), trust);
+    }
+
+    /**
+     * Folder trust changed (here or in another window; FX thread): an environment that was held back may be used now,
+     * or one in use may have lost its trust, so the servers and the status item resolve again.
+     */
+    void trustChanged() {
+        java.util.Map<String, Boolean> before = snapshot.trust().roots;
+        captureSnapshot();
+        if (!before.equals(snapshot.trust().roots)) {
+            versions.clear();
+            host.interpreterChanged();
+        }
     }
 
     /**
@@ -102,20 +128,78 @@ final class PythonInterpreterCoordinator {
      * dropped connection falls back to that host's own {@code python3}, as Run does.
      */
     PythonInterpreter resolve(@Nullable Path file) {
+        return resolution(file).interpreter();
+    }
+
+    /**
+     * What {@link #resolve} answers, and the environment it held back because its folder is not trusted (null when
+     * none was): the status item says why the project's {@code .venv} is not the one in use.
+     */
+    record Resolution(
+            PythonInterpreter interpreter, @Nullable Path withheldVenv) {}
+
+    Resolution resolution(@Nullable Path file) {
         Snapshot s = snapshot;
         Path where = file != null ? file : s.projectRoot();
         String setting = PythonRunLauncher.setting(where, s.settings());
         PythonRunPlan.Host machine = PythonRunLauncher.hostFor(where);
         if (machine.local()) {
-            return PythonInterpreters.resolveLocal(file, s.projectRoot(), "", s.choice(), setting);
+            PythonInterpreter found = PythonInterpreters.resolveLocal(file, s.projectRoot(), "", s.choice(), setting);
+            if (heldBack(found, s)) {
+                return new Resolution(
+                        PythonInterpreters.resolveLocal(file, s.projectRoot(), "", s.choice(), setting, false),
+                        found.venv());
+            }
+            return new Resolution(found, null);
         }
         PythonRunPlan.Request request =
                 PythonRunPlan.Request.file(file, s.projectRoot(), "", List.of(), "", s.choice(), setting);
+        PythonInterpreter found;
         try {
-            return PythonRunPlan.plan(request, machine).interpreter();
+            found = PythonRunPlan.plan(request, machine).interpreter();
         } catch (RuntimeException e) {
-            return PythonRunPlan.plan(request, machine.withoutLookups()).interpreter();
+            return new Resolution(
+                    PythonRunPlan.plan(request, machine.withoutLookups()).interpreter(), null);
         }
+        if (heldBack(found, s)) { // the host's own python3, as when the lookup cannot be made
+            return new Resolution(
+                    PythonRunPlan.plan(request, machine.withoutLookups()).interpreter(), found.venv());
+        }
+        return new Resolution(found, null);
+    }
+
+    /** Whether {@code interp} is an environment found in a folder that is not trusted (see the class comment). */
+    static boolean heldBack(PythonInterpreter interp, Snapshot s) {
+        return untrustedEnvironment(interp, s.trust()::isTrusted);
+    }
+
+    /**
+     * Whether {@code interp} is an environment the folders shipped ({@link PythonInterpreters.Source#PROJECT_VENV})
+     * whose folder {@code trusted} does not cover. Pure.
+     */
+    static boolean untrustedEnvironment(PythonInterpreter interp, java.util.function.Predicate<Path> trusted) {
+        Path venv = interp.venv();
+        return interp.source() == PythonInterpreters.Source.PROJECT_VENV && (venv == null || !trusted.test(venv));
+    }
+
+    /**
+     * Whether {@code executable} may be run for its version: not when it lies in one of {@code environments} (found in
+     * the folders) that is not trusted. Pure.
+     */
+    static boolean mayProbe(String executable, List<Path> environments, java.util.function.Predicate<Path> trusted) {
+        Path exe;
+        try {
+            exe = Path.of(executable).toAbsolutePath().normalize();
+        } catch (RuntimeException e) {
+            return false;
+        }
+        for (Path env : environments) {
+            Path dir = env.toAbsolutePath().normalize();
+            if (exe.startsWith(dir) && !trusted.test(dir)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** Whether {@code file} (or the project, for null) runs its tools on another machine. */
@@ -138,7 +222,7 @@ final class PythonInterpreterCoordinator {
         // another host it is left to the server there: asking that host's PATH is a round trip per start and
         // refresh, which a dropped connection held up until the server's start timed out.
         return PythonInterpreterView.pythonPathForServer(
-                resolve(serverFile(root)),
+                resolve(serverFile(root)), // never an untrusted folder's own environment: Pyright runs it
                 elsewhere(root)
                         ? name -> java.util.Optional.empty()
                         : com.editora.run.PythonInterpreters::onAugmentedPath);
@@ -166,14 +250,21 @@ final class PythonInterpreterCoordinator {
         boolean remote = elsewhere(path);
         Thread.ofVirtual().name("python-interpreter-status").start(() -> {
             // What the buffer's server was told when one serves it, else what Run would use for the file.
-            PythonInterpreter interp = resolve(serverRoot != null ? serverFile(serverRoot) : path);
+            Resolution r = resolution(serverRoot != null ? serverFile(serverRoot) : path);
+            PythonInterpreter interp = r.interpreter();
             // A remote interpreter is not run here for its version: the item names it and says why.
             String version = remote ? "" : versionOf(interp.executablePath());
+            Path withheld = r.withheldVenv();
             Platform.runLater(() -> {
                 if (gen == statusGen) {
+                    String tooltip = PythonInterpreterView.tooltip(interp);
+                    if (withheld != null) {
+                        tooltip +=
+                                "\n" + tr("python.interpreter.untrustedVenv", String.valueOf(withheld.getFileName()));
+                    }
                     host.setStatusItem(
                             PythonInterpreterView.statusText(interp, PythonInterpreterView.parseVersion(version)),
-                            PythonInterpreterView.tooltip(interp));
+                            tooltip);
                 }
             });
         });
@@ -215,7 +306,10 @@ final class PythonInterpreterCoordinator {
                     windows,
                     machine.toTarget(),
                     machine.onPath(),
-                    machine.local() ? this::versionOf : exe -> "",
+                    // An untrusted folder's own environment is listed, but not run for its version.
+                    machine.local()
+                            ? exe -> mayProbe(exe, found, snapshot.trust()::isTrusted) ? versionOf(exe) : ""
+                            : exe -> "",
                     machine.local() ? PythonInterpreterCoordinator::realPath : exe -> exe);
             Platform.runLater(() -> showPicker(choices, root));
         });

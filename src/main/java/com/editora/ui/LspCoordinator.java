@@ -493,6 +493,11 @@ final class LspCoordinator {
             }
 
             @Override
+            public @Nullable Path withheldVenvOf(@Nullable Path file) {
+                return pythonInterpreters.resolution(file).withheldVenv();
+            }
+
+            @Override
             public void setStatus(String message) {
                 host.setStatus(message);
             }
@@ -2636,6 +2641,7 @@ final class LspCoordinator {
         html.settingsChanged(); // the HTML markup check switched on or off (D5)
         eslint.settingsChanged(); // ESLint switched, or a folder trusted: checked again
         xmlTrust.trustChanged(); // a pom moves to or off lemminx-maven with its folder's trust (E1)
+        pythonInterpreters.trustChanged(); // a folder's own .venv is used, or held back, with its trust
         appliedProjectRoot = ops.lspProjectRoot();
         workspaceEdits.offerInterruptedEdits();
         if (ops.lspFeatureEnabled() && !projectOverrideSignature().equals(appliedProjectOverrides)) {
