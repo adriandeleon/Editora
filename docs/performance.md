@@ -1163,3 +1163,25 @@ Two more things to know before measuring memory yourself: **settled RSS has a ±
 floor** (two runs of an identical config landed at 552 MB and 688 MB — the variance is how much of
 the heap region stays resident after an uncommit), so judge changes on **peak RSS and NMT category
 totals**, which are stable, and never on a single settled reading.
+
+### Memory on a big project, measured
+
+Measured 2026-11-28 on the Editora repository itself (about 1.3 million lines), opened as a project in a jar
+run with exactly the packaged options above, under Xvfb (so JavaFX drew with Mesa's software renderer), after
+Go to File had indexed it. The Hacker News dry run's "1.17 GB for the editor" came from the same kind of setup.
+
+- **The live heap is about 100 MB.** `GC.class_histogram`'s total was 101–105 MB after indexing; the heap
+  had committed 250 MB. The biggest live types are int and byte arrays, strings and the index's `Symbol`s.
+- **The JVM accounts for about 464 MB** (NMT `committed`): heap 251 MB, GC structures 77 MB (scaled by the
+  core count; see the pom), metaspace 57 MB, code 27 MB, class space and symbols the rest.
+- **RSS was 730–805 MB** (three runs). The 270–340 MB the JVM does not account for is native: Mesa's
+  software rendering (`libLLVM`, `libgallium` and their buffers, which a GPU does not need) and glibc's
+  malloc arenas.
+- **glibc's arenas:** each thread that meets contention gets an arena, up to eight per core, and the
+  process had 129 threads. With `MALLOC_ARENA_MAX=2` in the environment, RSS after indexing was 600–678 MB
+  against 730–805 MB (three interleaved pairs, medians 656 against 761 MB; idle 497 against 562 MB), the
+  ranges not overlapping. Calling `mallopt(M_ARENA_MAX, 2)` from `main` (through FFM) does **nothing**:
+  glibc fixes the limit the first time it makes an extra arena, which the JVM's own threads do before
+  `main` runs (three pairs, 757–800 against 767–824 MB). So the cap only works as an environment variable
+  set before the process starts, which a jpackage launcher cannot do; only a `.desktop` `Exec=env …` or a
+  wrapper script can.
