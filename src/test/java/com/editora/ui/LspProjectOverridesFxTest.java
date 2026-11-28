@@ -236,6 +236,31 @@ class LspProjectOverridesFxTest {
     }
 
     /**
+     * Regression (HN dry run, 2026-11-27): trusting the project here lets its own {@code .venv} be used too, as
+     * Workspace: Trust This Folder does; it was held back until the next settings reload.
+     */
+    @Test
+    void trustingTheProjectAlsoUsesItsOwnPythonEnvironment() throws Exception {
+        overrideJavaAndEnableRust();
+        Path venv = Files.createDirectories(project.resolve(".venv"));
+        Files.writeString(venv.resolve("pyvenv.cfg"), "home = /usr/bin\n");
+        Files.writeString(Files.createDirectories(venv.resolve("bin")).resolve("python"), "");
+        Files.writeString(Files.createDirectories(venv.resolve("Scripts")).resolve("python.exe"), "");
+        Path app = Files.writeString(project.resolve("app.py"), "print(1)\n");
+        PythonInterpreterCoordinator python = coordinator.pythonInterpreters;
+        FxTestSupport.runOnFx(python::captureSnapshot);
+        assertEquals(venv, python.resolution(app).withheldVenv(), "held back while the folder is not trusted");
+
+        FxTestSupport.runOnFx(() -> {
+            coordinator.trustConfirmer = (folder, requests) -> true;
+            coordinator.trustProjectSettings();
+        });
+
+        assertEquals(null, python.resolution(app).withheldVenv(), "trusted: nothing held back");
+        assertEquals(venv, python.resolve(app).venv());
+    }
+
+    /**
      * astro-ls loads and runs the TypeScript SDK it is pointed at, so a folder's own SDK is something trust
      * hands over even when the folder has no {@code .editora/settings.json}: the prompt must list it.
      */

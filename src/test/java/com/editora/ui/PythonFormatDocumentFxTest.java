@@ -55,8 +55,10 @@ class PythonFormatDocumentFxTest {
 
         try (FxWindowFixture fx = FxWindowFixture.create(Files.createDirectories(work.resolve("cfg")), shared -> {})) {
             MainController c = fx.controller;
-            // The formatter lives in the folder's own .venv, which runs only in a trusted folder (HN dry run).
-            FxTestSupport.runOnFx(() -> c.config.getTrustStore().trust(project));
+            // The formatter lives in the folder's own .venv, which runs only in a trusted folder (HN dry run). Its
+            // real path: on the FX thread a path's symlinks are not resolved, and macOS's temp folder is one.
+            Path trusted = project.toRealPath();
+            FxTestSupport.runOnFx(() -> c.config.getTrustStore().trust(trusted));
             FxTestSupport.runOnFx(() -> c.openAndNavigate(app, 1));
             FxTestSupport.drainFx();
             com.editora.command.CommandRegistry registry = FxTestSupport.field(c, "registry");
@@ -108,8 +110,10 @@ class PythonFormatDocumentFxTest {
         Path app = Files.writeString(project.resolve("migration_0001.py"), "x = 1\nprint(x)\n");
         try (FxWindowFixture fx = FxWindowFixture.create(Files.createDirectories(work.resolve("cfg")), shared -> {})) {
             MainController c = fx.controller;
-            // The formatter lives in the folder's own .venv, which runs only in a trusted folder (HN dry run).
-            FxTestSupport.runOnFx(() -> c.config.getTrustStore().trust(project));
+            // The formatter lives in the folder's own .venv, which runs only in a trusted folder (HN dry run). Its
+            // real path: on the FX thread a path's symlinks are not resolved, and macOS's temp folder is one.
+            Path trusted = project.toRealPath();
+            FxTestSupport.runOnFx(() -> c.config.getTrustStore().trust(trusted));
             FxTestSupport.runOnFx(() -> c.openAndNavigate(app, 1));
             FxTestSupport.drainFx();
             com.editora.command.CommandRegistry registry = FxTestSupport.field(c, "registry");
@@ -135,8 +139,10 @@ class PythonFormatDocumentFxTest {
         Path app = Files.writeString(project.resolve("app.py"), "x=1\nprint(x)\n");
         try (FxWindowFixture fx = FxWindowFixture.create(Files.createDirectories(work.resolve("cfg")), shared -> {})) {
             MainController c = fx.controller;
-            // The formatter lives in the folder's own .venv, which runs only in a trusted folder (HN dry run).
-            FxTestSupport.runOnFx(() -> c.config.getTrustStore().trust(project));
+            // The formatter lives in the folder's own .venv, which runs only in a trusted folder (HN dry run). Its
+            // real path: on the FX thread a path's symlinks are not resolved, and macOS's temp folder is one.
+            Path trusted = project.toRealPath();
+            FxTestSupport.runOnFx(() -> c.config.getTrustStore().trust(trusted));
             FxTestSupport.runOnFx(() -> c.openAndNavigate(app, 1));
             FxTestSupport.drainFx();
             com.editora.command.CommandRegistry registry = FxTestSupport.field(c, "registry");
@@ -163,8 +169,10 @@ class PythonFormatDocumentFxTest {
         try (FxWindowFixture fx = FxWindowFixture.create(
                 Files.createDirectories(work.resolve("cfg")), shared -> settings[0] = shared.getSettings())) {
             MainController c = fx.controller;
-            // The formatter lives in the folder's own .venv, which runs only in a trusted folder (HN dry run).
-            FxTestSupport.runOnFx(() -> c.config.getTrustStore().trust(project));
+            // The formatter lives in the folder's own .venv, which runs only in a trusted folder (HN dry run). Its
+            // real path: on the FX thread a path's symlinks are not resolved, and macOS's temp folder is one.
+            Path trusted = project.toRealPath();
+            FxTestSupport.runOnFx(() -> c.config.getTrustStore().trust(trusted));
             FxTestSupport.runOnFx(() -> c.openAndNavigate(app, 1));
             FxTestSupport.drainFx();
             com.editora.command.CommandRegistry registry = FxTestSupport.field(c, "registry");
