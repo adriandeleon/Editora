@@ -88,8 +88,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Background, preview and asynchronous opens of files; see {@link WindowFileOpens}. */
     final WindowFileOpens fileOpens = new WindowFileOpens(this);
 
-    /** What a buffer is wired to as its tab is added or restored; see {@link BufferWiring}. */
-    final BufferWiring bufferWiring = new BufferWiring(this);
+    /** What a buffer is wired to as its tab is added or restored; see {@link WindowBufferWiring}. */
+    final WindowBufferWiring bufferWiring = new WindowBufferWiring(this);
 
     /** The build-tool coordinators and the Git/GitHub command transcripts; see {@link WindowBuildTools}. */
     final WindowBuildTools buildTools = new WindowBuildTools(this);
@@ -2598,10 +2598,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         return fileOpens.editorConfigCharsetFor(file);
     }
 
-    // --- Kept for callers and tests that reach these by name; the code is in BufferWiring ---
+    // --- Kept for callers and tests that reach these by name; the code is in WindowBufferWiring ---
 
     static String httpRunTooltip(com.editora.command.KeymapManager keymap) {
-        return BufferWiring.httpRunTooltip(keymap);
+        return WindowBufferWiring.httpRunTooltip(keymap);
     }
 
     Tab attachRestoredBuffer(Tab tab, EditorBuffer buffer, boolean shown) {

@@ -29,7 +29,7 @@ package-private `final class` holding the controller, built in a field declared 
 (the field initializers below take method references to them): `WindowTabActions` (closing, reopening,
 pinning, renaming and stepping through tabs; editor groups), `WindowProjectActions` (projects, the window
 title, files the Project tree renames or deletes), `WindowPanels` (the panels built on first use),
-`BufferWiring` (what a buffer and its tab are wired to), `WindowFileOpens` (background, preview and
+`WindowBufferWiring` (what a buffer and its tab are wired to), `WindowFileOpens` (background, preview and
 asynchronous opens), `WindowFileState` (folds and the read-only pin per file), `WindowViewModes` (Zen,
 Expert, zoom, the editor theme), `WindowGates` (palette gates and tool-window availability),
 `WindowLifecycle` (focus regain, close, quit, disposal), `WindowEditCommands` (find bar, multiple carets,

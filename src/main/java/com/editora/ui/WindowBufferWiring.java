@@ -18,11 +18,11 @@ import static com.editora.i18n.Messages.tr;
  * late. The buffers and tabs stay with {@link MainController}, which adds them. It lived inside {@code
  * MainController}; it is a file of its own only because of that file's size (see {@link WindowCommandHost}).
  */
-final class BufferWiring {
+final class WindowBufferWiring {
 
     private final MainController mc;
 
-    BufferWiring(MainController mc) {
+    WindowBufferWiring(MainController mc) {
         this.mc = mc;
     }
 
