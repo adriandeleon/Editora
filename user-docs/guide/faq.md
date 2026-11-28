@@ -203,9 +203,31 @@ the startup time on its own. If startup or editing ever feels slow, see
 
 ## Why JavaFX?
 
-It gives one native-feeling, cross-platform codebase with a fast text surface
-(RichTextFX), and lets Editora ship a single app per platform without a browser
-engine.
+Editora is one codebase for macOS, Windows and Linux, shipped as an app per
+platform with its own Java runtime, and with no browser engine inside. JavaFX
+is what makes that one codebase:
+
+- **It draws with the GPU and styles with CSS** on all three platforms, which
+  is how the themes, the custom title bar and the editor's own surfaces work.
+- **The JVM has most of an editor's parts already:** LSP4J talks to the
+  language servers, Apache MINA SSHD does remote development, JediTerm and
+  pty4j make the terminal, and Jackson reads every configuration file. Most
+  language servers worth having (jdtls, the Kotlin and Groovy servers, Metals,
+  lemminx) are JVM programs too.
+- **Java's tooling keeps a large codebase in check:** null checking is a build
+  error (NullAway), and architecture rules are tests that fail the build.
+
+What it costs, plainly:
+
+- **Memory.** Around 600 MB with the Welcome page open, and more on a big
+  project. A language server such as jdtls is a second JVM with its own heap.
+  An editor in native code uses less.
+- **Startup.** A JVM starts slower than native code. The packaged builds use a
+  trimmed runtime (jlink) and an AOT class cache to get the window up in about a
+  second; see [Is it slow to start?](#is-it-slow-to-start-its-a-java-app).
+- **The text surface needed work.** Editora edits with RichTextFX, and ships its
+  own forks of it (for inline hints) and of Flowless, the virtual list under it
+  (for layout speed on long files).
 
 Didn't find your answer?
 [Open an issue](https://github.com/adriandeleon/Editora/issues).
