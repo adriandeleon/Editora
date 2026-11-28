@@ -14,7 +14,10 @@ It runs on macOS, Windows, and Linux, ships its own Java runtime in the native
 installers, and keeps everything local: no accounts, no telemetry, no analytics
 calls.
 
-Editora is built with the help of AI coding tools.
+Editora is written with Claude Code, under guardrails the build enforces (null
+checking as a build error, architecture rules as tests, a regression test for
+every fix): the [README](https://github.com/adriandeleon/Editora#how-its-built)
+says how, with the numbers.
 
 ## Start here
 
