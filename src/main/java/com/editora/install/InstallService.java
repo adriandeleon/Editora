@@ -1067,6 +1067,7 @@ public final class InstallService {
             throw new InstallException(s.id() + ": no download asset matched '" + asset + "'");
         }
         byte[] data = download(url);
+        verifyPublished(s.id(), json, url, data);
         Path dest = configDir.resolve(s.destSubpath());
         Path binaryInInstall = replaceInstall(dest, staged -> {
             extractArchive(s, url, data, staged);
@@ -1334,7 +1335,9 @@ public final class InstallService {
     }
 
     private void installVsix(Step s, Path configDir) throws Exception {
-        byte[] vsix = download(resolveDownloadUrl(s));
+        Resolved where = resolveDownload(s);
+        byte[] vsix = download(where.url());
+        verifyPublished(s.id(), where.json(), where.url(), vsix);
         Path tmp = Files.createTempDirectory("editora-vsix");
         try {
             Unzip.extract(new ByteArrayInputStream(vsix), tmp);
@@ -1368,12 +1371,27 @@ public final class InstallService {
         this.jsDebugSha256 = sha256;
     }
 
+    /** The SHA-256 the jdtls tarball must have ({@link InstallCatalog#JDTLS_SHA256}); a test supplies its own. */
+    private @Nullable String jdtlsSha256 = InstallCatalog.JDTLS_SHA256;
+
+    /** Test seam: the checksum a test's own jdtls tarball has. */
+    void setJdtlsSha256ForTest(@Nullable String sha256) {
+        this.jdtlsSha256 = sha256;
+    }
+
     private void installTarball(Step s, Path configDir) throws Exception {
-        byte[] tgz = download(resolveDownloadUrl(s));
-        String refused = InstallCatalog.checksumProblem(s.id(), tgz, jsDebugSha256);
+        Resolved where = resolveDownload(s);
+        byte[] tgz = download(where.url());
+        String pinned = switch (s.id()) {
+            case "js-debug" -> jsDebugSha256;
+            case "jdtls" -> jdtlsSha256;
+            default -> null;
+        };
+        String refused = InstallCatalog.checksumProblem(s.id(), tgz, pinned);
         if (refused != null) {
             throw new InstallException(refused);
         }
+        verifyPublished(s.id(), where.json(), where.url(), tgz);
         Path tmpFile = Files.createTempFile("editora-dl", ".tar.gz");
         Path dest = configDir.resolve(s.destSubpath());
         try {
@@ -1396,17 +1414,49 @@ public final class InstallService {
         }
     }
 
+    /** A step's download URL, and the release metadata it was found in (null for a direct URL). */
+    private record Resolved(String url, @Nullable String json) {}
+
     /** Resolves a step's download URL: direct ({@code directUrl}), else the asset matched in the API JSON. */
-    private String resolveDownloadUrl(Step s) throws Exception {
+    private Resolved resolveDownload(Step s) throws Exception {
         if (s.directUrl() != null) {
-            return s.directUrl();
+            return new Resolved(s.directUrl(), null);
         }
         String json = new String(download(s.apiUrl()), StandardCharsets.UTF_8);
         String url = InstallCatalog.firstMatch(json, s.assetPattern());
         if (url == null) {
             throw new InstallException(s.id() + ": no download asset found at " + s.apiUrl());
         }
-        return url;
+        return new Resolved(url, json);
+    }
+
+    /**
+     * Refuses {@code data}, downloaded from {@code url}, unless it has the SHA-256 its publisher lists for it in the
+     * release metadata {@code json} ({@link InstallCatalog#publishedSha256}): GitHub, Open VSX and HashiCorp all do.
+     * A release that lists none is installed as before, and the log says so.
+     */
+    private void verifyPublished(String stepId, @Nullable String json, String url, byte[] data) throws Exception {
+        InstallCatalog.PublishedSha256 published = InstallCatalog.publishedSha256(json, url);
+        String expected = published.sha256();
+        String name = url.substring(url.lastIndexOf('/') + 1);
+        if (expected == null && published.sumsUrl() != null) {
+            String sums = new String(download(published.sumsUrl()), StandardCharsets.UTF_8);
+            expected = InstallCatalog.sha256FromSums(sums, name);
+            if (expected == null) {
+                throw new InstallException(
+                        stepId + ": " + name + " is not in the checksums its publisher lists — not installed");
+            }
+        }
+        if (expected == null) {
+            LOG.info(() -> stepId + ": the release lists no checksum for " + name + "; installed unverified");
+            return;
+        }
+        String actual = InstallCatalog.sha256Hex(data);
+        if (!actual.equalsIgnoreCase(expected)) {
+            throw new InstallException(
+                    stepId + ": " + name + " does not match the SHA-256 its publisher lists (expected " + expected
+                            + ", got " + actual + ") — not installed");
+        }
     }
 
     /**

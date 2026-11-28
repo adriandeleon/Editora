@@ -322,4 +322,44 @@ class IndexCoordinatorFxTest {
             thread.shutdownNow();
         }
     }
+
+    /**
+     * Regression (HN dry run, 2026-11-27): in a project with no {@code .gitignore}, Go to File offered
+     * {@code target/classes/demo/HelloApp.class} above {@code src/main/java/demo/HelloApp.java}. Build output comes
+     * after the sources.
+     */
+    @Test
+    void buildOutputIsListedAfterTheSources() throws Exception {
+        Path root = project.resolve("nogitignore");
+        Files.createDirectories(root.resolve("src/main/java/demo"));
+        Files.createDirectories(root.resolve("target/classes/demo"));
+        Files.writeString(root.resolve("src/main/java/demo/HelloApp.java"), "class HelloApp {}\n");
+        Files.write(root.resolve("target/classes/demo/HelloApp.class"), new byte[] {(byte) 0xCA, (byte) 0xFE});
+        Harness h = harness(root);
+        java.util.concurrent.ExecutorService thread = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            ProjectFileIndex index = new ProjectFileIndex(
+                    thread,
+                    javafx.application.Platform::runLater,
+                    () -> new com.editora.search.ProjectFileList.Settings(false, false),
+                    () -> false,
+                    relisted -> {});
+            java.util.concurrent.CountDownLatch ready = new java.util.concurrent.CountDownLatch(1);
+            FxTestSupport.runOnFx(() -> {
+                h.coordinator().setFileIndex(index);
+                h.coordinator().ensureSearchable(ready::countDown);
+            });
+            assertTrue(ready.await(10, java.util.concurrent.TimeUnit.SECONDS), "ensureSearchable ran its callback");
+            List<com.editora.search.SearchEverywhere.Item> rows =
+                    FxTestSupport.callOnFx(() -> h.coordinator().fileItems("HelloApp"));
+            assertEquals(
+                    List.of("HelloApp.java", "HelloApp.class"),
+                    rows.stream()
+                            .map(com.editora.search.SearchEverywhere.Item::label)
+                            .toList(),
+                    "the source first");
+        } finally {
+            thread.shutdownNow();
+        }
+    }
 }

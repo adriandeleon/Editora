@@ -156,6 +156,37 @@ class InstallServiceDownloadTest {
         assertEquals(List.of(spec.apiUrl(), asset), web.requests(), "only this platform's archive is downloaded");
     }
 
+    /**
+     * Regression (HN dry run, 2026-11-27): a "latest" archive was installed unchecked. HashiCorp lists every build's
+     * SHA-256 in a SHA256SUMS file: the archive installs when it matches, and is refused (nothing installed) when not.
+     */
+    @Test
+    void aBinaryArchiveIsCheckedAgainstTheChecksumsItsPublisherLists() throws IOException {
+        var spec = InstallCatalog.archiveSpec("terraform").orElseThrow();
+        String mine = spec.assetByPlatform().get(InstallCatalog.currentPlatform());
+        String base = "https://releases.hashicorp.com/terraform-ls/0.39.1/terraform-ls_0.39.1_";
+        String asset = base + mine + ".zip";
+        String sums = base + "SHA256SUMS";
+        byte[] zip = TestArchives.zip("terraform-ls", "the server binary");
+        web.serve(spec.apiUrl(), "{\"url_shasums\":\"" + sums + "\",\"builds\":[{\"url\":\"" + asset + "\"}]}");
+        web.serve(asset, zip);
+        web.serve(sums, InstallCatalog.sha256Hex(zip) + "  terraform-ls_0.39.1_" + mine + ".zip\n");
+
+        InstallService.Result ok =
+                install(InstallCatalog.serverInstall("terraform").orElseThrow());
+        assertTrue(ok.ok(), ok.message());
+        assertEquals(List.of(spec.apiUrl(), asset, sums), web.requests(), "the checksums are read once");
+
+        java.nio.file.Path binary = config.resolve("plugins/lsp/terraform/terraform-ls");
+        Files.delete(binary);
+        web.serve(sums, "0".repeat(64) + "  terraform-ls_0.39.1_" + mine + ".zip\n");
+        InstallService.Result refused =
+                install(InstallCatalog.serverInstall("terraform").orElseThrow());
+        assertFalse(refused.ok());
+        assertTrue(refused.message().contains("does not match the SHA-256 its publisher lists"), refused.message());
+        assertFalse(Files.exists(binary), "a mismatched archive is not installed");
+    }
+
     /** GitHub answers a release-asset URL with a redirect to its storage host; the download follows it. */
     @Test
     void aRedirectedDownloadIsFollowed() throws IOException {

@@ -34,6 +34,11 @@ repository that you name and own, and nowhere else.
 
 Plugins you install run with full access and can do their own thing (see below).
 
+The tools Editora starts for you (runs, builds, the terminal, language servers)
+are your own programs. The .NET SDK and PowerShell are told to opt out of their
+telemetry (`DOTNET_CLI_TELEMETRY_OPTOUT=1`, `POWERSHELL_TELEMETRY_OPTOUT=1`)
+unless you set those variables yourself; any other tool keeps its own settings.
+
 ## Which platforms are supported?
 
 macOS (Intel & Apple Silicon), Windows (x64), and Linux (x64 & arm64).

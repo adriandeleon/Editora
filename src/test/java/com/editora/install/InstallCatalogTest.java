@@ -740,9 +740,55 @@ class InstallCatalogTest {
         String good = InstallCatalog.sha256Hex(data);
         org.junit.jupiter.api.Assertions.assertNull(InstallCatalog.checksumProblem("js-debug", data, good));
         org.junit.jupiter.api.Assertions.assertNull(InstallCatalog.checksumProblem("js-debug", data, null));
-        org.junit.jupiter.api.Assertions.assertNull(InstallCatalog.checksumProblem("other", data, "00"));
         String bad = InstallCatalog.checksumProblem("js-debug", data, "00");
         org.junit.jupiter.api.Assertions.assertTrue(bad != null && bad.contains(good), String.valueOf(bad));
+        // Any step with a pinned checksum is held to it: jdtls's was downloaded unchecked (HN dry run, 2026-11-27).
+        org.junit.jupiter.api.Assertions.assertNotNull(InstallCatalog.checksumProblem("jdtls", data, "00"));
+        assertEquals(64, InstallCatalog.JDTLS_SHA256.length(), "the jdtls tarball has a pinned SHA-256");
+    }
+
+    /**
+     * Regression (HN dry run, 2026-11-27): the "latest" release archives (clangd, lua-ls, terraform-ls, tinymist,
+     * Typst) and java-debug's VSIX were installed unchecked. Each publisher lists the SHA-256: GitHub on the asset,
+     * Open VSX in a file beside the download, HashiCorp in a SHA256SUMS file.
+     */
+    @Test
+    void thePublishedChecksumOfAReleaseAssetIsFoundWhereItsPublisherListsIt() {
+        String hex = "63ed86924ee2300448555319c32cd0dbb75f223dc91441351f58f688f32ecfd4";
+        String gh = "https://github.com/clangd/clangd/releases/download/23.1.0/clangd-linux-23.1.0.zip";
+        String github = "{\"assets\":[{\"browser_download_url\":\"https://x/other.zip\",\"digest\":\"sha256:"
+                + "0".repeat(64) + "\"},{\"browser_download_url\":\"" + gh + "\",\"digest\":\"sha256:"
+                + hex.toUpperCase()
+                + "\"}]}";
+        assertEquals(hex, InstallCatalog.publishedSha256(github, gh).sha256());
+
+        String vsix =
+                "https://open-vsx.org/api/vscjava/vscode-java-debug/0.60.0/file/vscjava.vscode-java-debug-0.60.0.vsix";
+        String sums =
+                "https://open-vsx.org/api/vscjava/vscode-java-debug/0.60.0/file/vscjava.vscode-java-debug-0.60.0.sha256";
+        String openVsx = "{\"files\":{\"download\":\"" + vsix + "\",\"sha256\":\"" + sums + "\"}}";
+        assertEquals(sums, InstallCatalog.publishedSha256(openVsx, vsix).sumsUrl());
+
+        String zip = "https://releases.hashicorp.com/terraform-ls/0.39.1/terraform-ls_0.39.1_linux_amd64.zip";
+        String shasums = "https://releases.hashicorp.com/terraform-ls/0.39.1/terraform-ls_0.39.1_SHA256SUMS";
+        String hashicorp = "{\"url_shasums\":\"" + shasums + "\",\"builds\":[{\"url\":\"" + zip + "\"}]}";
+        assertEquals(shasums, InstallCatalog.publishedSha256(hashicorp, zip).sumsUrl());
+
+        InstallCatalog.PublishedSha256 nothing =
+                InstallCatalog.publishedSha256("{\"browser_download_url\":\"" + gh + "\"}", gh);
+        assertNull(nothing.sha256());
+        assertNull(nothing.sumsUrl());
+        assertNull(InstallCatalog.publishedSha256("not json", gh).sha256());
+
+        assertEquals(
+                hex,
+                InstallCatalog.sha256FromSums(
+                        hex + "  terraform-ls_0.39.1_linux_amd64.zip\n" + "1".repeat(64)
+                                + "  terraform-ls_0.39.1_darwin_arm64.zip\n",
+                        "terraform-ls_0.39.1_linux_amd64.zip"));
+        assertEquals(hex, InstallCatalog.sha256FromSums(hex + "\n", "anything.vsix"), "a .sha256 of one digest");
+        assertEquals(hex, InstallCatalog.sha256FromSums(hex + " *a.zip", "a.zip"));
+        assertNull(InstallCatalog.sha256FromSums(hex + "  b.zip\n" + hex + "  c.zip", "a.zip"));
     }
 
     @Test

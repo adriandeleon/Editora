@@ -111,6 +111,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   built in on that machine, and a launch.json `cppdbg` configuration's `sourceFileMap` is honoured, on GDB and on
   CodeLLDB: breakpoints set in your copy of the sources bind, and stops open the files here.
 
+### Security
+
+- **Downloaded language servers and debuggers are checked before they install.** clangd, terraform-ls, the Lua
+  server, tinymist and the java-debug plugin are checked against the SHA-256 their publisher lists (GitHub's
+  release digest, HashiCorp's `SHA256SUMS`, Open VSX), and Eclipse JDT LS against a pinned one; a download that
+  does not match is not installed.
+
 ### Changed
 
 - **Trust Folder on a file's notice trusts at once.** The notice's button is the decision; **What does trusting
@@ -136,6 +143,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   name to pick a subfolder.
 
 ### Fixed
+
+- **Go to File while the project is indexing.** Ctrl+P says **Indexing the project…** instead of **Nothing found**
+  during the first walk, and an Enter pressed then opens the top file when it lands.
+- **Find in Files focuses on Ctrl+Shift+F.** With the window already open, the shortcut puts the cursor in its query
+  field instead of closing it; pressed from inside the window, it still closes it.
+- **Sources before build output in Go to File.** `.class` files and files under `target/`, `build/` and the other
+  output folders are listed after the matching sources, even in a project with no `.gitignore`.
+- **Launched tools opt out of telemetry.** Runs, builds, the terminal, language servers and debuggers start with
+  `DOTNET_CLI_TELEMETRY_OPTOUT=1` and `POWERSHELL_TELEMETRY_OPTOUT=1` unless you set them yourself.
 
 - **No "restricted method" warnings on every JavaFX run.** With JavaFX 24 or later, Run and Debug grant
   `--enable-native-access` to the JavaFX modules that load native code, so JDK 24+ no longer prints four red WARNING

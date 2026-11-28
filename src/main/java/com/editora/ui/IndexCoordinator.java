@@ -1148,10 +1148,11 @@ final class IndexCoordinator {
                 return !enabled || query == null || query.isBlank() || root == null
                         ? List.of()
                         : IndexCoordinator.fileItems(
-                                listed.searchListed(root, query, ProjectIndex.Kinds.FILES, 40), query);
+                                listed.searchListed(root, query, ProjectIndex.Kinds.FILES, FILE_ROWS * 2), query);
             }
             List<com.editora.search.SearchEverywhere.Item> out = new ArrayList<>();
-            for (FileHit hit : searchFiles(query, 40)) {
+            for (FileHit hit : com.editora.search.ProjectWalk.sourcesFirst(
+                    searchFiles(query, FILE_ROWS * 2), FileHit::relativePath, FILE_ROWS)) {
                 String name = hit.file().getFileName().toString();
                 String parent = hit.relativePath().contains("/")
                         ? hit.relativePath().substring(0, hit.relativePath().lastIndexOf('/'))
@@ -1252,13 +1253,16 @@ final class IndexCoordinator {
      * symbols on the best fuzzy score of its paths, as it did, and each row after the first scores one less.
      */
     static List<com.editora.search.SearchEverywhere.Item> fileItems(ProjectMapSearchResult found, String query) {
+        // Build output after the sources (asked for twice the rows so it cannot crowd them out of the cut).
+        List<ProjectMapSearchResult.Match> matches = com.editora.search.ProjectWalk.sourcesFirst(
+                found.matches(), ProjectMapSearchResult.Match::relativePath, FILE_ROWS);
         int best = com.editora.search.FuzzyMatch.NO_SCORE;
-        for (ProjectMapSearchResult.Match match : found.matches()) {
+        for (ProjectMapSearchResult.Match match : matches) {
             best = Math.max(best, com.editora.search.FuzzyMatch.scoreOfPath(match.relativePath(), query));
         }
         int top = best == com.editora.search.FuzzyMatch.NO_SCORE ? 0 : best;
         List<com.editora.search.SearchEverywhere.Item> out = new ArrayList<>();
-        for (ProjectMapSearchResult.Match match : found.matches()) {
+        for (ProjectMapSearchResult.Match match : matches) {
             String rel = match.relativePath();
             int slash = rel.lastIndexOf('/');
             out.add(new com.editora.search.SearchEverywhere.Item(
@@ -1296,6 +1300,9 @@ final class IndexCoordinator {
     Path indexedRoot() {
         return indexedRoot;
     }
+
+    /** How many files Search Everywhere lists for a query. */
+    static final int FILE_ROWS = 40;
 
     /** Display order for file hits: best score first, then path, which together are already total. */
     private static final java.util.Comparator<FileHit> FILE_RANK =

@@ -524,12 +524,20 @@ final class SearchCoordinator {
         return com.editora.config.PathDisplay.collapseHome(full);
     }
 
-    /** Toggles the Find-in-Files tool window: opens it (focusing its query field) when closed, closes it
-     *  when already open — so the toolbar icon (and {@code C-S-f}) acts as an open/close toggle. */
+    /**
+     * {@code search.inFiles} (the toolbar icon, {@code C-S-f}): puts the cursor in Find in Files' query field, opening
+     * the tool window when it is closed; pressed again from inside the window, closes it. It used to close an open
+     * window from anywhere, and opening it left the cursor in the editor, so a query typed after Ctrl+Shift+F went into
+     * the file (HN dry run, 2026-11-27). Toolbar buttons take no focus, so a click on the icon right after a search
+     * still closes the window.
+     */
     void openToggle() {
-        if (ops.isToolWindowOpen()) {
+        boolean open = ops.isToolWindowOpen();
+        if (open && panelHasFocus()) {
             ops.closeToolWindow();
-        } else {
+            return;
+        }
+        if (!open) {
             refreshScope(); // show the folder we'll search before the first query
             String selection = selectedLineForSearch();
             if (selection != null) {
@@ -537,6 +545,15 @@ final class SearchCoordinator {
             }
             ops.openToolWindow();
         }
+        SearchPanel p = panel();
+        p.focusFirstItem();
+        javafx.application.Platform.runLater(p::focusFirstItem); // again once a window just opened is laid out
+    }
+
+    /** Whether the keyboard focus is in the Find in Files window. */
+    private boolean panelHasFocus() {
+        SearchPanel p = panel;
+        return p != null && p.isFocusWithin();
     }
 
     /**
