@@ -33,10 +33,11 @@ import org.jspecify.annotations.Nullable;
  * <p><b>User commands</b> (commit, checkout, push, pull, …) are <em>not</em> hardened: the user asked for
  * them in this repository, and their own hooks must run. That split is explicit in {@code GitService}.
  *
- * <p><b>Not covered:</b> {@code filter.<name>.clean}/{@code process} drivers selected through
- * {@code .gitattributes} still run when Git has to re-hash a modified file. They cannot be switched off
- * without also breaking legitimate Git LFS and end-of-line conversion, so they need a trust decision rather
- * than a config override.
+ * <p><b>Filter drivers.</b> {@code filter.<name>.clean}/{@code smudge}/{@code process}, selected through
+ * {@code .gitattributes}, run when Git has to re-hash a modified file. Their commands come from config, and the
+ * ones the repository's <em>own</em> config defines (an extracted archive's {@code .git/config}) are emptied in
+ * a folder that is not trusted ({@link #filterOverrides}, from {@code RepoFilters}); the ones in the user's
+ * global config (Git LFS) and every filter of a trusted folder run as before.
  *
  * <p><b>Revisions.</b> Tag and branch names come from repository data. A ref whose name starts with
  * {@code -} would be parsed as an option ({@code --output=…} overwrites a file), so {@link #isSafeRevision}
@@ -302,6 +303,45 @@ public final class GitSafety {
         return value != null && !value.isBlank();
     }
 
+    /**
+     * {@code -c} pairs that empty the commands of filter drivers {@code names}: Git runs no clean, smudge or process
+     * command that is empty, and {@code required=false} keeps it from failing for the lack of one. Pure.
+     */
+    static List<String> filterOverrides(java.util.Collection<String> names) {
+        List<String> out = new ArrayList<>();
+        for (String name : names) {
+            for (String key : List.of("clean", "smudge", "process")) {
+                out.add("-c");
+                out.add("filter." + name + "." + key + "=");
+            }
+            out.add("-c");
+            out.add("filter." + name + ".required=false");
+        }
+        return out;
+    }
+
+    /**
+     * The filter driver names in {@code git config --show-scope --name-only --get-regexp '^filter\.'} output that
+     * the repository's own config defines (scope {@code local} or {@code worktree}). A name may hold dots: it is
+     * what lies between {@code filter.} and the last dot. Pure.
+     */
+    static java.util.Set<String> localFilterNames(String output) {
+        java.util.Set<String> names = new java.util.TreeSet<>();
+        for (String line : output.split("\\R")) {
+            int tab = line.indexOf('\t');
+            String scope = tab < 0 ? "" : line.substring(0, tab);
+            String key = (tab < 0 ? line : line.substring(tab + 1)).strip();
+            int last = key.lastIndexOf('.');
+            if (!key.regionMatches(true, 0, "filter.", 0, 7) || last <= 7) {
+                continue;
+            }
+            if (scope.equals("local") || scope.equals("worktree")) {
+                names.add(key.substring(7, last));
+            }
+        }
+        return names;
+    }
+
     /** {@code -c key=value} pairs that neutralise repository-controlled program execution. */
     static List<String> backgroundConfig(boolean windows) {
         String nullDevice = windows ? "NUL" : "/dev/null";
@@ -333,9 +373,16 @@ public final class GitSafety {
      * argument that is neither a global option nor the value of one ({@link #GLOBAL_OPTIONS_WITH_VALUE}).
      */
     static List<String> backgroundArgv(List<String> gitCommand, String... args) {
-        List<String> argv = new ArrayList<>(gitCommand.size() + BACKGROUND_CONFIG.size() + args.length + 5);
+        return backgroundArgv(gitCommand, List.of(), args);
+    }
+
+    /** As {@link #backgroundArgv(List, String...)}, with {@code extraConfig} ({@code -c} pairs) after the overrides. */
+    static List<String> backgroundArgv(List<String> gitCommand, List<String> extraConfig, String... args) {
+        List<String> argv =
+                new ArrayList<>(gitCommand.size() + BACKGROUND_CONFIG.size() + extraConfig.size() + args.length + 5);
         argv.addAll(gitCommand);
         argv.addAll(BACKGROUND_CONFIG);
+        argv.addAll(extraConfig);
         int subcommand = subcommandIndex(args);
         for (int i = 0; i < args.length; i++) {
             String arg = args[i];
