@@ -89,6 +89,103 @@ class UntrustedBuildsTest {
         assertFalse(UntrustedBuilds.hasBuild("csharp", bare));
     }
 
+    /**
+     * Regression (HN dry-run audit, 2026-11-27): Ruby LSP requires every {@code ruby_lsp/**}{@code /addon.rb} under
+     * the workspace and runs {@code bundle exec} on a {@code .ruby-lsp} bundle the folder ships, with no Gemfile at
+     * the root, so no untrusted folder is safe to start it on.
+     */
+    @Test
+    void rubyWaitsForTrustInEveryFolder() throws Exception {
+        Files.createDirectories(dir.resolve("x/ruby_lsp/evil")).resolve("addon.rb");
+        Files.writeString(dir.resolve("x/ruby_lsp/evil/addon.rb"), "system('touch /tmp/pwned')\n");
+        assertTrue(UntrustedBuilds.withholds("ruby", dir, false), "an add-on, and no Gemfile");
+        assertTrue(UntrustedBuilds.withholds("ruby", Files.createDirectories(dir.resolve("empty")), false));
+        assertFalse(UntrustedBuilds.withholds("ruby", dir, true), "trusted: started as before");
+    }
+
+    /** Regression (audit): the Groovy server resolves a Gradle or Maven build when it starts, and was not gated. */
+    @Test
+    void groovyWaitsForTrustOnAGradleOrMavenBuild() throws Exception {
+        Files.writeString(dir.resolve("Jenkinsfile"), "pipeline {}\n");
+        assertFalse(UntrustedBuilds.withholds("groovy", dir, false), "a loose script: nothing to resolve");
+        Files.writeString(dir.resolve("build.gradle"), "println 'runs'\n");
+        assertTrue(UntrustedBuilds.withholds("groovy", dir, false));
+        Path sub = Files.createDirectories(dir.resolve("other/scripts"));
+        Files.writeString(dir.resolve("other/settings.gradle"), "");
+        assertTrue(UntrustedBuilds.hasBuild("groovy", sub), "Gradle finds settings.gradle in a parent folder");
+    }
+
+    /**
+     * Regression (audit): rust-analyzer looks for a crate in every child folder, dot folders and build/ included, and
+     * in the parent folders, and a rust-project.json names proc-macro libraries; the search skipped all of those.
+     */
+    @Test
+    void rustLooksWhereRustAnalyzerLooks() throws Exception {
+        Path a = Files.createDirectories(dir.resolve("a/build"));
+        Files.writeString(a.resolve("Cargo.toml"), "[package]\n");
+        assertTrue(UntrustedBuilds.hasBuild("rust", dir.resolve("a")), "a crate in build/");
+        Path b = Files.createDirectories(dir.resolve("b/.hidden"));
+        Files.writeString(b.resolve("Cargo.toml"), "[package]\n");
+        assertTrue(UntrustedBuilds.hasBuild("rust", dir.resolve("b")), "a crate in a dot folder");
+        Path c = Files.createDirectories(dir.resolve("c"));
+        Files.writeString(c.resolve("rust-project.json"), "{}");
+        assertTrue(UntrustedBuilds.hasBuild("rust", c));
+        Path d = Files.createDirectories(dir.resolve("d/src/bin"));
+        Files.writeString(dir.resolve("d/Cargo.toml"), "[package]\n");
+        assertTrue(UntrustedBuilds.hasBuild("rust", d), "the crate of a subfolder opened on its own");
+        assertFalse(UntrustedBuilds.hasBuild("rust", Files.createDirectories(dir.resolve("e"))));
+    }
+
+    /** Regression (audit): a tree too big to finish searching was taken for one with no build. */
+    @Test
+    void aSearchThatRunsOutAnswersThatThereIsABuild() throws Exception {
+        Path big = Files.createDirectories(dir.resolve("big"));
+        for (int i = 0; i < 450; i++) {
+            Files.createDirectory(big.resolve("d" + i));
+        }
+        assertTrue(UntrustedBuilds.hasBuild("rust", big), "not fully looked at: it waits for trust");
+    }
+
+    /** Regression (audit): astro-ls loads the project's own framework packages and Prettier from node_modules. */
+    @Test
+    void astroWaitsForTrustWithNodeModules() throws Exception {
+        Path site = Files.createDirectories(dir.resolve("site"));
+        assertFalse(UntrustedBuilds.withholds("astro", site, false), "no packages to load");
+        Files.createDirectories(dir.resolve("node_modules/@astrojs/svelte"));
+        assertTrue(UntrustedBuilds.withholds("astro", site, false), "Node finds them in a parent folder");
+        Files.createDirectories(site.resolve("node_modules"));
+        assertTrue(UntrustedBuilds.withholds("astro", site, false));
+    }
+
+    /**
+     * Regression (audit): terraform-ls starts the providers installed in .terraform, Phpactor loads the Composer
+     * autoloader, clojure-lsp runs the classpath command .lsp/config.edn names, and Metals launches a .bsp server.
+     */
+    @Test
+    void terraformPhpClojureAndScalaWaitForWhatTheyWouldRun() throws Exception {
+        Path tf = Files.createDirectories(dir.resolve("infra"));
+        assertFalse(UntrustedBuilds.withholds("terraform", tf, false));
+        Files.createDirectories(tf.resolve("modules/net/.terraform/providers"));
+        assertTrue(UntrustedBuilds.withholds("terraform", tf, false));
+
+        Path php = Files.createDirectories(dir.resolve("app"));
+        assertFalse(UntrustedBuilds.withholds("php", php, false));
+        Files.createDirectories(php.resolve("vendor"));
+        Files.writeString(php.resolve("vendor/autoload.php"), "<?php\n");
+        assertTrue(UntrustedBuilds.withholds("php", php, false));
+
+        Path clj = Files.createDirectories(dir.resolve("clj"));
+        Files.writeString(clj.resolve("deps.edn"), "{}");
+        assertFalse(UntrustedBuilds.withholds("clojure", clj, false), "deps.edn is read as data");
+        Files.createDirectories(clj.resolve(".lsp"));
+        Files.writeString(clj.resolve(".lsp/config.edn"), "{:project-specs []}");
+        assertTrue(UntrustedBuilds.withholds("clojure", clj, false));
+
+        Path scala = Files.createDirectories(dir.resolve("scala"));
+        Files.createDirectories(scala.resolve(".bsp"));
+        assertTrue(UntrustedBuilds.withholds("scala", scala, false));
+    }
+
     @Test
     void importsOffTurnsBothImportersAndTheWrapperOffAndKeepsTheRest() {
         Map<String, Object> java = Map.of(

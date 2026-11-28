@@ -729,7 +729,7 @@ each waits until you trust the folder. Trust is one list, shared by all of them:
 | --- | --- |
 | A [Maven or Gradle build](#builds) run (wrapper or not), including the build before Run and Debug | The first build asks; declining runs no build |
 | The project's [committed settings](#settings-a-project-can-commit) (`.editora/settings.json`) apply, including language-server commands, build commands and debugger paths | Your own settings apply |
-| Language servers [load the project's build](/docs/lsp#servers-that-load-a-projects-build) (Java, Kotlin, Scala, Rust, Ruby, C#, Clojure) | Java starts without its Maven or Gradle build; the others wait |
+| Language servers [load the project's build](/docs/lsp#servers-that-load-a-projects-build) or its own packages (Java, Kotlin, Groovy, Scala, Rust, Ruby, C#, Clojure, Dart, Elixir, Astro, Terraform, PHP) | Java starts without its Maven or Gradle build; the others wait |
 | The [Maven `pom.xml` server](/docs/xml#pomxml-and-the-maven-server) resolve parents, plugins and repositories | The pom is edited with the plain XML server |
 | The XML server download the schemas a file names (with *Download schemas* at *Only in trusted folders*) | No schemas are fetched |
 | [ESLint](/docs/javascript-typescript#eslint) load the project's configuration and plugins, and Prettier or Biome format | ESLint says once that it is not running; the *Auto* formatter uses the TypeScript server, and an explicit Prettier or Biome choice says it needs trust |

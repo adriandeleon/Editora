@@ -19,6 +19,12 @@ It reports Groovy compiler errors, and offers completion, hover, go to
 definition, references, rename, the outline and formatting. CodeNarc's style
 rules are off: they flag nearly every line of ordinary Groovy.
 
+When it starts, the server resolves a Gradle or Maven build's dependencies,
+which runs the build. In a folder you have not trusted, a build there makes it
+wait until you trust the folder (see
+[Servers that load a project's build](/docs/lsp#servers-that-load-a-projects-build));
+a loose script or a `Jenkinsfile` with no build next to it starts as usual.
+
 A `Jenkinsfile` at a project's root makes [Doctor](/docs/doctor)
 expect the Groovy server, as an open `.groovy` file does. A `build.gradle` alone
 does not, because most Gradle projects with a Groovy build script are Java

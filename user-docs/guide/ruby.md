@@ -13,6 +13,11 @@ from the gutter, and debugs with rdbg.
 Ruby's language server is `ruby-lsp`. Editora finds it on the PATH or installs
 it for you; see [language servers](/docs/lsp#servers-are-auto-detected-never-bundled).
 
+It starts only in a [trusted folder](/docs/workspace#trusted-folders): it loads
+every Ruby LSP add-on (`ruby_lsp/**/addon.rb`) in the folder and runs Bundler on
+the project's `Gemfile`, both code from the folder. A Ruby file in a folder you
+have not trusted says so, with **Trust Folder**.
+
 ## Running
 
 <a id="running-ruby-files"></a>*Run File* (`file.run`: `C-c r` in the Emacs keymap, Ctrl+Shift+B (⌘⇧B on macOS) in VS Code) on a Ruby file runs what it is, in the project's folder (the nearest

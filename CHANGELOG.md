@@ -115,6 +115,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **More language servers wait for trust.** An audit of what each server runs found five that ran a folder's own code
+  on open: Ruby LSP loads any `ruby_lsp/**/addon.rb` in the folder and a `.ruby-lsp` bundle it ships (Ruby now always
+  waits), the Groovy server resolves a Gradle or Maven build (it was not held back at all), rust-analyzer found crates
+  in dot folders, `build/` and parent folders that the check skipped, and astro-ls loads the project's packages from
+  `node_modules`. Terraform (providers in `.terraform`), PHP (the Composer autoloader), Clojure (`.lsp/config.edn`),
+  Scala (`.bsp`, `.bloop`), C# and Dart (parent folders) wait too, and a folder too big to search counts as having a
+  build.
 - **Nothing goes to GitHub until you say so.** The update check ran on a fresh install's first launch, five seconds
   in, before it could be turned off. The Welcome page now asks first (**Check Daily** or **Don't Check**); an existing
   install keeps its setting (settings schema 192).
