@@ -255,6 +255,14 @@ after a restart.
 
 ![Settings on the MCP Server page: the Enable MCP server switch on, and the Server row reading Running at an http://127.0.0.1 endpoint with Copy Endpoint Command and New Token buttons](/screenshots/docs/settings-mcp.png "Settings → MCP Server while the server runs, with the button that copies the connect command.")
 
+## Claude Desktop
+
+Claude Desktop can use the same tools through the **Editora** extension in
+[`integrations/claude-desktop`](https://github.com/adriandeleon/Editora/tree/master/integrations/claude-desktop).
+Open its `editora.mcpb` with Claude Desktop, and when it asks for the
+**Editora command**, keep `editora` or give the full path **Copy Connect
+Command** shows. Editora must be running, with the MCP server switched on.
+
 ## Claude Code's IDE connection (experimental)
 
 Claude Code can also connect to an editor the way its VS Code and JetBrains

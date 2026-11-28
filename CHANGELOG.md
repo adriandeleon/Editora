@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Claude Desktop extension.** `integrations/claude-desktop` packs as an `editora.mcpb` that Claude Desktop installs
+  with a double-click, giving its chats Editora's MCP tools through `editora mcp`.
 - **Pick your keymap on first launch.** A fresh install's Welcome page asks which keys your fingers know, with a
   button for each of the five keymaps and **Keep Emacs**; it asks once. An existing install is not asked.
 - **Library sources, offered once.** The first time a Maven project imports with library sources off, its Java file
