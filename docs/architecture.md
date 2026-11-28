@@ -129,7 +129,13 @@ completion, snippets). Anything with behaviour, state or I/O is injected rather 
 `setLspCompletionProvider` — which is what keeps the `editor` package free of `ui`, `lsp`,
 `dap`, `git` and `process`. When you add an editor feature, follow that injection pattern. The
 buffer's larger feature parts (preview, typing assists, context menu, highlighting, …) live in
-package-private classes beside it; see [window coordinators](subsystems/window-coordinators.md). The
+package-private classes beside it; see [window coordinators](subsystems/window-coordinators.md).
+`EditorBuffer` itself keeps the shared fields and one thin forwarding method per member other classes
+call, so its API stays where callers look for it; the bodies are in those `Buffer*` classes, each
+built with the buffer: for example `BufferWiring` (the constructor's listeners and `dispose()`),
+`BufferLsp`, `BufferGutter`, `BufferOverlays`, `BufferDocument` (loading and whole-document edits),
+`BufferDirty`, `BufferLanguage`, `BufferViews` (the split view, font, wrap, minimap) and
+`BufferPreviewKinds`. Tests that read a field by name through reflection find it on `EditorBuffer`. The
 `editor` package does import `config` and a set of pure parsers directly; the exact list is
 pinned by a test — see the [package map](#package-map) below. Sub-packages of `editor` (`editor.lsp`,
 `editor.markdown`, …) count as `editor` for that test: the ratchet keys on the first package segment.
