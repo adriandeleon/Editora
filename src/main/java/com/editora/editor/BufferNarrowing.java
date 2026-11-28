@@ -160,4 +160,14 @@ final class BufferNarrowing {
     }
 
     boolean historyDropped;
+
+    /** The undo stack and the Undo History checkpoints: neither may be replayed across the boundary. */
+    void forgetHistoryAtNarrowBoundary(boolean hadHistory) {
+        b.narrowing.historyDropped |= hadHistory;
+        b.area.getUndoManager().forgetHistory();
+        b.undoHistory.clear();
+        if (b.undo.onUndoHistoryChanged != null) {
+            b.undo.onUndoHistoryChanged.run();
+        }
+    }
 }

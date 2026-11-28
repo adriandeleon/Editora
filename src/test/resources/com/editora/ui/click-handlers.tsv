@@ -11,7 +11,7 @@ com/editora/editor/completion/CompletionPopup.java	list	setOnMouseClicked	a Cont
 com/editora/editor/debug/DebugHover.java	a	addEventFilter	the editor (a CodeArea) or a console: Alt+click Quick Evaluate and hover; debug.quickEvaluate does it from the keyboard
 com/editora/editor/debug/DebugHover.java	a	addEventHandler	the editor (a CodeArea) or a console: Alt+click Quick Evaluate and hover; debug.quickEvaluate does it from the keyboard
 com/editora/editor/DiagnosticStripe.java	this	addEventHandler	a canvas stripe beside the scroll bar: a click jumps to a mark; lsp.nextProblem / lsp.previousProblem do it from the keyboard
-com/editora/editor/EditorBuffer.java	a	addEventFilter	the editor (a CodeArea) or a console: Ctrl-click go to definition / open link; lsp.gotoDefinition and markdown.openLink are the keys
+com/editora/editor/BufferWiring.java	a	addEventFilter	the editor (a CodeArea) or a console: Ctrl-click go to definition / open link; lsp.gotoDefinition and markdown.openLink are the keys
 com/editora/editor/fold/FoldManager.java	bar	setOnMouseClicked	gutter change bar: opens the change's diff; git.peekNextChange and git.nextChange are the keyboard path
 com/editora/editor/fold/FoldManager.java	bpSlot	setOnMouseClicked	gutter breakpoint slot; debug.toggleBreakpoint (and Shift-click's conditional breakpoint through the breakpoint commands) is the keyboard path
 com/editora/editor/fold/FoldManager.java	chevron	setOnMouseClicked	gutter fold chevron; view.toggleFold / view.fold / view.unfold are the keyboard path
