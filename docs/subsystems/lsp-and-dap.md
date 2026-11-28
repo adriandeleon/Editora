@@ -1335,11 +1335,11 @@ MIT), `bashDebug.js` on Node.js over stdio; its `.vsix` ships bashdb 5.0 (`exten
 Bash's Install fetches the pinned `.vsix` from Open VSX (0.3.9, its last release; SHA-256 checked). Only a Bash script
 is debugged (`ScriptLaunch.isBashScript`: a `bash` or `sh` shebang, or none, and no other shell's extension); another
 shell's says so (`status.debug.shellNotBash`, pointing at Run with Trace). F5 sends `ScriptLaunch.bashLaunch` (the
-script as `program`, its folder as `cwd`, output in the Debug console); `DapManager.runExternal` adds the programs the
+script as `program`, its folder as `cwd`, output in the Debug console); `ExternalLaunches.runExternal` adds the programs the
 adapter checks by absolute path (`withBashTools`: the bashdb beside `bashDebug.js`, and `bash`, `cat`, `mkfifo`,
 `pkill` from the PATH), keeping a launch.json's own. Three things are Editora's: bashdb stops at the script's first
 command and the adapter reports it as any stop, so a Bash session's first stop on a line with no breakpoint is passed
-on (`DapManager.passesBashEntry`); bash-debug's Variables shows only `$PWD` and `$?`, the script's variables being read
+on (`SessionEvents.passesBashEntry`); bash-debug's Variables shows only `$PWD` and `$?`, the script's variables being read
 by name (a watch, a hover: `total` gives `declare -- total="0"`), so `$total` and `${total}` are sent bare
 (`adapterExpression` → `ScriptLaunch.bashName`; with a `$`, bashdb expands it in its own shell, where it is empty); and
 a shell run configuration still is not debugged (`status.debug.shellNotDebuggable`). No exception filters, no attach.
@@ -1382,7 +1382,7 @@ nowhere. So the launch's `script` is the script wrapped: `& { & 'x.ps1' args } *
 console does (`WARNING:` …), `Out-String -Stream`, then `[Console]::Error.WriteLine`; `DapManager` streams the
 adapter's stderr into the Debug console for this profile. A launch.json `PowerShell` launch gets the same wrapping
 (`LaunchRoute.Kind.POWERSHELL`); an attach is refused. PSES answers a `repl` evaluate in its absent console (an empty
-result), so the Debug console sends `watch` for it (`DapManager.adapterContext`). No exception filters.
+result), so the Debug console sends `watch` for it (`InspectionRequests.adapterContext`). No exception filters.
 `ElixirDebugProbeFxTest` (opt-in) drives Debug Test at Caret (a stop in the module with its values, that test alone),
 F5 on a project script, a script with no project, and Run File on a test file, on Elixir 1.18 / OTP 27.
 
@@ -1392,7 +1392,7 @@ configured (`Settings.luaDebugPath`), else in Editora's install (`plugins/dap/lu
 else in VS Code's extension. F5 sends `ScriptLaunch.luaLaunch`: `program` `{lua, file, communication: "pipe"}` (the
 adapter starts `lua -e "require('lldebugger').runFile(…)"`; over a pipe — FIFOs, named pipes on Windows — the script's
 own stdout is its output, not the debugger's channel), its folder as `cwd`. VS Code's extension fills in the rest before
-the adapter sees it, so `DapManager.runExternal` does (`withLuaRuntime`): `extensionPath`, the folder above the
+the adapter sees it, so `ExternalLaunches.runExternal` does (`withLuaRuntime`): `extensionPath`, the folder above the
 adapter's, where `debugger/lldebugger.lua` is (the adapter sets `LUA_PATH`/`LOCAL_LUA_DEBUGGER_FILEPATH` from it);
 `workspacePath`; and for the bare `lua`, the first of `lua`, `lua5.4`, `lua5.3`, `luajit`, `lua5.2`, `lua5.1` on the
 PATH, keeping a launch.json's own (`lua-local` routes to `LaunchRoute.Kind.LUA_DEBUG`; no attach). Probed with Lua
@@ -1429,7 +1429,7 @@ clipboard context, but no `restart` (Flutter's announces one later, a `capabilit
 `setBreakpoints` answers `verified: false, reason: "pending"` and a `breakpoint` `changed` event verifies it once the
 isolate has loaded the library. The isolate starts paused: the adapter sends `stopped` with reason `entry` (in an SDK
 frame, `_RawReceivePort._handleMessage`), sets the breakpoints, sends `continued` and resumes by itself; at the end a
-`stopped` with reason `exit` comes before `exited`/`terminated`. Neither pause is shown (`DapManager.passesDartPause`).
+`stopped` with reason `exit` comes before `exited`/`terminated`. Neither pause is shown (`SessionEvents.passesDartPause`).
 And generally: a stop whose thread had a `continued` event before its frames came back is dropped (`resumesOf`:
 counted as the events arrive, on the reader thread) — the `continued` for the entry stop arrives before the answer to
 its `stackTrace`, which used to leave a running program shown paused in an SDK file. At a stop frame 0 is `main` at
@@ -1573,7 +1573,7 @@ instructions. They come from `DapManager.disassemble`: 40 before the instruction
 - Debug: Step Over Instruction and Step Into Instruction do it from anywhere. Debug: Show Disassembly opens the view.
 - It's filled again at every stop and frame change (`DebugCoordinator.refreshLowLevelViews`).
 - GDB (16) answers a negative `instructionOffset` with the end of a listing forward from the address, so for a GDB
-  session `DapManager.disassembleBackOnGdb` asks from 160 bytes before the instruction pointer instead. A start
+  session `LowLevelRequests.disassembleBackOnGdb` asks from 160 bytes before the instruction pointer instead. A start
   byte inside an x86 instruction decodes out of step until the listing falls into step; a listing with no
   instruction at the pointer (`aroundAddress` null) is asked again a byte further back, up to 8 times, then from
   the pointer on.
@@ -1643,7 +1643,7 @@ program run before a column breakpoint (which js-debug places with more work) wa
 standalone adapters' stderr is drained into `AdapterStderr` (an undrained PIPE deadlocks, like the LSP
 servers; DAP traffic is on stdin/stdout or the socket) and its last lines are added to a start failure's
 message. An adapter that dies while the session starts (state STARTING, or a `launch`/`attach` it never answered:
-`gdb -i dap` before GDB 14, a crashing CodeLLDB or debugpy) is reported by `DapManager.onTransportClosed` with that
+`gdb -i dap` before GDB 14, a crashing CodeLLDB or debugpy) is reported by `SessionEvents.onTransportClosed` with that
 tail, for every adapter — the connect or launch failure that would say so arrives after the session has ended, and
 is dropped. The tail is kept per session (`SessionStderr`), so a session with no drained adapter (java-debug in
 jdtls, a remote js-debug) never shows the last one's.
@@ -1710,7 +1710,7 @@ unless its shebang or a configuration's Interpreter names a runner: `deno run --
 file, `{*_,*.,}test.{ts,tsx,mts,js,mjs,jsx}`, `deno test --allow-all <file>`), from that folder, `FORCE_COLOR=1`
 as for Node. `--allow-all` because the Run console gives Deno no terminal to ask in (VS Code's Deno launch does the
 same). The executable is `deno` on PATH, else `$DENO_INSTALL/bin` or `~/.deno/bin` (its installer leaves PATH
-alone). Debug reuses that plan: `NodeDebugConfigs.debuggableRuntime` takes Deno, and `DapManager.startSocket`
+alone). Debug reuses that plan: `NodeDebugConfigs.debuggableRuntime` takes Deno, and `JsSessions.startSocket`
 rewrites the runtime with `DenoRun.inspected` (`--inspect-wait=127.0.0.1:<free port>` after the subcommand, `run`
 added for a bare `#!/usr/bin/env deno`) and sets `attachSimplePort` plus a 60 s `timeout` — NODE_OPTIONS reaches
 Node alone, so js-debug attaches to Deno's inspector instead (probed: Deno 2.9.8 maps `.ts` breakpoints itself; its
@@ -1870,13 +1870,27 @@ other file an empty breakpoint set and the caret's file only the cursor line, th
 sends the real sets again (`forceRunMuted`) when the trip ends. A Run to Cursor trip ends at a stop on the cursor
 line, at a stop elsewhere the program is not resumed from (a step, a new Run to Cursor, a stop reached by anything but
 a resume), at a stop the window shows the user (`DapManager.stopShown`, as VS Code and IntelliJ end it), and with
-the session (`DapManager.settleTempBreakpoint`): the window resumes some stops without showing them (a logpoint it
+the session (`SessionEvents.settleTempBreakpoint`): the window resumes some stops without showing them (a logpoint it
 writes, a recording breakpoint, filters or a hit count that did not match, Thread Dump's pause), and clearing the
 temporary breakpoint at every stop left Run to Cursor never arriving. *Show Numbers as Hexadecimal*
 (`DapManager.setHexValues`) puts `format: {hex: true}` on every `variables` and `evaluate` request of the session and
 the next ones (java-debug, debugpy and GDB honour it; js-debug, CodeLLDB and Delve ignore it), and forgets the stop's cached answers. The opt-in `DebugQuickWinsProbeFxTest` checks this against the
 installed adapters in a real window (a worker thread's output stops while paused), along with temporary breakpoints
 and changed-value marks: `./mvnw test -Dtest=DebugQuickWinsProbeFxTest -Dgroups=probe -Dlsp.probe=true`.
+
+Where the manager's code lives: `DapManager` keeps the session state (the client, the session epoch, the state, the
+stopped threads, the launch settings) and the session lifecycle (`beginSession`, `publishClient`, `sessionHost`,
+`setState`, `stop`), and hands the rest to package-private classes of `dap/` that hold the manager and reach that state
+through it, on the same threads and behind the same epoch checks: `AdapterDetection` (finding and probing the
+adapters), `JavaLaunches` (Java through jdtls, a loose or shebang file compiled first), `JvmSessions` (Kotlin, Scala,
+Clojure, Groovy and Metals-hosted sessions), `ExternalLaunches` (adapters that are programs of their own: Delve,
+CodeLLDB, GDB, rdbg…), `PythonSessions` (debugpy, here and on a remote host), `JsSessions` (vscode-js-debug for Node.js,
+Deno and browsers), `ExecutionControl` (Continue, Pause, the steps, Run to Cursor, Jump to Line), `LowLevelRequests`
+(instruction breakpoints, disassembly, memory), `InspectionRequests` (stacks, scopes, variables, evaluation, loaded
+sources, modules), `SessionEvents` (what each adapter event does, and the end of a session), `DebuggeeProcesses` (the
+programs Editora starts for an adapter, and a Java program's exit code) and `HotCodeReplace`. The manager's public
+methods forward to them, so its API is what it was.
+
 **Show Value As** (IntelliJ's and CLion's *View as*, Visual Studio's format specifiers; the Variables view's
 right-click *Show Value As ▸ As the Debugger Shows It / Decimal / Hexadecimal / Binary / Octal / Character*, and the
 row commands `debug.showSelectedAs{Default,Decimal,Hex,Binary,Octal,Character}` in `DebugRowCommands`) shows one whole
@@ -2234,7 +2248,7 @@ message for `$CALLSTACK`) and the `threads` answer, writes the line to the conso
 a recording breakpoint's (`DebugSession.quietStop`): not shown, not in Debug History, and a step or Stop meanwhile wins.
 The program pauses briefly at each hit, which the form says; a message without tokens is the adapter's, as before.
 As with a recording breakpoint, the stop does not end a Run to Cursor under way: the resume carries it on
-(`DapManager.settleTempBreakpoint`).
+(`SessionEvents.settleTempBreakpoint`).
 An adapter without `supportsLogPoints` (netcoredbg 3.2.0) ignores every `logMessage` and stops on the breakpoint after
 checking its condition, so `logpointToWrite` takes any logpoint of such a session the same way, tokens or not
 (`DapClient.supportsLogPoints`; capabilities not known yet count as supporting). A hit count the adapter does not
@@ -2334,7 +2348,7 @@ request nor capability, but its own recorder works through its console: `DapMana
 full` (again: `record stop`) with `DapClient.consoleCommand` — `evaluate` in the `repl` context with no frame — and,
 while it records (`isRecording`), Step Back and Reverse Continue send `reverse-next` and `reverse-continue` the same
 way. GDB answers them with ordinary `stopped` events carrying the values as they were, so the stop is shown like any
-other. Both go through `DapManager.step`, so a backward step is refused while an evaluation runs, and a core dump's
+other. Both go through `ExecutionControl.step`, so a backward step is refused while an evaluation runs, and a core dump's
 session refuses them (`DEBUG_RUNS_PROGRAM`). `canRunBackward` (the adapter steps back, or GDB records) decides the
 Debug window's two buttons (`DebugPanel.setBackward`, shown in a session that can have them: GDB's, or an adapter that
 steps back) and the palette (`PaletteContext.debugBackward`, `palette.disabled.needsBackward`); Record Execution's
@@ -2473,13 +2487,13 @@ to the project; checked off the FX thread), both kept for the next time in the w
 session (`sessionForLaunch`). launch.json: a `gdb` attach keeps its `target`, and `cppdbg` with
 `miDebuggerServerAddress` is that attach (GDB, or CodeLLDB with `MIMode: lldb`). Probed with gdbserver 16.3: the server
 holds the program before its first instruction, which GDB reports as a stop with reason `attach` and CodeLLDB as a
-`SIGTRAP` exception (sometimes twice) in the loader; `DapManager.passesRemoteEntry` resumes stops of a remote attach
+`SIGTRAP` exception (sometimes twice) in the loader; `SessionEvents.passesRemoteEntry` resumes stops of a remote attach
 (`RemoteNativeAttach.isRemote`, set in `startExternal`) until one is at a breakpoint or in code with a source, so the
 program runs on to its breakpoints as a launched one does. Stop ends the program, and gdbserver with it.
 Source maps (round 6 item 8): the command's third prompt (the folder the program was built in over there) and
 launch.json's `sourceFileMap` (`cppdbg`, and kept on a `gdb` configuration) become one map,
 `RemoteNativeAttach.sourceFileMap` (a string or `{editorPath}` per compiled path). CodeLLDB gets it as its own `sourceMap`;
-GDB's DAP mode has none, so the request carries it as `sourceFileMap` and `DapManager.runExternal` turns it into
+GDB's DAP mode has none, so the request carries it as `sourceFileMap` and `ExternalLaunches.runExternal` turns it into
 `-iex "set substitute-path FROM TO"` on GDB's command line (`gdbSubstitutions`) and leaves it out of the request. Probed
 with GDB 16.3 and CodeLLDB over gdbserver: without a map a breakpoint in a copy of the sources never binds and the
 program runs to its end; with it, it binds and the stop names the file here.
@@ -2558,7 +2572,7 @@ The pure decisions of that path live in `dap/JavaLaunchSupport`:
   `JavaMainClass.className()`, and a classpath Run passes the class part.
 - **Project name.** java-debug compiles breakpoint conditions, logpoints and evaluated expressions against
   a JDT project, and treats a condition it cannot evaluate as met. An `attach` and a compile-fallback
-  launch give it nothing to infer the project from, so `DapManager.projectNameOf` asks jdtls
+  launch give it nothing to infer the project from, so `JavaLaunches.projectNameOf` asks jdtls
   (`resolveMainMethod`, then `resolveElementAtSelection` at the file's first type declaration) and sends
   it as `projectName`.
 - **Working directory.** A project's main class runs in the project root on every path (Debug, gutter,
@@ -2612,7 +2626,7 @@ java-debug's `internalConsole` starts the program inside jdtls with no standard 
 `console: integratedTerminal` (`LaunchConfig.inClientConsole`) on a `DapClient` that offered
 `supportsRunInTerminalRequest` (`setRunsDebuggee`). The adapter then sends the `runInTerminal` reverse
 request — an argv array (the `java` executable, `-agentlib:jdwp=…server=n…address=localhost:<port>`, class
-path, main class, arguments), the `cwd`, and the launch's own `env` — and `DapManager.startDebuggee` starts
+path, main class, arguments), the `cwd`, and the launch's own `env` — and `DebuggeeProcesses.startDebuggee` starts
 exactly that through [`dap/Debuggee`](../../src/main/java/com/editora/dap/Debuggee.java), a per-session
 `RunService`: the user's environment with the augmented PATH and the launch's variables on top (what Run
 gives a program; not jdtls's environment), tracked by `ProcessRegistry`, stdout/stderr through the Run
@@ -2785,7 +2799,7 @@ project.
 
 Python run configurations (a script, or a module) debug too ([`ui/PythonDebugLaunch`](../../src/main/java/com/editora/ui/PythonDebugLaunch.java)),
 as Run runs them: the target, program arguments, working directory, the configuration's Interpreter and Interpreter
-options and variables (`DapManager.planProgram` keeps a request's `configured`, `interpreterOptions` and `userEnv`),
+options and variables (`PythonSessions.planProgram` keeps a request's `configured`, `interpreterOptions` and `userEnv`),
 after the before-launch step; a module's session is anchored in its folder, where its venv is looked for
 (`DapManager.startPythonModule`, `startPythonScript`). Add and Save as Run Configuration propose a web app's server
 for its file (`RunConfigDefaults.forWebApp`): `manage.py` with `runserver`, or a Python module configuration of

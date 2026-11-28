@@ -775,7 +775,7 @@ final class DoctorCoordinator {
                     if (py.isEmpty()) {
                         return base.missing("doctor.tip.missing", "python3");
                     }
-                    // The same test DapManager.probeDebugpy runs: the configured interpreter must import
+                    // The same test AdapterDetection.probeDebugpy runs: the configured interpreter must import
                     // debugpy, with any located bundle on PYTHONPATH (finding the bundle alone isn't enough).
                     Path dir = DebugAdapterLocator.locateDebugpy("", home).orElse(null);
                     boolean importable = DoctorProbes.succeeds(

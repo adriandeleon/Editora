@@ -20,6 +20,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
 import com.editora.diagram.DiagramKind;
+import com.editora.editor.EditorBuffer.MarkdownViewMode;
 import com.editora.editor.highlight.GrammarRegistry;
 import com.editora.editor.markdown.DiagramImages;
 import com.editora.editor.markdown.MarkdownPreview;
@@ -42,6 +43,7 @@ import com.editora.editor.structured.MarkwhenCalendar;
 import com.editora.editor.structured.MarkwhenTimeline;
 import com.editora.editor.structured.OpenApiDoc;
 import com.editora.editor.structured.PomPreview;
+import com.editora.editor.structured.PreviewSnapshots;
 import com.editora.editor.structured.SshConfigPreview;
 import com.editora.editor.structured.StructuredTree;
 import com.editora.editor.structured.SystemdPreview;
@@ -1050,5 +1052,26 @@ final class BufferPreview {
         if (markdownPreview != null) {
             markdownPreview.setZoom(previewFontScale); // formulas, images and diagrams are not text: sized too
         }
+    }
+
+    /**
+     * Whether only a rendering of this buffer is on screen (Preview mode; not the CSV grid, which edits). Its
+     * text is then out of sight, so editing commands are refused rather than applied at an invisible caret.
+     */
+    boolean isPreviewOnly() {
+        return b.markdownViewMode == MarkdownViewMode.PREVIEW && !b.hasCsvPreview();
+    }
+    /**
+     * Renders the current image/tree preview to PNG images for print and PDF export (a full snapshot of the
+     * whole tree/timeline, not just the visible viewport), in steps that keep the window responsive. Hands
+     * {@code done} the result, or {@code null} for a buffer whose preview isn't snapshot-based
+     * (Markdown/CSV/Mermaid/diagram export semantically / via their CLI instead) or does not parse. FX
+     * thread only; {@code progress} gets (chunks done, chunks in all).
+     */
+    void snapshotPreviewChunks(
+            String lightUaStylesheet,
+            java.util.function.BiConsumer<Integer, Integer> progress,
+            java.util.function.Consumer<PreviewSnapshots.Result> done) {
+        PreviewSnapshots.capture(b, lightUaStylesheet, progress, done);
     }
 }

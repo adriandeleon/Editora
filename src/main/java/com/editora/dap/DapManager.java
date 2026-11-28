@@ -1,6 +1,5 @@
 package com.editora.dap;
 
-import java.io.File;
 import java.net.ServerSocket;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -22,7 +21,6 @@ import java.util.logging.Logger;
 import javafx.application.Platform;
 
 import com.editora.lsp.LspManager;
-import com.editora.process.BusyExecutable;
 import com.editora.process.ProcessRunner;
 import org.jspecify.annotations.Nullable;
 
@@ -40,7 +38,7 @@ import static com.editora.i18n.Messages.tr;
  */
 public final class DapManager {
 
-    private static final Logger LOG = Logger.getLogger(DapManager.class.getName());
+    static final Logger LOG = Logger.getLogger(DapManager.class.getName());
 
     /** Session lifecycle states. */
     public enum State {
@@ -165,27 +163,52 @@ public final class DapManager {
         default void onChildSession(Map<String, Object> configuration) {}
     }
 
-    private final LspManager lsp;
+    final LspManager lsp;
     /** The settings this window's managers share ({@link #newSession}). */
-    private final DapSettings shared;
+    final DapSettings shared;
 
-    private Listener listener = noopListener();
+    /** Where each adapter is and whether it runs: configure, detect and probe ({@link AdapterDetection}). */
+    final AdapterDetection detection = new AdapterDetection(this);
+    /** Java sessions through jdtls: main classes, the classpath, compiling a loose file ({@link JavaLaunches}). */
+    final JavaLaunches javaLaunch = new JavaLaunches(this);
+    /** Kotlin, Scala, Clojure, Groovy and hosted JVM sessions ({@link JvmSessions}). */
+    final JvmSessions jvmSessions = new JvmSessions(this);
+    /** Adapters Editora starts as programs of their own: Delve, CodeLLDB, GDB, rdbg and the rest ({@link ExternalLaunches}). */
+    final ExternalLaunches externalLaunches = new ExternalLaunches(this);
+    /** debugpy sessions: launches, attaches, subprocesses and remote hosts ({@link PythonSessions}). */
+    final PythonSessions pythonSessions = new PythonSessions(this);
+    /** vscode-js-debug sessions: Node.js, Deno, browsers and remote hosts ({@link JsSessions}). */
+    final JsSessions jsSessions = new JsSessions(this);
+    /** Continue, Pause, the steps, Run to Cursor and the Threads view's requests ({@link ExecutionControl}). */
+    final ExecutionControl execution = new ExecutionControl(this);
+    /** Instructions, disassembly and memory ({@link LowLevelRequests}). */
+    final LowLevelRequests lowLevel = new LowLevelRequests(this);
+    /** Stacks, scopes, variables, evaluation, loaded sources and modules ({@link InspectionRequests}). */
+    final InspectionRequests inspection = new InspectionRequests(this);
+    /** What the manager does with each adapter event: stops, output, the end of a session ({@link SessionEvents}). */
+    final SessionEvents sessionEvents = new SessionEvents(this);
+    /** Programs Editora starts for the adapter, and their exit codes ({@link DebuggeeProcesses}). */
+    final DebuggeeProcesses debuggees = new DebuggeeProcesses(this);
+    /** Applying code changes to a running Java program ({@link HotCodeReplace}). */
+    final HotCodeReplace codeReplace = new HotCodeReplace(this);
 
-    private final ExecutorService io = Executors.newSingleThreadExecutor(r -> {
+    Listener listener = noopListener();
+
+    final ExecutorService io = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "dap-connect");
         t.setDaemon(true);
         return t;
     });
 
     /** The window's project root for the next JavaScript launch (its package root and workspace folder). */
-    private volatile @Nullable Path jsProjectRoot;
+    volatile @Nullable Path jsProjectRoot;
     /** The current session is vscode-js-debug's (read on adapter threads to clean up what it prints). */
-    private volatile boolean jsSession;
+    volatile boolean jsSession;
     /**
      * The JavaScript session's program was started by Editora ({@code runInTerminal}): its output arrives from its
      * own pipes, so js-debug's copies of it (console.log through the inspector) are not shown a second time.
      */
-    private volatile boolean jsClientConsole;
+    volatile boolean jsClientConsole;
     /** A session's adapter's standard error, with the session it belongs to. */
     private record SessionStderr(long epoch, AdapterStderr stderr) {}
 
@@ -193,37 +216,30 @@ public final class DapManager {
      * The current session's adapter's stderr (any adapter Editora starts and drains), for the message when it dies
      * while starting. Tagged with its session: a remote session has none, and must not show the last local one's.
      */
-    private volatile @Nullable SessionStderr adapterStderr;
+    volatile @Nullable SessionStderr adapterStderr;
 
     /** Records {@code stderr} as the adapter's of session {@code epoch}; returns it. */
-    private AdapterStderr adapterStderr(long epoch, AdapterStderr stderr) {
+    AdapterStderr adapterStderr(long epoch, AdapterStderr stderr) {
         adapterStderr = new SessionStderr(epoch, stderr);
         return stderr;
     }
 
     /** The stderr of session {@code epoch}'s adapter, or null when it has none (or another session's). */
-    private @Nullable AdapterStderr adapterStderr(long epoch) {
+    @Nullable
+    AdapterStderr adapterStderr(long epoch) {
         SessionStderr kept = adapterStderr;
         return kept != null && kept.epoch() == epoch ? kept.stderr() : null;
     }
 
-    /**
-     * The {@code launch} or {@code attach} a socket adapter has not answered yet: the session it was sent for, when,
-     * and whether it opens a browser. The session is RUNNING from the moment the adapter is connected, so this is what
-     * tells a session that never started its program from one that ran and ended.
-     */
-    private record UnansweredLaunch(long epoch, long sentNanos, boolean browser) {}
-
-    private volatile @Nullable UnansweredLaunch unansweredLaunch;
     /** Condition errors js-debug already reported this session (it repeats each one per script it loads). */
-    private final java.util.Set<String> reportedConditionErrors = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    final java.util.Set<String> reportedConditionErrors = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
-    private volatile @Nullable DapClient client;
-    private volatile long sessionEpoch;
-    private volatile boolean managerClosed;
+    volatile @Nullable DapClient client;
+    volatile long sessionEpoch;
+    volatile boolean managerClosed;
 
     /** The session opened a core dump ({@link CoreDumps}): it is looked at, never run. */
-    private volatile boolean postMortem;
+    volatile boolean postMortem;
 
     /**
      * A session attached to a debug server ({@link RemoteNativeAttach}) that has not yet stopped in code with a source:
@@ -231,7 +247,7 @@ public final class DapManager {
      * {@code attach}; CodeLLDB: a {@code SIGTRAP}, sometimes twice) as a stop. Those stops are passed over, as a program
      * started under any other debugger runs to its first breakpoint.
      */
-    private volatile boolean remoteEntryPending;
+    volatile boolean remoteEntryPending;
 
     /**
      * GDB records the program's run ({@code record full}): it can go back over what it recorded. Only a GDB session
@@ -239,59 +255,56 @@ public final class DapManager {
      */
     private volatile boolean recording;
 
-    private volatile @Nullable Future<?> startupTask;
-    private final Object sessionLock = new Object();
-    private State state = State.INACTIVE;
-    private int currentThreadId;
+    volatile @Nullable Future<?> startupTask;
+    final Object sessionLock = new Object();
+    State state = State.INACTIVE;
+    int currentThreadId;
     /**
      * The threads known to be stopped, with each one's stop reason, oldest first (FX thread). java-debug
      * suspends and resumes <em>per thread</em>: two workers can sit on the same breakpoint, and resuming the
      * one on screen leaves the other suspended with no further event to say so.
      */
-    private final java.util.LinkedHashMap<Integer, String> stoppedThreads = new java.util.LinkedHashMap<>();
+    final java.util.LinkedHashMap<Integer, String> stoppedThreads = new java.util.LinkedHashMap<>();
     /**
      * java-debug suspended the whole program (Pause, or a stop with {@code allThreadsStopped} under "Suspend all
      * threads"), and steps since have not resumed it: Continue must resume every thread, not just the one shown
      * (FX thread).
      */
-    private boolean allSuspended;
+    boolean allSuspended;
     /**
      * The threads resumed one by one (Threads view → Resume Thread) since the whole program was suspended: while
      * {@link #allSuspended}, every other thread is still suspended (FX thread).
      */
-    private final java.util.Set<Integer> resumedSinceSuspendAll = new java.util.HashSet<>();
+    final java.util.Set<Integer> resumedSinceSuspendAll = new java.util.HashSet<>();
     /** Counts stops shown, so a late step acknowledgement can tell the step has already ended. */
-    private int stopCount;
+    int stopCount;
     /** A step was acknowledged and its stop has not arrived yet (FX thread). */
-    private boolean stepInFlight;
+    boolean stepInFlight;
     /** The session epoch of a step request the adapter has not answered yet, else -1 (FX thread). */
-    private long stepPendingEpoch = -1;
+    long stepPendingEpoch = -1;
 
-    private @Nullable Path debugFile;
-    /** Temporary .java copy used to compile an extensionless shebang, scoped to its launch epoch. */
-    private volatile @Nullable SourceAlias sourceAlias;
+    @Nullable
+    Path debugFile;
 
-    private volatile @Nullable Path compilationDirectory;
+    volatile @Nullable Path compilationDirectory;
 
     /**
      * TEST SEAM — run on the compile thread once a loose file's classes are compiled and kept, before the launch goes
      * on to its adapter: a test holds the launch there instead of spinning on the FX thread (QUAL-07, Pauta 6.2.0).
      */
     volatile @Nullable Runnable compiledForTest;
-    /** Removes {@link #compilationDirectory} on its target ({@code null}: a folder of this machine). */
-    private volatile @Nullable Runnable compilationRemoval;
 
-    private record SourceAlias(long epoch, Path original, Path compiled) {}
+    record SourceAlias(long epoch, Path original, Path compiled) {}
 
     /** The program of the current session when Editora started it, else null (FX thread). */
-    private @Nullable Debuggee debuggee;
-    /** How long a program may take to exit once the adapter has reported the session over, before it is killed. */
-    private static final long DEBUGGEE_EXIT_GRACE_MILLIS = 3_000;
+    @Nullable
+    Debuggee debuggee;
 
     /** The adapter language of the current (or last) session: {@code java}, {@code python} or {@code javascript}. */
-    private String sessionLanguage = "java";
+    String sessionLanguage = "java";
 
-    private @Nullable Runnable restartAction;
+    @Nullable
+    Runnable restartAction;
 
     public DapManager(LspManager lsp) {
         this(lsp, new DapSettings());
@@ -328,7 +341,7 @@ public final class DapManager {
     }
 
     /** {@link LspManager#executeCommand}, its answer handed back through {@link #callbackWrapper}. */
-    private void executeCommand(
+    void executeCommand(
             @Nullable Path file,
             String command,
             List<Object> args,
@@ -341,7 +354,7 @@ public final class DapManager {
     }
 
     /** As above, waiting up to {@code timeout}. */
-    private void executeCommand(
+    void executeCommand(
             @Nullable Path file,
             String command,
             List<Object> args,
@@ -356,7 +369,7 @@ public final class DapManager {
     }
 
     /** {@link LspManager#buildJavaWorkspace}, its answer handed back through {@link #callbackWrapper}. */
-    private void buildJavaWorkspace(Path file, boolean full, Consumer<LspManager.BuildOutcome> cb) {
+    void buildJavaWorkspace(Path file, boolean full, Consumer<LspManager.BuildOutcome> cb) {
         lsp.buildJavaWorkspace(
                 file,
                 full,
@@ -364,7 +377,7 @@ public final class DapManager {
     }
 
     /** Runs {@code r} later on the FX thread, through {@link #callbackWrapper}. */
-    private void fx(Runnable r) {
+    void fx(Runnable r) {
         Runnable wrapped = callbackWrapper.apply(r);
         Platform.runLater(wrapped);
     }
@@ -400,7 +413,8 @@ public final class DapManager {
     }
 
     /** The filters chosen for {@code language}, or null when the adapter's defaults apply; none while muted. */
-    private @Nullable List<String> filtersFor(String language) {
+    @Nullable
+    List<String> filtersFor(String language) {
         if (DebugLanguages.FLUTTER.id().equals(language)) {
             language = DebugLanguages.DART.id(); // a Flutter app's session is Dart's: its exception choices, its stops
         }
@@ -611,7 +625,7 @@ public final class DapManager {
     }
 
     /** Node.js arguments before the program for the next JavaScript launch ({@code --test} for a test file). */
-    private volatile List<String> jsNodeArgs = List.of();
+    volatile List<String> jsNodeArgs = List.of();
 
     /** Sets {@link #jsNodeArgs}; sticky across {@link #restart()}, like the program arguments. */
     public void setJsNodeArgs(List<String> args) {
@@ -655,12 +669,7 @@ public final class DapManager {
         configure(enabled, pluginPath, false, "", false, "");
     }
 
-    /**
-     * Stores the master enable flag + every language's enable/command and re-resolves the java-debug bundle
-     * jar(s) — that one synchronously, because it must reach the LSP layer before any jdtls session starts.
-     * The python/js adapter <em>locations</em> and their availability are both resolved later, off-thread, by
-     * {@link #detectPython}/{@link #detectJs}.
-     */
+    /** See {@link AdapterDetection#configure}. */
     public void configure(
             boolean enabled,
             String javaPluginPath,
@@ -668,50 +677,11 @@ public final class DapManager {
             String pythonCommand,
             boolean jsEnabled,
             String jsPath) {
-        shared.enabled = enabled;
-        shared.pluginPath = javaPluginPath == null ? "" : javaPluginPath;
-        if (!enabled) {
-            shared.bundlePaths = List.of();
-        } else if (DebugAdapterLocator.locatedKnown(shared.pluginPath, home()) || !onFx()) {
-            shared.bundlePaths = locateKept();
-        } else {
-            // A java-debug path not looked at yet (typed in Settings a moment ago): looked for off the FX thread
-            // (PERF-01, Pauta 6.2.0), and the bundles in effect so far kept until it lands; then the owner applies
-            // the support again ({@link #setOnJavaDebugLocated}), which pushes the new bundles to jdtls.
-            String asked = shared.pluginPath;
-            com.editora.perf.OffFx.then(
-                    "java-debug-locate", () -> DebugAdapterLocator.locate(asked, home()), located -> {
-                        if (asked.equals(shared.pluginPath) && shared.enabled) {
-                            shared.bundlePaths = locateKept();
-                            Runnable then = onJavaDebugLocated;
-                            if (then != null) {
-                                then.run();
-                            }
-                        }
-                    });
-        }
-        shared.pythonEnabled = pythonEnabled;
-        shared.pythonCommand = pythonCommand == null ? "" : pythonCommand;
-        shared.jsEnabled = jsEnabled;
-        shared.jsPath = jsPath == null ? "" : jsPath;
-        // The python/js adapter locations are deliberately NOT resolved here. Locating them walks the VS
-        // Code / mason / plugin directories, and the only caller (DebugCoordinator.applySupport) follows
-        // this immediately with detectPython/detectJs, which relocate them off-thread and assign these very
-        // fields. Resolving here as well duplicated that walk on the FX thread during startup — measured at
-        // ~30-50 ms on the path to first paint, for values not read until a debug session actually launches.
-        // Only the clearing has to happen synchronously: with the feature off, detect* never runs to null it.
-        if (!shared.enabled || !shared.pythonEnabled) {
-            shared.debugpyDir = null;
-            shared.pythonAvailable = false;
-        }
-        if (!shared.enabled || !shared.jsEnabled) {
-            shared.jsServer = null;
-            shared.jsAvailable = false;
-        }
+        detection.configure(enabled, javaPluginPath, pythonEnabled, pythonCommand, jsEnabled, jsPath);
     }
 
     /** Run on the FX thread when a java-debug path {@link #configure} could not answer from memory was located. */
-    private volatile @Nullable Runnable onJavaDebugLocated;
+    volatile @Nullable Runnable onJavaDebugLocated;
 
     /** Who applies the support again once a newly configured java-debug path has been looked at off FX. */
     public void setOnJavaDebugLocated(@Nullable Runnable then) {
@@ -721,14 +691,6 @@ public final class DapManager {
     /** The java-debug path {@link #configure} was last given (a look off the FX thread may ask for it). */
     public String javaDebugPluginPath() {
         return shared.pluginPath;
-    }
-
-    private static boolean onFx() {
-        try {
-            return javafx.application.Platform.isFxApplicationThread();
-        } catch (RuntimeException | LinkageError e) {
-            return false;
-        }
     }
 
     /** The located java-debug plugin jar(s) — for {@code LspManager.setDebugBundles}. Empty when not found. */
@@ -748,51 +710,22 @@ public final class DapManager {
      * debugging was off, and Settings said "not found" for a jdtls that ships it.
      */
     public boolean isJavaDebugInstalled() {
-        return shared.serverProvidesJavaDebug || !locate().isEmpty();
+        return shared.serverProvidesJavaDebug || !detection.locate().isEmpty();
     }
 
     /** Whether Java debugging can run: we located a bundle to inject, <b>or</b> jdtls already provides it. */
     public boolean isAdapterAvailable() {
-        return javaDebugUsable();
+        return detection.javaDebugUsable();
     }
 
-    private boolean javaDebugUsable() {
-        return shared.enabled && (!shared.bundlePaths.isEmpty() || shared.serverProvidesJavaDebug);
-    }
-
-    /** Whether a usable debug adapter is available for {@code language} (after detection). */
+    /** See {@link AdapterDetection#isLanguageAvailable}. */
     public boolean isLanguageAvailable(String language) {
-        DebugLanguage l = DebugLanguages.byId(language);
-        if (l == null) {
-            return false;
-        }
-        return switch (l.availability()) {
-            case JAVA_DEBUG_PLUGIN -> javaDebugUsable();
-            case LOCATED -> located(l);
-            // Editora's own adapter, or Metals': nothing to install, only the debugging switch (the tool, or Metals
-            // running, is checked when the session starts).
-            case BUILT_IN -> shared.enabled;
-        };
+        return detection.isLanguageAvailable(language);
     }
 
-    /** Whether detection found {@code l}'s adapter (debugpy, vscode-js-debug, an external adapter's command). */
-    private boolean located(DebugLanguage l) {
-        return switch (l.id()) {
-            case "python" -> shared.pythonAvailable;
-            case "javascript" -> shared.jsAvailable;
-            default -> shared.enabled && shared.externalLocated.containsKey(l.id());
-        };
-    }
-
-    /** Re-runs the (filesystem) locate and delivers whether the plugin jar was found, on the FX thread. */
+    /** See {@link AdapterDetection#detect}. */
     public void detect(Consumer<Boolean> onResult) {
-        io.submit(() -> {
-            List<String> found = locate();
-            fx(() -> {
-                shared.bundlePaths = shared.enabled ? found : List.of();
-                onResult.accept(!found.isEmpty());
-            });
-        });
+        detection.detect(onResult);
     }
 
     /**
@@ -800,7 +733,7 @@ public final class DapManager {
      * on {@code PYTHONPATH}); delivers availability + caches it, on the FX thread.
      */
     public void detectPython(Consumer<Boolean> onResult) {
-        detectPython(onResult, false);
+        detection.detectPython(onResult, false);
     }
 
     /**
@@ -809,77 +742,23 @@ public final class DapManager {
      * Python debugging turned off it said "not found" about a debugpy that was there.
      */
     public void detectPythonInstalled(Consumer<Boolean> onResult) {
-        detectPython(onResult, true);
+        detection.detectPython(onResult, true);
     }
 
-    private void detectPython(Consumer<Boolean> onResult, boolean installedOnly) {
-        io.submit(() -> {
-            Path dir = DebugAdapterLocator.locateDebugpy("", home()).orElse(null);
-            boolean on = shared.enabled && shared.pythonEnabled;
-            boolean installed = (on || installedOnly) && probeDebugpy(dir);
-            fx(() -> {
-                shared.debugpyDir = dir;
-                shared.pythonAvailable = on && installed;
-                onResult.accept(installedOnly ? installed : on && installed);
-            });
-        });
-    }
-
-    /**
-     * Off-thread: relocates the vscode-js-debug server and probes {@code node --version}; delivers
-     * availability (server found AND node runnable) + caches it, on the FX thread.
-     */
+    /** See {@link AdapterDetection#detectJs}. */
     public void detectJs(Consumer<Boolean> onResult) {
-        io.submit(() -> {
-            Path server = DebugAdapterLocator.locateJsDebugServer(shared.jsPath, home())
-                    .orElse(null);
-            boolean ok = shared.enabled && shared.jsEnabled && server != null && probeNode(adapterNode());
-            fx(() -> {
-                shared.jsServer = server;
-                shared.jsAvailable = ok;
-                onResult.accept(ok);
-            });
-        });
-    }
-
-    private List<String> locate() {
-        return DebugAdapterLocator.locate(shared.pluginPath, home())
-                .map(p -> List.of(p.toString()))
-                .orElse(List.of());
-    }
-
-    /** {@link #locate}, as kept since it was last looked up ({@link DebugAdapterLocator#locateKept}). */
-    private List<String> locateKept() {
-        return DebugAdapterLocator.locateKept(shared.pluginPath, home())
-                .map(p -> List.of(p.toString()))
-                .orElse(List.of());
+        detection.detectJs(onResult);
     }
 
     /** Looks the java-debug plugin up for {@code configuredPath} now, on the calling thread: the launch's warm-up. */
     public static void prepareLocate(String configuredPath) {
-        DebugAdapterLocator.prepareLocate(configuredPath, home());
-    }
-
-    private static Path home() {
-        return Path.of(System.getProperty("user.home", ""));
+        DebugAdapterLocator.prepareLocate(configuredPath, AdapterDetection.home());
     }
 
     /** Test seam: debugpy found in {@code dir} (a folder holding a {@code debugpy} package), detection done. */
     void setPythonAdapterForTest(Path dir) {
         shared.debugpyDir = dir;
         shared.pythonAvailable = true;
-    }
-
-    /** Runs {@code <python> -c "import debugpy"} (debugpyDir on PYTHONPATH); true on a clean exit. */
-    private boolean probeDebugpy(@Nullable Path dir) {
-        List<String> interp = DapServerRegistry.interpreterArgv("python", shared.pythonCommand);
-        if (interp.isEmpty()) {
-            return false;
-        }
-        List<String> argv = new ArrayList<>(interp);
-        argv.add("-c");
-        argv.add("import debugpy");
-        return probe(argv, dir);
     }
 
     /**
@@ -892,76 +771,14 @@ public final class DapManager {
             @Nullable String serverVersion,
             @Nullable String nodeVersion) {}
 
-    /** Finds {@link JsDebugInstall} off the FX thread and delivers it on the FX thread. */
+    /** See {@link AdapterDetection#detectJsInstalled}. */
     public void detectJsInstalled(Consumer<JsDebugInstall> onResult) {
-        String configured = shared.jsPath;
-        io.submit(() -> {
-            Path server =
-                    DebugAdapterLocator.locateJsDebugServer(configured, home()).orElse(null);
-            String serverVersion =
-                    server == null ? null : com.editora.install.PinnedVersions.jsDebugServerVersion(server);
-            String node = adapterNode();
-            String nodeVersion = nodeVersion(node);
-            String runner = adapterNodeFor(node, nodeVersion);
-            String runnerVersion = runner == null || runner.equals(node) ? nodeVersion : nodeVersion(runner);
-            fx(() -> onResult.accept(new JsDebugInstall(server, serverVersion, runnerVersion)));
-        });
+        detection.detectJsInstalled(onResult);
     }
 
-    /** The Node.js the settings name (or {@code node} on PATH) — what runs js-debug when no file is involved. */
-    private String adapterNode() {
-        return com.editora.run.NodeRuntimes.resolveLocal(null, null, "", shared.nodePath)
-                .executable();
-    }
-
-    /** Runs {@code <node> --version}; true on a clean exit. */
-    private boolean probeNode(String node) {
-        return probe(List.of(node, "--version"), null);
-    }
-
-    /** What {@code <node> --version} prints ({@code v24.18.1}), or null when it does not run. Off the FX thread. */
+    /** See {@link AdapterDetection#nodeVersion}. */
     static @Nullable String nodeVersion(String node) {
-        try {
-            ProcessRunner.Result r =
-                    ProcessRunner.run(null, java.time.Duration.ofSeconds(5), List.of(node, "--version"));
-            return r.exit() == 0 ? JsLaunch.version(r.out()) : null;
-        } catch (RuntimeException e) {
-            return null;
-        }
-    }
-
-    /** Launches {@code argv} (PATH-augmented; {@code pythonPathDir} prepended to PYTHONPATH when non-null),
-     *  discards its output, and returns whether it exits 0 within 5s. */
-    private static boolean probe(List<String> argv, @Nullable Path pythonPathDir) {
-        return probe(argv, pythonPathDir, Map.of());
-    }
-
-    /** As {@link #probe(List, Path)}, with {@code env} (a command's own {@code env NAME=value} prefix) applied. */
-    private static boolean probe(List<String> argv, @Nullable Path pythonPathDir, Map<String, String> env) {
-        try {
-            List<String> cmd = ProcessRunner.resolveExecutable(argv);
-            ProcessBuilder pb = new ProcessBuilder(cmd);
-            ProcessRunner.applyStandardEnv(pb);
-            pb.environment().putAll(env);
-            if (pythonPathDir != null) {
-                prependPythonPath(pb, pythonPathDir);
-            }
-            pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
-            pb.redirectError(ProcessBuilder.Redirect.DISCARD);
-            Process p = BusyExecutable.start(pb);
-            if (!p.waitFor(5, TimeUnit.SECONDS)) {
-                p.destroyForcibly();
-                return false;
-            }
-            return p.exitValue() == 0;
-        } catch (Exception e) {
-            return false;
-        }
-    }
-
-    private static void prependPythonPath(ProcessBuilder pb, Path dir) {
-        String existing = pb.environment().getOrDefault("PYTHONPATH", "");
-        pb.environment().put("PYTHONPATH", existing.isEmpty() ? dir.toString() : dir + File.pathSeparator + existing);
+        return AdapterDetection.nodeVersion(node);
     }
 
     public State state() {
@@ -1026,124 +843,31 @@ public final class DapManager {
     }
 
     /** The folder a JVM-language program runs in; null for its file's folder. */
-    private volatile @Nullable Path jvmCwd;
+    volatile @Nullable Path jvmCwd;
 
-    /**
-     * Debugs JVM-language script {@code file} ({@code groovy}, {@code clojure}) in {@code cwd} — a run
-     * configuration's folder, or null for the one the tool runs it in —
-     * with the arguments and environment set beforehand. Restart repeats it.
-     */
+    /** See {@link JvmSessions#startJvmScript}. */
     public void startJvmScript(Path file, String language, @Nullable Path cwd) {
-        jvmCwd = cwd;
-        jvmJar = null;
-        startProgram(file, language);
-        restartAction = () -> startJvmScript(file, language, cwd);
+        jvmSessions.startJvmScript(file, language, cwd);
     }
 
     /** A compiled program's jar for the next JVM launch, run as {@code java -jar}; null runs the file's tool. */
-    private volatile @Nullable Path jvmJar;
+    volatile @Nullable Path jvmJar;
 
-    /** The {@code java} that runs {@link #jvmJar}: the session JDK's. */
-    private volatile String jvmJava = "java";
-
-    /**
-     * Debugs compiled Kotlin program {@code file} — its {@code jar}, built beforehand — as
-     * {@code java [VM arguments] -jar <jar> args…} on {@code java}, in {@code cwd} (null: the file's folder), with
-     * the arguments, VM arguments and environment set beforehand. The debugger's agent goes on that command line.
-     * Restart repeats it with the same jar; the coordinator's own restart compiles an edited file again.
-     */
+    /** See {@link JvmSessions#startJvmProgram}. */
     public void startJvmProgram(Path file, String language, @Nullable Path cwd, Path jar, String java) {
-        jvmCwd = cwd;
-        jvmJar = jar;
-        jvmJava = java == null || java.isBlank() ? "java" : java;
-        startProgram(file, language);
-        restartAction = () -> startJvmProgram(file, language, cwd, jar, java);
+        jvmSessions.startJvmProgram(file, language, cwd, jar, java);
     }
 
-    /**
-     * Attaches Editora's JVM adapter to a JVM listening at {@code host:port} — one a build tool started under a
-     * suspended JDWP agent — for a program in a language java-debug cannot map ({@code language}), anchored at
-     * {@code file}. Ending the session detaches; the JVM's owner stops it. Restart attaches again.
-     */
+    /** See {@link JvmSessions#startJvmAttach}. */
     public void startJvmAttach(Path file, String language, String host, int port) {
-        DapServerRegistry.DapServerSpec spec = DapServerRegistry.specFor(language);
-        if (spec == null || spec.kind() != DapServerRegistry.Kind.JVM) {
-            listener.onError(tr("debug.error.noAdapter"));
-            return;
-        }
-        restartAction = () -> startJvmAttach(file, language, host, port);
-        debugFile = file;
-        long epoch = beginSession();
-        setState(State.STARTING);
-        List<DapModels.FileBreakpoints> bps = shared.breakpointsSupplier.get();
-        List<String> filters = filtersFor(language);
-        startupTask = io.submit(() -> {
-            try {
-                Map<String, Object> attach = new java.util.LinkedHashMap<>();
-                attach.put("hostName", host == null || host.isBlank() ? "localhost" : host);
-                attach.put("port", port);
-                attach.put("language", language);
-                Path root = file == null ? null : jvmSourceRoot(file);
-                if (root != null) {
-                    attach.put("cwd", root.toString());
-                }
-                if (file != null) {
-                    attach.put("sourceFiles", List.of(file.toString()));
-                }
-                int adapterPort = com.editora.dap.jvm.JvmDebugServer.start(new com.editora.dap.jvm.JvmDebugAdapter());
-                DapClient c = new DapClient(sessionHost(epoch));
-                c.setPaths(DapPaths.LOCAL);
-                c.setBreakpoints(bps);
-                c.setExceptionFilters(filters);
-                if (!publishClient(epoch, c)) {
-                    c.dispose();
-                    return;
-                }
-                c.connect(adapterPort, spec.adapterId()).whenComplete((caps, e) -> {
-                    if (e != null) {
-                        fail(epoch, tr("debug.error.connectFailed", msg(e)));
-                        return;
-                    }
-                    if (!isCurrent(epoch)) {
-                        c.dispose();
-                        return;
-                    }
-                    c.attach(attach).whenComplete((v, ae) -> {
-                        if (ae != null) {
-                            fail(epoch, tr("debug.error.launchFailed", msg(ae)));
-                        }
-                    });
-                    fx(() -> {
-                        if (isCurrent(epoch, c)) {
-                            setState(State.RUNNING);
-                        }
-                    });
-                });
-            } catch (Exception e) {
-                fail(epoch, tr("debug.error.startFailed", msg(e)));
-            }
-        });
-    }
-
-    /** The folder an attached program's sources are looked up under: the file's build root, else its folder. */
-    private static @Nullable Path jvmSourceRoot(Path file) {
-        Path dir = file.toAbsolutePath().getParent();
-        for (Path p = dir; p != null; p = p.getParent()) {
-            for (String marker :
-                    List.of("settings.gradle.kts", "settings.gradle", "build.gradle.kts", "build.gradle", "pom.xml")) {
-                if (java.nio.file.Files.isRegularFile(p.resolve(marker))) {
-                    return p;
-                }
-            }
-        }
-        return dir;
+        jvmSessions.startJvmAttach(file, language, host, port);
     }
 
     /** Program arguments for the next launch (shared with the Run feature's per-file args). */
-    private volatile List<String> programArgs = List.of();
+    volatile List<String> programArgs = List.of();
 
     /** JVM arguments for the next launch (from a saved run configuration; "" otherwise). */
-    private volatile String vmArgs = "";
+    volatile String vmArgs = "";
 
     /** Sets the debuggee's program arguments; call before {@link #startLaunch}. Sticky across
      *  {@link #restart()} (the restart re-runs the same launch). */
@@ -1167,10 +891,10 @@ public final class DapManager {
     }
 
     /** {@link #setVmArgs(List)}'s arguments; null when the raw {@link #vmArgs} text applies. */
-    private volatile @Nullable List<String> vmArgList;
+    volatile @Nullable List<String> vmArgList;
 
     /** The JVM arguments of the next launch as java-debug's {@code vmArgs} string, for an adapter on {@code target}. */
-    private String vmArgsFor(LaunchConfig.Target target) {
+    String vmArgsFor(LaunchConfig.Target target) {
         List<String> list = vmArgList;
         return list == null ? vmArgs : LaunchConfig.javaArgs(list, target.windows());
     }
@@ -1191,7 +915,8 @@ public final class DapManager {
      * this machine, never used for a remote file), else for a remote file the host's configured one, else the
      * one jdtls resolved.
      */
-    private @Nullable String javaExecFor(Path file, String javaExecOverride, @Nullable String resolved) {
+    @Nullable
+    String javaExecFor(Path file, String javaExecOverride, @Nullable String resolved) {
         if (!com.editora.process.ExecTargets.runsHere(file)) {
             return hostJavaExec.isBlank() ? resolved : hostJavaExec;
         }
@@ -1209,10 +934,10 @@ public final class DapManager {
     public static final String COMMAND_CATEGORY = "editora.command";
 
     /** The project a Python launch belongs to (null: none) — its venv, and its root on PYTHONPATH. */
-    private volatile @Nullable Path pythonProjectRoot;
+    volatile @Nullable Path pythonProjectRoot;
 
     /** The interpreter picked for that project ("" when none was), relative paths taken from its root. */
-    private volatile String pythonProjectChoice = "";
+    volatile String pythonProjectChoice = "";
 
     /**
      * Sets the project the next Python launch belongs to and the interpreter picked for it; call before
@@ -1228,10 +953,10 @@ public final class DapManager {
     }
 
     /** Run's plan request for the next Python launch (its root, choice, setting, shebang), or null. */
-    private volatile com.editora.run.PythonRunPlan.@Nullable Request pythonRequest;
+    volatile com.editora.run.PythonRunPlan.@Nullable Request pythonRequest;
 
     /** The machine the next Python program runs on, as Run plans it, or null (decided from the file). */
-    private volatile com.editora.run.PythonRunPlan.@Nullable Host pythonHost;
+    volatile com.editora.run.PythonRunPlan.@Nullable Host pythonHost;
 
     /**
      * Plans the next Python launch the way Run plans one: {@code request}'s project root, picked interpreter,
@@ -1246,7 +971,7 @@ public final class DapManager {
     }
 
     /** Environment variables for the next launch (from a saved run configuration; empty otherwise). */
-    private volatile java.util.Map<String, String> env = java.util.Map.of();
+    volatile java.util.Map<String, String> env = java.util.Map.of();
 
     /** Sets the debuggee's environment variables; call before {@link #startLaunchMainClass}. Empty clears them. */
     public void setEnv(java.util.Map<String, String> env) {
@@ -1272,190 +997,24 @@ public final class DapManager {
         startLaunch(file, picker, javaExecOverride, projectRoot, null);
     }
 
-    /**
-     * As above, with the folder a loose file runs in ({@code looseCwd}, null: its own folder) — the project
-     * root of a plain-folder project window, where a program reads its files as it would from a terminal there.
-     */
+    /** See {@link JavaLaunches#startLaunch}. */
     public void startLaunch(
             Path file,
             MainClassPicker picker,
             String javaExecOverride,
             @Nullable Path projectRoot,
             @Nullable Path looseCwd) {
-        if (!ready(file)) {
-            return;
-        }
-        restartAction = () -> startLaunch(file, picker, javaExecOverride, projectRoot, looseCwd);
-        debugFile = file;
-        long epoch = beginSession();
-        setState(State.STARTING);
-        Runnable resolve =
-                () -> resolveMainClassAndLaunch(file, picker, javaExecOverride, projectRoot, looseCwd, epoch);
-        if (projectRoot == null) {
-            correctSourceRoot(file, epoch, resolve);
-        } else {
-            resolve.run();
-        }
-    }
-
-    private void resolveMainClassAndLaunch(
-            Path file,
-            MainClassPicker picker,
-            String javaExecOverride,
-            @Nullable Path projectRoot,
-            @Nullable Path looseCwd,
-            long epoch) {
-        executeCommand(file, "vscode.java.resolveMainClass", List.of(), (res, err) -> {
-            if (!isCurrent(epoch)) {
-                return;
-            }
-            if (err != null) {
-                fail(epoch, tr("debug.error.resolveMainClassFailed", msg(err)));
-                return;
-            }
-            // The reply's parse and the file's own main are read off the FX thread (PERF-01, Pauta 6.2.0).
-            DapPaths paths = pathsFor(file);
-            JAVA_LAUNCH_PLAN.execute(() -> {
-                com.editora.perf.BlockingSites.enter("DapManager.ownMainClass");
-                List<MainClassOption> options = JdtlsReplies.parseMainClasses(res);
-                String own = ownMainClass(file);
-                String fromFile = options.isEmpty() && own == null ? JavaCompilation.mainClassFromFile(file) : null;
-                // which option is this file's: real paths compared here, off the FX thread
-                MainClassOption match = options.stream()
-                        .filter(o -> JavaLaunchSupport.sameFile(o.filePath(), file, paths))
-                        .findFirst()
-                        .orElse(null);
-                fx(() -> {
-                    if (isCurrent(epoch)) {
-                        launchMainClass(
-                                file,
-                                picker,
-                                javaExecOverride,
-                                projectRoot,
-                                looseCwd,
-                                epoch,
-                                options,
-                                own,
-                                fromFile,
-                                match);
-                    }
-                });
-            });
-        });
-    }
-
-    /** {@link #resolveMainClassAndLaunch} once jdtls answered and the file was read: picks and launches. FX thread. */
-    private void launchMainClass(
-            Path file,
-            MainClassPicker picker,
-            String javaExecOverride,
-            @Nullable Path projectRoot,
-            @Nullable Path looseCwd,
-            long epoch,
-            List<MainClassOption> options,
-            @Nullable String own,
-            @Nullable String fromFile,
-            @Nullable MainClassOption match) {
-        DapPaths paths = pathsFor(file);
-        // A project's main class runs in the project root — what Run, the gutter and a saved
-        // configuration use — and a loose file in the window's project folder, else its own folder.
-        Path dir = projectRoot != null ? projectRoot : looseCwd != null ? looseCwd : file.getParent();
-        String cwd = dir == null ? null : paths.toAdapter(dir);
-        if (options.isEmpty()) {
-            // jdtls enumerated no project main class (a standalone file, or the project is still
-            // importing). Derive the fully-qualified class name from the file (package + type name)
-            // and resolve its classpath — the adapter needs a real class name + classPaths, not a path.
-            String fqn = own != null ? own : fromFile;
-            if (fqn == null) {
-                fail(epoch, tr("debug.error.noMainClass"));
-                return;
-            }
-            compileAndLaunch(file, fqn, javaExecOverride, epoch, null, dir);
-            return;
-        }
-        if (match == null && own != null) {
-            // The file declares a main that jdtls does not list: it is outside the project's source
-            // folders (a script beside the project), or jdtls has not seen it yet. Debug the file — never
-            // the project's other main class, which is what used to run instead.
-            compileAndLaunch(file, own, javaExecOverride, epoch, null, dir);
-            return;
-        }
-        if (match != null) {
-            launchOption(file, match, cwd, javaExecOverride, projectRoot, epoch);
-        } else if (options.size() == 1) {
-            // No main here: the project's only one is what Debug means, as in VS Code — said so, because
-            // the program that runs is not the file in front of the user.
-            MainClassOption only = options.get(0);
-            notice(
-                    epoch,
-                    com.editora.i18n.Messages.tr(
-                            "debug.console.noMainInFile", file.getFileName(), String.valueOf(only.className())));
-            launchOption(file, only, cwd, javaExecOverride, projectRoot, epoch);
-        } else {
-            picker.pick(options, chosen -> {
-                if (chosen != null) {
-                    launchOption(file, chosen, cwd, javaExecOverride, projectRoot, epoch);
-                } else {
-                    if (isCurrent(epoch)) {
-                        setState(State.INACTIVE);
-                    }
-                }
-            });
-        }
-    }
-
-    /**
-     * Launches {@code opt}. Outside a build project the classes come from jdtls's "invisible project" only when
-     * the build before this launch brought them up to date; otherwise the file is compiled here, from its own
-     * source ({@link LooseJavaLaunch#classesFor}): jdtls builds that output once, at import, and an old class
-     * file there ran old code after every edit (review 2, A101).
-     */
-    private void launchOption(
-            Path file,
-            MainClassOption opt,
-            @Nullable String cwd,
-            String javaExecOverride,
-            @Nullable Path projectRoot,
-            long epoch) {
-        if (projectRoot != null) {
-            resolveAndLaunch(file, opt, cwd, javaExecOverride, epoch);
-            return;
-        }
-        Path source = optionSource(file, opt);
-        Path dir = cwd == null ? null : pathsFor(file).fromAdapter(cwd);
-        // The source's package clause is read off the FX thread (PERF-01, Pauta 6.2.0).
-        Runnable compile = () -> JAVA_LAUNCH_PLAN.execute(() -> {
-            com.editora.perf.BlockingSites.enter("DapManager.declaredPackage");
-            String pkg = JavaLaunchSupport.declaredPackage(source);
-            fx(() -> {
-                if (isCurrent(epoch)) {
-                    compileAndLaunch(
-                            source,
-                            JavaLaunchSupport.qualified(opt.className(), pkg),
-                            javaExecOverride,
-                            epoch,
-                            null,
-                            dir,
-                            file);
-                }
-            });
-        });
-        boolean built = takeLooseBuild();
-        if (!built) {
-            compile.run(); // no build ran for this launch: whatever jdtls's output holds may be from any earlier one
-            return;
-        }
-        resolveAndLaunch(file, opt, cwd, javaExecOverride, epoch, compile);
+        javaLaunch.startLaunch(file, picker, javaExecOverride, projectRoot, looseCwd);
     }
 
     /**
      * The epoch of the session that runs classes javac compiled (a compact source file, or a loose file or plain
      * folder jdtls could not build); -1 when none. A replace there that jdtls can't build is not the user's error.
      */
-    private volatile long javacEpoch = -1;
+    volatile long javacEpoch = -1;
 
     /** Whether jdtls built a file without a build project for the launch now starting; set by the caller. */
-    private volatile boolean looseBuilt;
+    volatile boolean looseBuilt;
 
     /**
      * Says that jdtls's build of the next launch's file (a loose file or a plain-folder project, which have no
@@ -1466,351 +1025,34 @@ public final class DapManager {
         this.looseBuilt = built;
     }
 
-    private boolean takeLooseBuild() {
-        boolean built = looseBuilt;
-        looseBuilt = false;
-        return built;
-    }
-
-    /** The source file of {@code opt} as Editora reaches it ({@code file} when jdtls named none). */
-    private static Path optionSource(Path file, MainClassOption opt) {
-        if (opt.filePath() == null || opt.filePath().isBlank()) {
-            return file;
-        }
-        try {
-            Path named = pathsFor(file).fromAdapter(opt.filePath());
-            return named == null ? file : named;
-        } catch (RuntimeException e) {
-            return file;
-        }
-    }
-
-    /** The fully-qualified name of the first {@code main} {@code file} declares itself, or null (bounded read). */
+    /** See {@link JavaLaunches#ownMainClass}. */
     static @Nullable String ownMainClass(Path file) {
-        try {
-            if (file == null || Files.size(file) > 2_000_000) {
-                return null;
-            }
-            List<com.editora.run.MainMethodScanner.MainMethod> mains =
-                    com.editora.run.MainMethodScanner.scan(Files.readString(file));
-            return mains.isEmpty() ? null : mains.get(0).fqn();
-        } catch (java.io.IOException | RuntimeException e) {
-            return null;
-        }
+        return JavaLaunches.ownMainClass(file);
     }
 
-    /** A line of Editora's own in the Debug console for the session of {@code epoch} (FX thread). */
-    private void notice(long epoch, String text) {
-        if (isCurrent(epoch)) {
-            listener.onOutput(text + "\n", "console");
-        }
-    }
-
-    /** {@link JavaSourceRootFix} before a launch from a folder with no build file, then {@code then}. */
-    private void correctSourceRoot(Path file, long epoch, Runnable then) {
-        // The file's package clause is read off the FX thread (PERF-01, Pauta 6.2.0).
-        JAVA_LAUNCH_PLAN.execute(() -> {
-            com.editora.perf.BlockingSites.enter("DapManager.declaredPackage");
-            String declared = JavaLaunchSupport.declaredPackage(file);
-            fx(() -> {
-                if (isCurrent(epoch)) {
-                    JavaSourceRootFix.correct(lsp, file, declared, () -> isCurrent(epoch), fixed -> then.run());
-                }
-            });
-        });
-    }
-
-    /** Debug a compact {@code .java} file as the implicit class named after the file. */
+    /** See {@link JavaLaunches#startCompactSource}. */
     public void startCompactSource(Path file, String javaExecOverride) {
-        if (file == null || !file.getFileName().toString().endsWith(".java")) {
-            throw new IllegalArgumentException("Compact source debugging needs a .java file");
-        }
-        if (!ready(file)) {
-            return;
-        }
-        restartAction = () -> startCompactSource(file, javaExecOverride);
-        debugFile = file;
-        long epoch = beginSession();
-        setState(State.STARTING);
-        compileAndLaunch(file, JavaCompilation.compactMainClassFromFile(file), javaExecOverride, epoch, null);
+        javaLaunch.startCompactSource(file, javaExecOverride);
     }
 
-    /** Debug an extensionless Java script via a line-preserving temporary {@code .java} copy. */
+    /** See {@link JavaLaunches#startCompactShebang}. */
     public void startCompactShebang(Path file, int sourceVersion, String javaExecOverride) {
-        if (sourceVersion < 25) {
-            throw new IllegalArgumentException("Compact source debugging requires --source 25 or newer");
-        }
-        if (!ready(file)) {
-            return;
-        }
-        restartAction = () -> startCompactShebang(file, sourceVersion, javaExecOverride);
-        debugFile = file;
-        long epoch = beginSession();
-        setState(State.STARTING);
-        compileAndLaunch(file, file.getFileName().toString(), javaExecOverride, epoch, sourceVersion);
+        javaLaunch.startCompactShebang(file, sourceVersion, javaExecOverride);
     }
 
-    /** Attaches to a running JVM at {@code host:port} (the file provides the jdtls session for the adapter). */
+    /** See {@link JavaLaunches#startAttach}. */
     public void startAttach(@Nullable Path file, String host, int port) {
-        if (!ready(file) || file == null) { // ready() reports a missing file
-            return;
-        }
-        restartAction = () -> startAttach(file, host, port);
-        debugFile = file;
-        long epoch = beginSession();
-        setState(State.STARTING);
-        // java-debug compiles conditions, logpoints and evaluated expressions against a JDT project and an
-        // attach names no main class to infer one from: without the name every evaluation fails, and a
-        // condition that cannot be evaluated counts as a hit.
-        projectNameOf(file, project -> {
-            if (isCurrent(epoch)) {
-                startDebugSessionAndConnect(file, LaunchConfig.attach(host, port, project), true, epoch);
-            }
-        });
+        javaLaunch.startAttach(file, host, port);
     }
 
-    /**
-     * Names the jdtls project {@code file} belongs to (null when jdtls cannot say), on the FX thread. Asks
-     * for the file's main method first — the only form that covers a compact source, which declares no type
-     * — then for the element at its first type declaration, which covers a class with no {@code main} (a
-     * test class, the anchor of Debug Test).
-     */
-    private void projectNameOf(Path file, Consumer<String> cb) {
-        String uri = lsp.serverUri(file);
-        executeCommand(file, "vscode.java.resolveMainMethod", List.of(uri), (res, err) -> {
-            String name = err == null ? JavaLaunchSupport.projectName(res) : null;
-            if (name != null) {
-                cb.accept(name);
-                return;
-            }
-            // The type's position is read from the file off the FX thread (PERF-01, Pauta 6.2.0).
-            JAVA_LAUNCH_PLAN.execute(() -> {
-                com.editora.perf.BlockingSites.enter("DapManager.typeNamePosition");
-                int[] at = JavaLaunchSupport.typeNamePosition(file);
-                fx(() -> {
-                    if (at == null) {
-                        cb.accept(null);
-                        return;
-                    }
-                    executeCommand(
-                            file,
-                            "vscode.java.resolveElementAtSelection",
-                            List.of(uri, at[0], at[1]),
-                            (el, e2) -> cb.accept(e2 == null ? JavaLaunchSupport.projectName(el) : null));
-                });
-            });
-        });
-    }
-
-    private boolean ready(@Nullable Path file) {
-        if (managerClosed) {
-            return false;
-        }
-        boolean hostPlugin = file != null
-                && !com.editora.process.ExecTargets.runsHere(file)
-                && shared.enabled
-                && com.editora.process.ExecTargets.remoteTool(file, "dap.java") != null;
-        if (!javaDebugUsable() && !hostPlugin) {
-            listener.onError(tr("debug.error.javaUnavailable"));
-            return false;
-        }
-        if (file == null) {
-            listener.onError(tr("debug.error.openJavaFile"));
-            return false;
-        }
-        if (client != null) {
-            stop(); // one session at a time
-        }
-        return true;
-    }
-
-    private void resolveAndLaunch(
-            Path file, MainClassOption opt, @Nullable String cwd, String javaExecOverride, long epoch) {
-        resolveAndLaunch(file, opt, cwd, javaExecOverride, epoch, null);
-    }
-
-    /**
-     * Resolves {@code opt}'s classpath + java executable via jdtls, then launches the debug session with the
-     * given working directory. {@code file} routes the jdtls {@code executeCommand}s (must be an open,
-     * LSP-managed document in the same project); {@code cwd} is the debuggee's working directory (the project
-     * root for a project main class, else the file's own folder). {@code ifNoClassFile}, when given, runs
-     * instead of the launch if jdtls's classpath does not hold the main class's class file.
-     */
-    private void resolveAndLaunch(
-            Path file,
-            MainClassOption opt,
-            @Nullable String cwd,
-            String javaExecOverride,
-            long epoch,
-            @Nullable Runnable ifNoClassFile) {
-        String proj = opt.projectName() == null ? "" : opt.projectName();
-        resolveLaunch(file, opt, r -> {
-            if (!isCurrent(epoch)) {
-                return;
-            }
-            // What the launch is made of is the session's (read here); what it decides by is on the disk: the
-            // class files, and the JDK's release file when the classpath is too long for a command line. Those are
-            // looked at off the FX thread (PERF-01, Pauta 6.2.0), and the launch goes on back on it.
-            String javaExec = javaExecFor(file, javaExecOverride, r.javaExec());
-            List<String> args = programArgs;
-            String vmArgs = JavaLaunchSupport.withPreview(vmArgsFor(targetFor(file)), r.enablePreview());
-            Map<String, String> environment = env;
-            LaunchConfig.Target target = targetFor(file);
-            JAVA_LAUNCH_PLAN.execute(() -> {
-                com.editora.perf.BlockingSites.enter("DapManager.planJavaLaunch");
-                boolean compileHere = ifNoClassFile != null
-                        && LooseJavaLaunch.classesFor(
-                                        true,
-                                        JavaLaunchSupport.classFilePresent(r.classPaths(), opt.mainClass())
-                                                || JavaLaunchSupport.classFilePresent(r.modulePaths(), opt.mainClass()))
-                                == LooseJavaLaunch.Classes.COMPILE_HERE;
-                if (com.editora.process.ExecTargets.runsHere(file)) {
-                    prepareExitWrapper(javaExec); // its exit-code wrapper, ready when the session starts
-                }
-                String warning = compileHere || !r.ok() ? null : classesWarning(file, opt, r);
-                Map<String, Object> config = compileHere || !r.ok()
-                        ? null
-                        : LaunchConfig.launch(
-                                opt.mainClass(),
-                                proj,
-                                r.classPaths(),
-                                r.modulePaths(),
-                                javaExec,
-                                cwd,
-                                args,
-                                vmArgs,
-                                environment,
-                                false,
-                                target);
-                fx(() -> {
-                    if (!isCurrent(epoch)) {
-                        return;
-                    }
-                    if (compileHere && ifNoClassFile != null) {
-                        ifNoClassFile.run();
-                        return;
-                    }
-                    if (!r.ok() || config == null) {
-                        fail(epoch, r.error());
-                        return;
-                    }
-                    if (warning != null) {
-                        notice(epoch, warning); // jdtls's output too: it is warned about, never trusted blindly
-                    }
-                    startDebugSessionAndConnect(file, config, false, epoch);
-                });
-            });
-        });
-    }
-
-    /** Where a Java launch reads the disk it decides by: a virtual thread per launch (PERF-01, Pauta 6.2.0). */
-    private static final java.util.concurrent.Executor JAVA_LAUNCH_PLAN =
-            com.editora.process.BlockingTasks.named("java-launch-plan");
-
-    /**
-     * The last word on a project launch's class files, whatever built them (the jdtls build before the launch,
-     * a before-launch step — or nothing, when no build could run): a main class with no class file, or one
-     * older than its source, is launched with a warning in the console that says to build the project first —
-     * the ClassNotFoundException or the old code that follows then has its explanation (review A2). A remote
-     * project's files are the host's and are not read from here.
-     */
-    private static @Nullable String classesWarning(Path file, MainClassOption opt, ResolvedLaunch r) {
-        if (!com.editora.process.ExecTargets.runsHere(file)) {
-            return null;
-        }
-        List<String> paths = new ArrayList<>(r.classPaths());
-        paths.addAll(r.modulePaths());
-        String cls = opt.className();
-        if (cls == null) {
-            return null; // classState has nothing to judge by either
-        }
-        return switch (JavaLaunchSupport.classState(paths, opt.mainClass(), optionSource(file, opt))) {
-            case MISSING -> com.editora.i18n.Messages.tr("debug.console.classesMissing", cls);
-            case STALE -> com.editora.i18n.Messages.tr("debug.console.classesStale", cls);
-            default -> null; // current, or nothing to judge by
-        };
-    }
-
-    /**
-     * Resolves {@code opt}'s classpath + java executable via jdtls (no debug session), delivering a
-     * {@link ResolvedLaunch} (with {@link ResolvedLaunch#error()} set on failure) on the FX thread. Shared by
-     * the debug launch and the non-debug Run path; {@code routingFile} must be an open, LSP-managed Java file
-     * in the same project.
-     */
+    /** See {@link JavaLaunches#resolveLaunch}. */
     public void resolveLaunch(Path routingFile, MainClassOption opt, Consumer<ResolvedLaunch> cb) {
-        // The chokepoint guard, so no future caller can reproduce the class of bug: jdtls builds an Eclipse
-        // SearchPattern from the main class, and createPattern("") returns null, surfacing as an internal
-        // NPE from its search engine instead of anything actionable. Callers check first and say something
-        // useful; this makes the unchecked path fail cleanly rather than incomprehensibly.
-        String mainClass = opt.mainClass();
-        if (mainClass == null || mainClass.isBlank()) {
-            cb.accept(ResolvedLaunch.failed(tr("debug.error.configNeedsMainClass")));
-            return;
-        }
-        String proj = opt.projectName() == null ? "" : opt.projectName();
-        executeCommand(routingFile, "vscode.java.resolveClasspath", List.of(mainClass, proj), (res, err) -> {
-            if (err != null) {
-                cb.accept(ResolvedLaunch.failed(tr("debug.error.classpathFailed", msg(err))));
-                return;
-            }
-            List<String> modulepaths = new ArrayList<>();
-            List<String> classpaths = new ArrayList<>();
-            JdtlsReplies.parseClasspath(res, modulepaths, classpaths);
-            if (classpaths.isEmpty() && modulepaths.isEmpty()) {
-                // Log what the server ACTUALLY said. An empty classpath has two very different causes —
-                // the project genuinely isn't importable, or we failed to read a perfectly good reply — and
-                // the message below can only guess at the first. Without this the two are indistinguishable
-                // from the outside, which cost a long debugging session: jdtls was returning
-                // [[], ["…/target/classes"]] while the user was told the project hadn't imported.
-                LOG.log(
-                        Level.WARNING,
-                        () -> "resolveClasspath returned no entries for " + mainClass + " (project='"
-                                + proj + "'); raw result type="
-                                + (res == null ? "null" : res.getClass().getName())
-                                + " value=" + JdtlsReplies.abbreviate(String.valueOf(res)));
-                cb.accept(ResolvedLaunch.failed(tr("debug.error.classpathEmpty", mainClass)));
-                return;
-            }
-            executeCommand(
-                    routingFile,
-                    "vscode.java.resolveJavaExecutable",
-                    List.of(mainClass, proj),
-                    (jx, e2) -> executeCommand(
-                            routingFile,
-                            "vscode.java.checkProjectSettings",
-                            List.of(JavaLaunchSupport.previewSettingsQuery(mainClass, proj)),
-                            // A project compiled with --enable-preview needs the flag to load its classes;
-                            // a failed check (an older java-debug) leaves the launch as it was.
-                            (preview, e3) -> cb.accept(new ResolvedLaunch(
-                                    JdtlsReplies.asString(jx),
-                                    modulepaths,
-                                    classpaths,
-                                    null,
-                                    e3 == null && JavaLaunchSupport.isTrue(preview)))));
-        });
+        javaLaunch.resolveLaunch(routingFile, opt, cb);
     }
 
-    /**
-     * Enumerates <b>every</b> main class in {@code routingFile}'s jdtls project (not just the file's own),
-     * for a project-level "Run/Debug Main Class…" picker. {@code routingFile} must be an open, LSP-managed
-     * Java document (jdtls's {@code executeCommand} routes by open-document URI). Delivers an empty list on
-     * any error / when debugging isn't available. Callback runs on the FX thread.
-     */
+    /** See {@link JavaLaunches#resolveMainClasses}. */
     public void resolveMainClasses(Path routingFile, Consumer<List<MainClassOption>> cb) {
-        if (!javaDebugUsable() || routingFile == null) {
-            cb.accept(List.of());
-            return;
-        }
-        executeCommand(routingFile, "vscode.java.resolveMainClass", List.of(), (res, err) -> {
-            if (err != null) {
-                // The caller cannot tell this from "the project has none" — it reports the same thing either
-                // way — so the log is the only place the difference can survive.
-                LOG.log(Level.WARNING, err, () -> "vscode.java.resolveMainClass failed for " + routingFile);
-                cb.accept(List.of());
-                return;
-            }
-            cb.accept(JdtlsReplies.parseMainClasses(res));
-        });
+        javaLaunch.resolveMainClasses(routingFile, cb);
     }
 
     /**
@@ -1828,244 +1070,10 @@ public final class DapManager {
         startLaunchMainClass(routingFile, opt, cwd, javaExecOverride, false);
     }
 
-    /**
-     * As above; {@code plainFolder} for a project with no build file, whose classes jdtls never compiles —
-     * the chosen class is then compiled from its own source when its class file is missing (review A16).
-     */
+    /** See {@link JavaLaunches#startLaunchMainClass}. */
     public void startLaunchMainClass(
             Path routingFile, MainClassOption opt, Path cwd, String javaExecOverride, boolean plainFolder) {
-        if (!ready(routingFile)) {
-            return;
-        }
-        restartAction = () -> startLaunchMainClass(routingFile, opt, cwd, javaExecOverride, plainFolder);
-        debugFile = routingFile;
-        long epoch = beginSession();
-        setState(State.STARTING);
-        String adapterCwd = cwd == null ? null : pathsFor(routingFile).toAdapter(cwd);
-        if (plainFolder) {
-            correctSourceRoot(
-                    routingFile,
-                    epoch,
-                    () -> launchOption(routingFile, opt, adapterCwd, javaExecOverride, null, epoch));
-        } else {
-            resolveAndLaunch(routingFile, opt, adapterCwd, javaExecOverride, epoch);
-        }
-    }
-
-    /**
-     * Standalone-file fallback: jdtls enumerated no project main class (a loose file with no build
-     * project, where jdtls's invisible-project classpath resolution is unreliable). Compile the file
-     * ourselves with {@code javac -g} (debug info) to a temp dir, then launch with that dir as the
-     * classpath — self-contained, like the Run feature. jdtls is still used only to start the adapter.
-     * Runs off the FX thread (javac is a subprocess).
-     */
-    private void compileAndLaunch(
-            Path file, String fqn, String javaExecOverride, long epoch, @Nullable Integer sourceVersion) {
-        compileAndLaunch(file, fqn, javaExecOverride, epoch, sourceVersion, null);
-    }
-
-    /**
-     * As above, running the program in {@code workingDir} (null: the file's own folder). The file is compiled
-     * with its package's source folder as javac's source path, so the other classes of that package compile
-     * with it, and the class is launched by the package the file declares.
-     */
-    private void compileAndLaunch(
-            Path file,
-            String fqn,
-            String javaExecOverride,
-            long epoch,
-            @Nullable Integer sourceVersion,
-            @Nullable Path workingDir) {
-        compileAndLaunch(file, fqn, javaExecOverride, epoch, sourceVersion, workingDir, file);
-    }
-
-    /**
-     * As above, for a {@code file} that may not be open in the editor: {@code routing} — an open Java file of
-     * the same jdtls project — carries the jdtls commands that start the adapter.
-     */
-    private void compileAndLaunch(
-            Path file,
-            @Nullable String fqn,
-            String javaExecOverride,
-            long epoch,
-            @Nullable Integer sourceVersion,
-            @Nullable Path workingDir,
-            Path routing) {
-        javacEpoch = epoch; // this session runs javac's classes, not jdtls's output (review 3 verify, A201)
-        // A remote file is compiled on its host, with its javac, into a folder of the host's cache.
-        boolean remote = !com.editora.process.ExecTargets.runsHere(file);
-        DapPaths paths = pathsFor(file);
-        Map<String, String> launchEnvironment = env;
-        startupTask = io.submit(() -> {
-            Path out = null;
-            Runnable removal = null;
-            boolean retained = false;
-            try {
-                Path compileFile = file;
-                if (remote) {
-                    JavaCompilation.HostCompilation host = JavaCompilation.hostCompilation(
-                            file,
-                            sourceVersion == null ? null : JavaCompilation.withoutShebang(Files.readString(file)));
-                    out = host.directory();
-                    removal = host.removal();
-                    if (host.source() != null) {
-                        compileFile = host.source();
-                    }
-                } else {
-                    out = Files.createTempDirectory("editora-dap-");
-                    if (sourceVersion != null) {
-                        compileFile = out.resolve(file.getFileName() + ".java");
-                        Files.writeString(compileFile, JavaCompilation.withoutShebang(Files.readString(file)));
-                    }
-                }
-                String javaExec = remote
-                        ? JavaCompilation.hostJava(file)
-                        : javaExecOverride == null || javaExecOverride.isBlank()
-                                ? firstOrNull(ProcessRunner.resolveExecutable(List.of("java")))
-                                : javaExecOverride;
-                // Route through ProcessRunner.run so the compile is bounded by a hard timeout (a hung javac
-                // would otherwise pin the single-threaded `io` executor and block every later DAP start/detect)
-                // and both pipes are drained concurrently (no fill-the-buffer deadlock).
-                Path sourceRoot = sourceVersion != null
-                        ? null
-                        : JavaLaunchSupport.sourceRoot(file, JavaLaunchSupport.declaredPackage(file));
-                ProcessRunner.Result r = remote
-                        ? JavaCompilation.compileOnHost(
-                                file, compileFile, out, javaExec, launchEnvironment, sourceVersion, sourceRoot)
-                        : JavaCompilation.compileStandalone(
-                                file, compileFile, out, javaExec, launchEnvironment, sourceVersion, sourceRoot);
-                if (!r.ok()) {
-                    // javac's own report — file, line, the caret under the mistake — belongs in the Debug
-                    // console, where its "File.java:3:" lines open the file; the status line only says so.
-                    failWithConsole(
-                            epoch,
-                            JavaLaunchSupport.compilerReport(r.out(), r.err(), compileFile, file),
-                            com.editora.i18n.Messages.tr("status.debug.compileFailed", file.getFileName()),
-                            true);
-                    return;
-                }
-                synchronized (sessionLock) {
-                    if (!isCurrent(epoch)) {
-                        return;
-                    }
-                    compilationDirectory = out;
-                    compilationRemoval = removal;
-                    // A script is compiled from a copy, and a loose file's class may come back with no source
-                    // path (jdtls cannot always place it): either way its frames are this file's.
-                    sourceAlias = new SourceAlias(epoch, file, compileFile);
-                    retained = true;
-                }
-                Runnable compiled = compiledForTest;
-                if (compiled != null) {
-                    compiled.run();
-                }
-                Path runIn = workingDir != null ? workingDir : file.getParent();
-                String cwd = runIn == null ? null : paths.toAdapter(runIn);
-                String classes = paths.toAdapter(out);
-                // The classes come from a temp dir, so java-debug cannot infer the project it compiles
-                // conditions, logpoints and evaluated expressions against: name the one jdtls keeps the
-                // source in (its invisible project for a loose file).
-                fx(() -> projectNameOf(
-                        routing,
-                        project -> startDebugSessionAndConnect(
-                                routing,
-                                LaunchConfig.launch(
-                                        fqn,
-                                        project,
-                                        List.of(classes),
-                                        List.of(),
-                                        javaExec,
-                                        cwd,
-                                        programArgs,
-                                        vmArgsFor(targetFor(file)),
-                                        launchEnvironment,
-                                        false,
-                                        targetFor(file)),
-                                false,
-                                epoch)));
-            } catch (Exception e) {
-                fail(epoch, tr("debug.error.compileLaunchFailed", fqn, msg(e)));
-            } finally {
-                if (!retained && out != null) {
-                    JavaCompilation.removeCompilation(out, removal);
-                }
-            }
-        });
-    }
-
-    private @Nullable SourceAlias activeSourceAlias() {
-        SourceAlias alias = sourceAlias;
-        return alias != null && alias.epoch() == sessionEpoch ? alias : null;
-    }
-
-    /** Remove both the temporary source and compiled classes after the adapter releases them. */
-    private void releaseCompilationDirectory() {
-        Path directory;
-        Runnable removal;
-        synchronized (sessionLock) { // the compile thread retains a folder under this lock
-            directory = compilationDirectory;
-            removal = compilationRemoval;
-            compilationDirectory = null;
-            compilationRemoval = null;
-            sourceAlias = null;
-        }
-        if (directory != null) {
-            java.util.concurrent.CompletableFuture.runAsync(
-                    () -> JavaCompilation.removeCompilation(directory, removal),
-                    com.editora.process.BlockingTasks.named("dap-remove-compilation"));
-        }
-    }
-
-    private List<DapModels.FileBreakpoints> adapterBreakpoints(List<DapModels.FileBreakpoints> breakpoints) {
-        return breakpoints.stream().map(this::adapterBreakpoint).toList();
-    }
-
-    private DapModels.FileBreakpoints adapterBreakpoint(DapModels.FileBreakpoints breakpoint) {
-        SourceAlias alias = activeSourceAlias();
-        return alias != null && alias.original().equals(breakpoint.file())
-                ? new DapModels.FileBreakpoints(alias.compiled(), breakpoint.breakpoints())
-                : breakpoint;
-    }
-
-    private List<DapModels.StackFrameInfo> originalFrames(@Nullable List<DapModels.StackFrameInfo> frames) {
-        if (frames == null || frames.isEmpty()) {
-            return List.of();
-        }
-        // java-debug finds a class's source through jdtls, which knows a Java script by the .java stand-in
-        // it is shown (LspManager.scriptForStandIn): the frame is the script's.
-        frames = frames.stream()
-                .map(frame -> {
-                    Path script = lsp == null ? null : lsp.scriptForStandIn(frame.file());
-                    return script == null
-                            ? frame
-                            : new DapModels.StackFrameInfo(
-                                    frame.id(), frame.name(), script, frame.line(), frame.column());
-                })
-                .toList();
-        SourceAlias alias = activeSourceAlias();
-        if (alias == null) {
-            return frames;
-        }
-        return frames.stream()
-                .map(frame -> isAliasedFrame(alias, frame)
-                        ? new DapModels.StackFrameInfo(
-                                frame.id(), frame.name(), alias.original(), frame.line(), frame.column())
-                        : frame)
-                .toList();
-    }
-
-    private static boolean isAliasedFrame(SourceAlias alias, DapModels.StackFrameInfo frame) {
-        if (alias.compiled().equals(frame.file())) {
-            return true;
-        }
-        // java-debug can omit Source.path for a class compiled from a temporary source file. Its
-        // frame name still identifies the implicit class; leave unrelated library frames untouched.
-        String fileName = alias.original().getFileName().toString();
-        String className =
-                fileName.endsWith(".java") ? fileName.substring(0, fileName.length() - ".java".length()) : fileName;
-        return frame.file() == null
-                && frame.name() != null
-                && (frame.name().startsWith(className + ".") || frame.name().startsWith(className + "$"));
+        javaLaunch.startLaunchMainClass(routingFile, opt, cwd, javaExecOverride, plainFolder);
     }
 
     // Moved to JavaCompilation; kept here for the callers that name them on DapManager.
@@ -2106,7 +1114,7 @@ public final class DapManager {
         return JavaCompilation.mainClassFromFile(file);
     }
 
-    private static @Nullable String firstOrNull(List<String> l) {
+    static @Nullable String firstOrNull(List<String> l) {
         return l == null || l.isEmpty() ? null : l.get(0);
     }
 
@@ -2116,7 +1124,7 @@ public final class DapManager {
     }
 
     /** The java-debug settings to send: Settings' with the Java Don't step into classes. */
-    private String javaSettingsJson() {
+    String javaSettingsJson() {
         return shared.javaDebugSettings.toJson(
                 StepFilters.classPatterns("java", StepFilters.patterns(shared.stepFilters, "java")));
     }
@@ -2153,130 +1161,6 @@ public final class DapManager {
         return StepFilters.patterns(shared.stepFilters, sessionLanguage);
     }
 
-    private void startDebugSessionAndConnect(
-            @Nullable Path file, java.util.Map<String, Object> args, boolean attach, long epoch) {
-        if (!isCurrent(epoch)) {
-            return;
-        }
-        // java-debug keeps one set of settings per jdtls: give it this session's before the session starts. A
-        // failure (an older java-debug) is no reason not to debug, on its defaults as before.
-        executeCommand(file, JavaDebugSettings.COMMAND, List.of(javaSettingsJson()), (r, e) -> {
-            if (e != null) {
-                LOG.log(Level.FINE, "java-debug settings were not applied", e);
-            }
-            startDebugSession(file, args, attach, epoch);
-        });
-    }
-
-    private void startDebugSession(
-            @Nullable Path file, java.util.Map<String, Object> args, boolean attach, long epoch) {
-        if (!isCurrent(epoch)) {
-            return;
-        }
-        javaAdapterEpoch = epoch;
-        executeCommand(file, "vscode.java.startDebugSession", List.of(), (res, err) -> {
-            if (!isCurrent(epoch)) {
-                return;
-            }
-            if (err != null) {
-                fail(epoch, tr("debug.error.sessionFailed", msg(err)));
-                return;
-            }
-            int port = JdtlsReplies.asInt(res);
-            if (port <= 0) {
-                fail(epoch, tr("debug.error.noPort"));
-                return;
-            }
-            // The adapter (and the debuggee it launches) live inside that jdtls: pin it for this session.
-            lspLease.run();
-            lspLease = lsp.retain(file);
-            DapClient c = new DapClient(sessionHost(epoch));
-            c.setPaths(pathsFor(file));
-            boolean wrap = false;
-            if (!attach && shared.programConsole) {
-                c.setRunsDebuggee(true);
-                LaunchConfig.inClientConsole(args);
-            } else if (!attach) {
-                wrap = true; // on the connect thread below: making a wrapper writes files (PERF-01)
-            }
-            boolean wrapExit = wrap;
-            c.setBreakpoints(adapterBreakpoints(shared.breakpointsSupplier.get())); // snapshot on the FX thread
-            c.setExceptionFilters(filtersFor("java"));
-            if (!publishClient(epoch, c)) {
-                c.dispose();
-                return;
-            }
-            // Connect off the FX thread (the socket open blocks with retries), then launch/attach. The
-            // connect future completes on the DAP reader thread, so every state change here must be
-            // marshaled back to the FX thread (it touches the Debug panel + status bar).
-            io.submit(() -> {
-                if (wrapExit) {
-                    // Before the launch request carries args: every launch path gets its wrapper, also one whose
-                    // plan made none ahead (a loose file compiled here, a compact file, a launch configuration).
-                    wrapForExitCode(file, args, epoch);
-                }
-                connectJava(c, file, port).whenComplete((caps, e) -> {
-                    if (e != null) {
-                        fail(epoch, tr("debug.error.connectFailed", msg(e)));
-                        return;
-                    }
-                    if (!isCurrent(epoch, c)) {
-                        c.dispose();
-                        return;
-                    }
-                    (attach ? c.attach(args) : c.launch(args)).whenComplete((v, le) -> {
-                        if (le != null) {
-                            String refused = attach ? DapErrors.refusedAttach(msg(le)) : null;
-                            if (refused != null) {
-                                // Nothing listens there: say so, and how a JVM is made to listen (review 2, A109).
-                                failWithConsole(
-                                        epoch,
-                                        tr("debug.console.attachRefused", refused),
-                                        tr("status.debug.attachRefused", refused));
-                                return;
-                            }
-                            fail(epoch, tr(attach ? "debug.error.attachFailed" : "debug.error.launchFailed", msg(le)));
-                            return;
-                        }
-                        // Running once the adapter has the program, not when the request left: until then
-                        // java-debug is still starting the JVM. A stop that came first has already said SUSPENDED.
-                        fx(() -> {
-                            if (!isCurrent(epoch, c)) {
-                                return;
-                            }
-                            if (state == State.STARTING) {
-                                setState(State.RUNNING);
-                            }
-                            if (!attach && args.get("javaExec") instanceof String javaExec && !javaExec.isBlank()) {
-                                listener.onDebuggeeRuntime(
-                                        List.of(realJavaExec(epoch, javaExec)), runtimeWhere(file), Map.of());
-                            }
-                        });
-                    });
-                });
-            });
-        });
-    }
-
-    /**
-     * Connects to the java-debug adapter jdtls opened on {@code port}: on this machine directly, on a remote
-     * file's host through a tunnel that closes with the session.
-     */
-    private CompletableFuture<org.eclipse.lsp4j.debug.Capabilities> connectJava(
-            DapClient c, @Nullable Path file, int port) {
-        if (com.editora.process.ExecTargets.runsHere(file)) {
-            return c.connect(port, "java");
-        }
-        try {
-            com.editora.process.PortForward forward =
-                    com.editora.process.ExecTargets.forPath(file).forwardLocal("127.0.0.1", port);
-            c.closeOnDispose(forward);
-            return c.connect(forward.localPort(), "java");
-        } catch (java.io.IOException | RuntimeException e) {
-            return CompletableFuture.failedFuture(e);
-        }
-    }
-
     /** How the adapter of a session for {@code file} names files: its host's paths for a remote file. */
     static DapPaths pathsFor(@Nullable Path file) {
         return file != null && !com.editora.process.ExecTargets.runsHere(file)
@@ -2290,7 +1174,7 @@ public final class DapManager {
      * Launches a debug session for a standalone-adapter language (python/javascript). Snapshots the
      * breakpoints on the FX thread, then spawns the adapter + connects + sends {@code launch} off it.
      */
-    private void startProgram(Path file, String language) {
+    void startProgram(Path file, String language) {
         startProgram(file, language, null);
     }
 
@@ -2299,7 +1183,7 @@ public final class DapManager {
      * module with its own arguments and folder instead of the file — a test under pytest. {@code file} still
      * names the session, picks the interpreter and anchors the breakpoints.
      */
-    private void startProgram(Path file, String language, PythonLaunch.@Nullable Target module) {
+    void startProgram(Path file, String language, PythonLaunch.@Nullable Target module) {
         startProgram(file, language, module, null);
     }
 
@@ -2312,7 +1196,7 @@ public final class DapManager {
         startProgram(file, language, null, Map.copyOf(configured));
     }
 
-    private void startProgram(
+    void startProgram(
             Path file,
             String language,
             PythonLaunch.@Nullable Target module,
@@ -2337,25 +1221,25 @@ public final class DapManager {
                 boolean remote = !com.editora.process.ExecTargets.runsHere(file);
                 if (spec.kind() == DapServerRegistry.Kind.STDIO) {
                     if (remote) {
-                        startRemoteStdio(file, spec, bps, filters, epoch, module);
+                        pythonSessions.startRemoteStdio(file, spec, bps, filters, epoch, module);
                     } else {
-                        startStdio(file, spec, bps, filters, epoch, module, configured);
+                        pythonSessions.startStdio(file, spec, bps, filters, epoch, module, configured);
                     }
                 } else if (spec.kind() == DapServerRegistry.Kind.JVM && !remote) {
-                    startJvm(file, spec, bps, filters, epoch);
+                    jvmSessions.startJvm(file, spec, bps, filters, epoch);
                 } else if (spec.kind() == DapServerRegistry.Kind.LANGUAGE_SERVER && !remote) {
                     if (serverDebugs(file, language)) {
-                        startHosted(file, spec, bps, filters, epoch);
+                        jvmSessions.startHosted(file, spec, bps, filters, epoch);
                     } else if (DapServerRegistry.fallbackKind(language) == DapServerRegistry.Kind.JVM) {
-                        startJvm(file, spec, bps, filters, epoch);
+                        jvmSessions.startJvm(file, spec, bps, filters, epoch);
                     } else {
                         fail(epoch, tr("debug.error.transport", language));
                     }
                 } else if (spec.kind() == DapServerRegistry.Kind.SOCKET) {
                     if (remote) {
-                        startRemoteSocket(file, spec, bps, filters, epoch);
+                        jsSessions.startRemoteSocket(file, spec, bps, filters, epoch);
                     } else {
-                        startSocket(file, spec, bps, filters, epoch, configured);
+                        jsSessions.startSocket(file, spec, bps, filters, epoch, configured);
                     }
                 } else {
                     fail(epoch, tr("debug.error.transport", language));
@@ -2389,28 +1273,10 @@ public final class DapManager {
     /** How long an {@link ExternalAdapter.Transport#ANNOUNCED_PORT} adapter has to say where it listens. */
     static final java.time.Duration ANNOUNCE_TIMEOUT = java.time.Duration.ofSeconds(15);
 
-    /**
-     * Finds external adapter language {@code language}'s adapter: {@code command} (a configured executable; blank:
-     * the profile's own command, looked up on the PATH) when {@code on}. Off the FX thread; {@code onDone} hears
-     * whether it was found, on the FX thread.
-     */
+    /** See {@link ExternalLaunches#configureExternal}. */
     public void configureExternal(
             DebugLanguage language, boolean on, String command, java.util.function.@Nullable Consumer<Boolean> onDone) {
-        ExternalAdapter external = language.external();
-        if (external == null) {
-            throw new IllegalArgumentException(language.id() + " is not an external adapter");
-        }
-        io.submit(() -> {
-            String found = on ? locateExternal(language, command) : null;
-            if (found == null) {
-                shared.externalLocated.remove(language.id());
-            } else {
-                shared.externalLocated.put(language.id(), found);
-            }
-            if (onDone != null) {
-                fx(() -> onDone.accept(found != null));
-            }
-        });
+        externalLaunches.configureExternal(language, on, command, onDone);
     }
 
     /**
@@ -2421,137 +1287,29 @@ public final class DapManager {
         shared.externalPathDirs.put(languageId, List.copyOf(dirs));
     }
 
-    /** {@code path} with {@code first} before its own folders, none twice. Pure. */
+    /** See {@link ExternalLaunches#pathWithFirst}. */
     static String pathWithFirst(List<String> first, @Nullable String path, String separator) {
-        java.util.LinkedHashSet<String> dirs = new java.util.LinkedHashSet<>();
-        for (String d : first) {
-            if (d != null && !d.isBlank()) {
-                dirs.add(d);
-            }
-        }
-        if (path != null && !path.isEmpty()) {
-            dirs.addAll(List.of(path.split(java.util.regex.Pattern.quote(separator))));
-        }
-        return String.join(separator, dirs);
+        return ExternalLaunches.pathWithFirst(first, path, separator);
     }
 
-    /**
-     * External adapter language {@code language}'s adapter as an executable file: {@code command} (a configured path
-     * or command), or when blank the profile's own command ({@code dlv}), found on the PATH; null when not found.
-     * Blocking: off the FX thread.
-     */
+    /** See {@link ExternalLaunches#locateExternal}. */
     public static @Nullable String locateExternal(DebugLanguage language, @Nullable String command) {
-        ExternalAdapter external = language.external();
-        if (external == null) {
-            return null;
-        }
-        if (DebugLanguages.CODELLDB.equals(external)) {
-            // CodeLLDB lives in its extension's folder (Editora's install, VS Code's), or is named by its path.
-            Path home = Path.of(System.getProperty("user.home", ""));
-            String onPath = command == null || command.isBlank() ? locateExecutable("codelldb") : null;
-            return DebugAdapterLocator.locateCodelldb(command, home)
-                    .map(Path::toString)
-                    .orElse(onPath);
-        }
-        InstalledAdapter installed = installedAdapter(language);
-        if (installed != null) {
-            // In Editora's install, a VS Code extension, or named by its path; else the program on the PATH.
-            Path home = Path.of(System.getProperty("user.home", ""));
-            String onPath = installed.program() && (command == null || command.isBlank())
-                    ? locateExecutable(installed.file())
-                    : null;
-            return installed.locate(command, home).map(Path::toString).orElse(onPath);
-        }
-        String asked = command == null || command.isBlank() ? external.command().getFirst() : command.strip();
-        String found = locateExecutable(asked);
-        if (found != null || asked.indexOf('/') >= 0 || asked.indexOf('\\') >= 0) {
-            return found; // a path is that file, or nothing
-        }
-        // `go install` puts Delve in the Go bin folder, which may not have been there when Editora read its PATH.
-        boolean windows = com.editora.Os.isWindows();
-        Path home = Path.of(System.getProperty("user.home", ""));
-        List<Path> toolDirs = DebugLanguages.GO.equals(language)
-                ? goBinDirs(System.getenv(), home)
-                : DebugLanguages.RUBY.equals(language) ? gemUserBinDirs(home) : List.of();
-        for (Path dir : toolDirs) {
-            String inDir = locateExecutable(
-                    dir.resolve(windows ? asked + ".exe" : asked).toString());
-            if (inDir != null) {
-                return inDir;
-            }
-        }
-        return null;
+        return ExternalLaunches.locateExternal(language, command);
     }
 
-    /** The installable adapter {@code language} runs on (C#'s netcoredbg), or null when it has none. */
+    /** See {@link ExternalLaunches#installedAdapter}. */
     static @Nullable InstalledAdapter installedAdapter(DebugLanguage language) {
-        if (DebugLanguages.CSHARP.equals(language)) {
-            return InstalledAdapter.NETCOREDBG;
-        }
-        if (DebugLanguages.BASH.equals(language)) {
-            return InstalledAdapter.BASH_DEBUG;
-        }
-        if (DebugLanguages.LUA.equals(language)) {
-            return InstalledAdapter.LUA_DEBUG;
-        }
-        if (DebugLanguages.POWERSHELL.equals(language)) {
-            return InstalledAdapter.POWERSHELL;
-        }
-        if (DebugLanguages.ELIXIR.equals(language)) {
-            return InstalledAdapter.ELIXIR_LS;
-        }
-        if (DebugLanguages.FIREFOX.equals(language)) {
-            return InstalledAdapter.FIREFOX_DEBUG;
-        }
-        return DebugLanguages.PHP.equals(language) ? InstalledAdapter.PHP_DEBUG : null;
+        return ExternalLaunches.installedAdapter(language);
     }
 
-    /**
-     * Where {@code go install} puts programs: {@code $GOBIN}, else each {@code $GOPATH} folder's {@code bin}, else
-     * {@code ~/go/bin}. Pure.
-     */
+    /** See {@link ExternalLaunches#goBinDirs}. */
     static List<Path> goBinDirs(Map<String, String> env, Path home) {
-        List<Path> out = new ArrayList<>();
-        String gobin = env.get("GOBIN");
-        if (gobin != null && !gobin.isBlank()) {
-            out.add(Path.of(gobin.strip()));
-        }
-        String gopath = env.get("GOPATH");
-        if (gopath != null && !gopath.isBlank()) {
-            for (String dir : gopath.split(java.util.regex.Pattern.quote(java.io.File.pathSeparator))) {
-                if (!dir.isBlank()) {
-                    out.add(Path.of(dir.strip(), "bin"));
-                }
-            }
-        }
-        out.add(home.resolve("go").resolve("bin"));
-        return out;
+        return ExternalLaunches.goBinDirs(env, home);
     }
 
-    /**
-     * Where {@code gem install --user-install} puts programs: {@code ~/.local/share/gem/ruby/<version>/bin} (Ruby 3.3's
-     * XDG folder) and {@code ~/.gem/ruby/<version>/bin}, the newest version first. Lists folders.
-     */
+    /** See {@link ExternalLaunches#gemUserBinDirs}. */
     static List<Path> gemUserBinDirs(Path home) {
-        List<Path> out = new ArrayList<>();
-        for (Path base : List.of(
-                home.resolve(".local").resolve("share").resolve("gem").resolve("ruby"),
-                home.resolve(".gem").resolve("ruby"))) {
-            if (!Files.isDirectory(base)) {
-                continue;
-            }
-            try (java.util.stream.Stream<Path> versions = Files.list(base)) {
-                versions.filter(Files::isDirectory)
-                        .sorted(java.util.Comparator.comparing(
-                                        (Path v) -> v.getFileName().toString(),
-                                        (a, b) -> DebugAdapterLocator.compareVersions(a, b))
-                                .reversed())
-                        .forEach(v -> out.add(v.resolve("bin")));
-            } catch (java.io.IOException | RuntimeException e) {
-                // unreadable: skip
-            }
-        }
-        return out;
+        return ExternalLaunches.gemUserBinDirs(home);
     }
 
     /** Whether {@link #configureExternal} found {@code language}'s adapter (GDB's, a user's own). */
@@ -2559,15 +1317,9 @@ public final class DapManager {
         return shared.enabled && shared.externalLocated.containsKey(language.id());
     }
 
-    /** {@code command} as an executable file: itself when it is a path, else found on the PATH; null when neither. */
+    /** See {@link ExternalLaunches#locateExecutable}. */
     static @Nullable String locateExecutable(String command) {
-        Path p;
-        try {
-            p = Path.of(ProcessRunner.resolveExecutable(List.of(command)).getFirst());
-        } catch (java.nio.file.InvalidPathException e) {
-            return null; // not a name a file can have
-        }
-        return p.isAbsolute() && Files.isRegularFile(p) && Files.isExecutable(p) ? p.toString() : null;
+        return ExternalLaunches.locateExecutable(command);
     }
 
     /**
@@ -2581,296 +1333,19 @@ public final class DapManager {
         startExternal(file, language, launch, List.of());
     }
 
-    /**
-     * As {@link #startExternal(Path, DebugLanguage, Map)}, with {@code adapterTail} after the adapter's command: the
-     * program, for an adapter that is the debugged program itself (Ruby's {@code rdbg … -- ruby script.rb}), which
-     * then runs in the request's {@code cwd}.
-     */
+    /** See {@link ExternalLaunches#startExternal}. */
     public void startExternal(Path file, DebugLanguage language, Map<String, Object> launch, List<String> adapterTail) {
-        if (managerClosed) {
-            return;
-        }
-        if (!shared.enabled) {
-            listener.onError(tr("debug.error.disabled"));
-            return;
-        }
-        ExternalAdapter external = language.external();
-        if (external == null) {
-            listener.onError(tr(language.unavailableKey()));
-            return;
-        }
-        if (client != null) {
-            stop(); // one session at a time
-        }
-        List<String> tail = List.copyOf(adapterTail);
-        restartAction = () -> startExternal(file, language, launch, tail);
-        debugFile = file;
-        long epoch = beginSession();
-        // Delve's program for this session (a restart builds it again): kept from another window's clean-up
-        goDebugBinary = launch.get("output");
-        GoLaunch.holdDebugBinary(goDebugBinary);
-        postMortem = CoreDumps.isCore(launch);
-        remoteEntryPending = RemoteNativeAttach.isRemote(launch);
-        setState(State.STARTING);
-        List<DapModels.FileBreakpoints> bps = shared.breakpointsSupplier.get();
-        List<String> filters = filtersFor(language.id());
-        String executable = shared.externalLocated.get(language.id());
-        startupTask = io.submit(() -> {
-            try {
-                runExternal(file, language, external, executable, bps, filters, epoch, launch, tail);
-            } catch (Exception e) {
-                fail(epoch, tr("debug.error.startFailed", msg(e)));
-            }
-        });
+        externalLaunches.startExternal(file, language, launch, adapterTail);
     }
 
-    private void runExternal(
-            Path file,
-            DebugLanguage language,
-            ExternalAdapter external,
-            @Nullable String executable,
-            List<DapModels.FileBreakpoints> bps,
-            @Nullable List<String> filters,
-            long epoch,
-            Map<String, Object> request,
-            List<String> programTail)
-            throws Exception {
-        int port = external.transport() == ExternalAdapter.Transport.PORT_ARGUMENT ? freePort() : -1;
-        // vscode-bash-debug checks each program it names: its bashdb, bash, cat, mkfifo, pkill, by absolute path.
-        Map<String, Object> sent = request;
-        if (DebugLanguages.GDB.equals(language) && request.containsKey(RemoteNativeAttach.SOURCE_FILE_MAP)) {
-            sent = new java.util.LinkedHashMap<>(request);
-            sent.remove(RemoteNativeAttach.SOURCE_FILE_MAP); // GDB's command line carries it (below)
-        }
-        Map<String, Object> launch = DebugLanguages.BASH.equals(language) && executable != null
-                ? ScriptLaunch.withBashTools(
-                        sent,
-                        Path.of(executable),
-                        name -> ProcessRunner.resolveExecutable(List.of(name)).getFirst())
-                : DebugLanguages.LUA.equals(language) && executable != null
-                        ? ScriptLaunch.withLuaRuntime( // where lldebugger.lua is, and which Lua is installed
-                                sent,
-                                Path.of(executable),
-                                name -> ProcessRunner.resolveExecutable(List.of(name))
-                                        .getFirst())
-                        : sent;
-        List<String> argv = new ArrayList<>(external.argv(executable, port));
-        boolean powershell = DebugLanguages.POWERSHELL.equals(language) && executable != null;
-        if (powershell) { // PSES's start script, on pwsh, as a debug adapter on stdio
-            argv = new ArrayList<>(List.of(PowerShellLaunch.executable(
-                    name -> Path.of(ProcessRunner.resolveExecutable(List.of(name))
-                                    .getFirst())
-                            .isAbsolute(),
-                    com.editora.Os.isWindows())));
-            argv.addAll(PowerShellLaunch.serviceArgs(
-                    Path.of(executable), Path.of(System.getProperty("java.io.tmpdir")), true, epoch));
-        }
-        if (language == DebugLanguages.GDB) {
-            argv.addAll(1, EvaluationLimits.gdbArguments(shared.evaluationTimeLimit)); // before -i dap
-            // GDB's DAP mode has no source map: the request's is substitute-path on its command line, not sent.
-            argv.addAll(RemoteNativeAttach.gdbSubstitutions(
-                    RemoteNativeAttach.sourceFileMap(request.get(RemoteNativeAttach.SOURCE_FILE_MAP))));
-        }
-        argv.addAll(programTail);
-        if (argv.getFirst().endsWith(".js")) {
-            argv.addFirst(adapterNode()); // a Node.js adapter (vscode-php-debug), on the Node.js Settings names
-        }
-        ProcessBuilder pb = new ProcessBuilder(ProcessRunner.resolveExecutable(argv));
-        ProcessRunner.applyUserEnv(pb);
-        if (!programTail.isEmpty() && launch.get("env") instanceof Map<?, ?> env) {
-            // the adapter is the program: the configuration's environment is its own
-            env.forEach((k, v) -> pb.environment().put(String.valueOf(k), v == null ? "" : String.valueOf(v)));
-        }
-        List<String> first = shared.externalPathDirs.getOrDefault(language.id(), List.of());
-        if (!first.isEmpty()) {
-            Map<String, String> env = pb.environment();
-            String key = env.keySet().stream()
-                    .filter(k -> k.equalsIgnoreCase("PATH"))
-                    .findFirst()
-                    .orElse("PATH");
-            env.put(key, pathWithFirst(first, env.get(key), java.io.File.pathSeparator));
-        }
-        Path cwd = adapterFolder(file, launch, !programTail.isEmpty());
-        if (cwd != null && Files.isDirectory(cwd)) {
-            pb.directory(cwd.toFile());
-        }
-        onOutput(epoch, String.join(" ", pb.command()) + "\n", COMMAND_CATEGORY);
-        if (external.transport() == ExternalAdapter.Transport.ANNOUNCED_PORT) {
-            pb.redirectErrorStream(true); // the announcement may come on either stream
-        }
-        Process proc = BusyExecutable.start(pb);
-        if (!isCurrent(epoch)) {
-            com.editora.process.ProcessRegistry.killTree(proc);
-            return;
-        }
-        programAdapter = programTail.isEmpty() ? null : new ProgramAdapter(epoch, proc);
-        boolean attach = "attach".equals(launch.get("request"));
-        DapClient c = new DapClient(sessionHost(epoch));
-        c.setPaths(DapPaths.LOCAL);
-        c.setBreakpoints(bps);
-        c.setExceptionFilters(filters);
-        c.setRunsDebuggee(shared.programConsole);
-        if (attach) {
-            c.setTerminateOnDisconnect(false); // Stop detaches; the program runs on
-        }
-        c.setTerminateFirst(DebugLanguages.FLUTTER.equals(language) && !attach); // else the app outlives Stop
-        c.setLaunchWait(launchWait(language));
-        AdapterStderr stderr = null;
-        java.util.concurrent.CompletableFuture<org.eclipse.lsp4j.debug.Capabilities> connected;
-        switch (external.transport()) {
-            case STDIO -> {
-                // DAP is on stdin/stdout; an undrained PIPE deadlocks. PSES writes the script's output there.
-                stderr = adapterStderr(
-                        epoch,
-                        powershell
-                                ? AdapterStderr.drain(proc, line -> onOutput(epoch, line + "\n", "stdout"))
-                                : AdapterStderr.drain(proc));
-                if (!publishClient(epoch, c)) {
-                    com.editora.process.ProcessRegistry.killTree(proc);
-                    c.dispose();
-                    return;
-                }
-                connected = c.connectStdio(proc, language.adapterId());
-            }
-            case PORT_ARGUMENT -> {
-                stderr = adapterStderr(epoch, AdapterStderr.drain(proc));
-                drainToConsole(proc.getInputStream(), epoch);
-                c.setAdapterProcess(proc); // killed on dispose: it serves the socket
-                if (!publishClient(epoch, c)) {
-                    c.dispose();
-                    return;
-                }
-                connected = c.connect(port, language.adapterId());
-            }
-            case ANNOUNCED_PORT -> {
-                c.setAdapterProcess(proc);
-                int announced = awaitAnnouncement(proc, external, epoch);
-                if (announced < 0) {
-                    c.dispose();
-                    fail(
-                            epoch,
-                            tr(
-                                    "debug.error.adapterNoPort",
-                                    String.join(" ", pb.command()),
-                                    ANNOUNCE_TIMEOUT.toSeconds()));
-                    return;
-                }
-                if (!publishClient(epoch, c)) {
-                    c.dispose();
-                    return;
-                }
-                connected = c.connect(announced, language.adapterId());
-            }
-            default -> throw new IllegalStateException(external.transport().toString());
-        }
-        AdapterStderr tail = stderr;
-        connected.whenComplete((caps, e) -> {
-            if (e != null) {
-                fail(
-                        epoch,
-                        tr("debug.error.adapterConnect", language.displayName(), msg(e)) + AdapterStderr.suffix(tail));
-                return;
-            }
-            if (!isCurrent(epoch)) {
-                c.dispose();
-                return;
-            }
-            trackLaunch(epoch, false, () -> attach ? c.attach(launch) : c.launch(launch))
-                    .whenComplete((v, le) -> {
-                        if (le != null) {
-                            String key = attach ? "debug.error.attachFailed" : "debug.error.launchFailed";
-                            fail(epoch, tr(key, msg(le)) + AdapterStderr.suffix(tail));
-                        }
-                    });
-            fx(() -> {
-                if (isCurrent(epoch, c)) {
-                    setState(State.RUNNING);
-                }
-            });
-        });
-    }
-
-    /**
-     * How long {@code language}'s adapter is given to answer {@code launch}: ElixirLS compiles the project (a fresh
-     * Phoenix app's dependencies, all of them) and interprets its modules before it answers, so it gets {@link
-     * ElixirLaunch#LAUNCH_WAIT}; the rest the usual request wait. Pure.
-     */
+    /** See {@link ExternalLaunches#launchWait}. */
     static java.time.Duration launchWait(DebugLanguage language) {
-        return DebugLanguages.ELIXIR.equals(language)
-                ? ElixirLaunch.LAUNCH_WAIT
-                : java.time.Duration.ofSeconds(DapClient.requestTimeoutSeconds());
+        return ExternalLaunches.launchWait(language);
     }
 
-    /**
-     * The folder an external adapter starts in: the request's {@code cwd} when the adapter is the program itself
-     * ({@code programRuns}), else {@code file}'s folder (or {@code file}, a folder). Pure but for the folder check.
-     */
+    /** See {@link ExternalLaunches#adapterFolder}. */
     static @Nullable Path adapterFolder(Path file, Map<String, Object> launch, boolean programRuns) {
-        if (programRuns && launch.get("cwd") instanceof String c && !c.isBlank()) {
-            try {
-                Path dir = Path.of(c);
-                if (Files.isDirectory(dir)) {
-                    return dir;
-                }
-            } catch (java.nio.file.InvalidPathException e) {
-                // not a folder: the file's
-            }
-        }
-        return Files.isDirectory(file) ? file : file.getParent();
-    }
-
-    /**
-     * Reads {@code proc}'s output until it announces its port (passing the lines before it to the console), then
-     * passes the rest on as the program's output — Delve writes its debuggee's there. -1 when it ends, or says
-     * nothing, within {@link #ANNOUNCE_TIMEOUT}.
-     */
-    private int awaitAnnouncement(Process proc, ExternalAdapter external, long epoch) {
-        java.util.concurrent.CompletableFuture<Integer> port = new java.util.concurrent.CompletableFuture<>();
-        Thread reader = new Thread(
-                () -> {
-                    try (java.io.BufferedReader in = new java.io.BufferedReader(new java.io.InputStreamReader(
-                            proc.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))) {
-                        String line;
-                        while ((line = in.readLine()) != null) {
-                            int found = port.isDone() ? -1 : external.announcedPort(line);
-                            if (found > 0) {
-                                port.complete(found);
-                            } else {
-                                onOutput(epoch, line + "\n", port.isDone() ? "stdout" : COMMAND_CATEGORY);
-                            }
-                        }
-                    } catch (java.io.IOException e) {
-                        // the adapter ended: whoever waits hears -1
-                    }
-                    port.complete(-1);
-                },
-                "dap-external-adapter-output");
-        reader.setDaemon(true);
-        reader.start();
-        try {
-            return port.get(ANNOUNCE_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
-        } catch (Exception e) {
-            return -1;
-        }
-    }
-
-    /** Passes {@code out} (a socket adapter's standard output) to the console as program output, on a daemon thread. */
-    private void drainToConsole(java.io.InputStream out, long epoch) {
-        Thread t = new Thread(
-                () -> {
-                    try (java.io.BufferedReader in = new java.io.BufferedReader(
-                            new java.io.InputStreamReader(out, java.nio.charset.StandardCharsets.UTF_8))) {
-                        String line;
-                        while ((line = in.readLine()) != null) {
-                            onOutput(epoch, line + "\n", "stdout");
-                        }
-                    } catch (java.io.IOException e) {
-                        // the adapter ended
-                    }
-                },
-                "dap-external-adapter-stdout");
-        t.setDaemon(true);
-        t.start();
+        return ExternalLaunches.adapterFolder(file, launch, programRuns);
     }
 
     /**
@@ -2879,7 +1354,7 @@ public final class DapManager {
      * runs on.
      */
     public void startPortAttach(Path anchor, DebugLanguage language, int port, Map<String, Object> attach) {
-        startSocketAttach(anchor, language, "127.0.0.1", port, attach, false);
+        externalLaunches.startSocketAttach(anchor, language, "127.0.0.1", port, attach, false);
     }
 
     /**
@@ -2890,268 +1365,32 @@ public final class DapManager {
      * single-client one ends, and ends the program it started.
      */
     public void startRemoteDelve(Path anchor, String host, int port, Map<String, Object> attach) {
-        startSocketAttach(anchor, DebugLanguages.GO, host, port, attach, true);
+        externalLaunches.startSocketAttach(anchor, DebugLanguages.GO, host, port, attach, true);
     }
 
-    private void startSocketAttach(
-            Path anchor,
-            DebugLanguage language,
-            String host,
-            int port,
-            Map<String, Object> attach,
-            boolean releaseOnDetach) {
-        if (managerClosed) {
-            return;
-        }
-        if (!shared.enabled) {
-            listener.onError(tr("debug.error.disabled"));
-            return;
-        }
-        if (client != null) {
-            stop(); // one session at a time
-        }
-        restartAction = () -> startSocketAttach(anchor, language, host, port, attach, releaseOnDetach);
-        debugFile = anchor;
-        long epoch = beginSession();
-        setState(State.STARTING);
-        List<DapModels.FileBreakpoints> bps = shared.breakpointsSupplier.get();
-        List<String> filters = filtersFor(language.id());
-        startupTask = io.submit(() -> {
-            try {
-                if (!isCurrent(epoch)) {
-                    return;
-                }
-                DapClient c = new DapClient(sessionHost(epoch));
-                c.setPaths(DapPaths.LOCAL);
-                c.setBreakpoints(bps);
-                c.setExceptionFilters(filters);
-                c.setTerminateOnDisconnect(false); // Stop detaches; the program runs on
-                c.setReleaseBeforeDetach(releaseOnDetach);
-                if (!publishClient(epoch, c)) {
-                    c.dispose();
-                    return;
-                }
-                String address = host.contains(":") && !host.startsWith("[") ? "[" + host + "]" : host;
-                onOutput(epoch, tr("debug.console.attaching", address + ":" + port) + "\n", COMMAND_CATEGORY);
-                c.connect(host, port, language.adapterId()).whenComplete((caps, e) -> {
-                    if (e != null) {
-                        fail(epoch, tr("debug.error.adapterConnect", language.displayName(), msg(e)));
-                        return;
-                    }
-                    if (!isCurrent(epoch)) {
-                        c.dispose();
-                        return;
-                    }
-                    c.attach(attach).whenComplete((v, ae) -> {
-                        if (ae != null) {
-                            fail(epoch, tr("debug.error.attachFailed", msg(ae)));
-                        }
-                    });
-                    fx(() -> {
-                        if (isCurrent(epoch, c)) {
-                            setState(State.RUNNING);
-                        }
-                    });
-                });
-            } catch (Exception e) {
-                fail(epoch, tr("debug.error.startFailed", msg(e)));
-            }
-        });
-    }
-
-    /**
-     * Attaches to a Python listening for a debugger ({@code python -m debugpy --listen host:port …}, or one that
-     * called {@code debugpy.listen}): that debugpy runs its own adapter on the port, so the session connects to it
-     * over the socket and sends {@code attach}, as VS Code's {@code connect} configuration does. {@code anchor} names the session (a file or folder of this
-     * machine). Restart attaches again; Stop detaches and leaves the program running.
-     */
+    /** See {@link PythonSessions#startPythonAttach}. */
     public void startPythonAttach(Path anchor, String host, int port) {
-        // Not readyProgram: the program brings its own debugpy, so none need be installed here.
-        if (managerClosed) {
-            return;
-        }
-        if (!shared.enabled) {
-            listener.onError(tr("debug.error.disabled"));
-            return;
-        }
-        if (client != null) {
-            stop(); // one session at a time
-        }
-        DapServerRegistry.DapServerSpec spec = DapServerRegistry.specFor("python");
-        if (spec == null) {
-            listener.onError(tr("debug.error.noAdapter"));
-            return;
-        }
-        restartAction = () -> startPythonAttach(anchor, host, port);
-        debugFile = anchor;
-        long epoch = beginSession();
-        setState(State.STARTING);
-        List<DapModels.FileBreakpoints> bps = shared.breakpointsSupplier.get();
-        List<String> filters = filtersFor("python");
-        startupTask = io.submit(() -> {
-            try {
-                if (!isCurrent(epoch)) {
-                    return;
-                }
-                DapClient c = new DapClient(sessionHost(epoch));
-                c.setPaths(DapPaths.LOCAL);
-                c.setBreakpoints(bps);
-                c.setExceptionFilters(filters);
-                c.setTerminateOnDisconnect(false); // Stop detaches; the program runs on
-                if (!publishClient(epoch, c)) {
-                    c.dispose();
-                    return;
-                }
-                onOutput(epoch, tr("debug.console.attaching", host + ":" + port) + "\n", COMMAND_CATEGORY);
-                // `debugpy --listen` runs debugpy's own adapter on that port: the client talks DAP to it directly.
-                c.connect(host, port, spec.adapterId()).whenComplete((caps, e) -> {
-                    if (e != null) {
-                        fail(epoch, tr("debug.error.debugpyConnect", msg(e)));
-                        return;
-                    }
-                    if (!isCurrent(epoch)) {
-                        c.dispose();
-                        return;
-                    }
-                    c.attach(LaunchConfig.pythonAttach(host, port)).whenComplete((v, ae) -> {
-                        if (ae != null) {
-                            fail(epoch, tr("debug.error.attachFailed", msg(ae)));
-                        }
-                    });
-                    fx(() -> {
-                        if (isCurrent(epoch, c)) {
-                            setState(State.RUNNING);
-                        }
-                    });
-                });
-            } catch (Exception e) {
-                fail(epoch, tr("debug.error.startFailed", msg(e)));
-            }
-        });
+        pythonSessions.startPythonAttach(anchor, host, port);
     }
 
-    /** Hands each subprocess debugpy asks for to the window ({@link Listener#onChildSession}), while it is current. */
-    private java.util.function.Function<Map<String, Object>, java.util.concurrent.CompletableFuture<Void>>
-            childSessions(long epoch, DapClient c) {
-        return configuration -> {
-            fx(() -> {
-                if (isCurrent(epoch, c)) {
-                    listener.onChildSession(configuration);
-                }
-            });
-            return java.util.concurrent.CompletableFuture.completedFuture(null);
-        };
-    }
-
-    /**
-     * Debugs a subprocess of a Python session in this (new) manager: attaches to the port debugpy named for it in
-     * {@code configuration} ({@link Listener#onChildSession}), anchored at the parent's file {@code anchor}. Stop
-     * detaches: the subprocess runs on, and ends with its program.
-     */
+    /** See {@link PythonSessions#startPythonChild}. */
     public void startPythonChild(@Nullable Path anchor, Map<String, Object> configuration) {
-        if (managerClosed) {
-            return;
-        }
-        int port = configuration.get("connect") instanceof Map<?, ?> connect && connect.get("port") instanceof Number n
-                ? n.intValue()
-                : -1;
-        DapServerRegistry.DapServerSpec spec = DapServerRegistry.specFor("python");
-        if (spec == null || port <= 0) {
-            listener.onError(tr("debug.error.noAdapter"));
-            return;
-        }
-        if (client != null) {
-            stop(); // one session at a time
-        }
-        restartAction = null; // a subprocess is the program's to start again, not this session's
-        debugFile = anchor;
-        long epoch = beginSession();
-        setState(State.STARTING);
-        List<DapModels.FileBreakpoints> bps = shared.breakpointsSupplier.get();
-        List<String> filters = filtersFor("python");
-        Map<String, Object> attach = new java.util.LinkedHashMap<>(configuration);
-        startupTask = io.submit(() -> {
-            try {
-                if (!isCurrent(epoch)) {
-                    return;
-                }
-                DapClient c = new DapClient(sessionHost(epoch));
-                c.setPaths(DapPaths.LOCAL);
-                c.setBreakpoints(bps);
-                c.setExceptionFilters(filters);
-                c.setTerminateOnDisconnect(false);
-                // A subprocess's own subprocesses (multiprocessing's fork server forks the workers) are sessions of
-                // their own too, not connections folded into this one.
-                c.setChildSessions(childSessions(epoch, c));
-                if (!publishClient(epoch, c)) {
-                    c.dispose();
-                    return;
-                }
-                c.connect(port, spec.adapterId()).whenComplete((caps, e) -> {
-                    if (e != null) {
-                        fail(epoch, tr("debug.error.debugpyConnect", msg(e)));
-                        return;
-                    }
-                    if (!isCurrent(epoch)) {
-                        c.dispose();
-                        return;
-                    }
-                    c.attach(attach).whenComplete((v, ae) -> {
-                        if (ae != null) {
-                            fail(epoch, tr("debug.error.attachFailed", msg(ae)));
-                        }
-                    });
-                    fx(() -> {
-                        if (isCurrent(epoch, c)) {
-                            setState(State.RUNNING);
-                        }
-                    });
-                });
-            } catch (Exception e) {
-                fail(epoch, tr("debug.error.startFailed", msg(e)));
-            }
-        });
+        pythonSessions.startPythonChild(anchor, configuration);
     }
 
-    /**
-     * Debugs a pytest run ({@code python -m pytest args}) in {@code cwd}, anchored at test file {@code anchor}.
-     * When the interpreter has no pytest, {@code unittestArgs} (non-empty) run under {@code python -m unittest}
-     * instead; otherwise the session ends saying pytest is missing for that interpreter.
-     */
+    /** See {@link PythonSessions#startPythonTest}. */
     public void startPythonTest(Path anchor, List<String> pytestArgs, List<String> unittestArgs, Path cwd) {
-        Path dir = cwd != null ? cwd : anchor.getParent();
-        String where = dir == null
-                ? null
-                : com.editora.process.ExecTargets.forPath(dir).toTargetPath(dir);
-        PythonLaunch.Target unittest = unittestArgs == null || unittestArgs.isEmpty()
-                ? null
-                : PythonLaunch.Target.module("unittest", unittestArgs, where);
-        startProgram(
-                anchor,
-                "python",
-                PythonLaunch.Target.module("pytest", pytestArgs, where).orElse(unittest));
+        pythonSessions.startPythonTest(anchor, pytestArgs, unittestArgs, cwd);
     }
 
-    /**
-     * Debugs {@code python -m module args} in {@code cwd} — a pytest test, say — under {@code anchor}'s
-     * interpreter, with {@code anchor} naming the session. Restart repeats it.
-     */
+    /** See {@link PythonSessions#startPythonModule}. */
     public void startPythonModule(Path anchor, String module, List<String> args, Path cwd) {
-        Path dir = cwd != null ? cwd : anchor.getParent();
-        String where = dir == null
-                ? null
-                : com.editora.process.ExecTargets.forPath(dir).toTargetPath(dir);
-        startProgram(anchor, "python", PythonLaunch.Target.module(module, args, where));
+        pythonSessions.startPythonModule(anchor, module, args, cwd);
     }
 
-    /**
-     * Debugs the Python {@code script} with {@code args} in {@code cwd} — a run configuration's — under the
-     * interpreter {@link #setPythonPlan} planned. Restart repeats it.
-     */
+    /** See {@link PythonSessions#startPythonScript}. */
     public void startPythonScript(Path script, List<String> args, Path cwd) {
-        var exec = com.editora.process.ExecTargets.forPath(script);
-        String where = cwd == null ? null : exec.toTargetPath(cwd);
-        startProgram(script, "python", PythonLaunch.Target.script(exec.toTargetPath(script), args, where));
+        pythonSessions.startPythonScript(script, args, cwd);
     }
 
     private boolean readyProgram(Path file, String language) {
@@ -3183,503 +1422,20 @@ public final class DapManager {
         return true;
     }
 
-    /**
-     * debugpy over stdio: spawn {@code <python> -m debugpy.adapter}, wire DAP to its streams, launch. The
-     * program runs under the interpreter resolved for {@code file} (the project's venv, the picked one, …);
-     * the adapter runs under that one too when it can import debugpy, else under the Debugging setting's.
-     */
-    private void startStdio(
-            Path file,
-            DapServerRegistry.DapServerSpec spec,
-            List<DapModels.FileBreakpoints> bps,
-            @Nullable List<String> filters,
-            long epoch,
-            PythonLaunch.@Nullable Target module,
-            @Nullable Map<String, Object> configured)
-            throws Exception {
-        HostPython program = planProgram(file, com.editora.process.ExecTargets.forPath(file), true);
-        HostPython adapter = probe(program.argv(List.of("-c", "import debugpy")), shared.debugpyDir, program.env())
-                ? program
-                : HostPython.parse(DapServerRegistry.interpreterArgv("python", shared.pythonCommand));
-        List<String> cmd = ProcessRunner.resolveExecutable(adapter.argv(spec.adapterArgs())); // -m debugpy.adapter
-        ProcessBuilder pb = new ProcessBuilder(cmd);
-        ProcessRunner.applyUserEnv(pb);
-        pb.environment().putAll(adapter.env());
-        if (shared.debugpyDir != null) {
-            prependPythonPath(pb, shared.debugpyDir);
-        }
-        if (module != null && "pytest".equals(module.module())) {
-            module = pytestOrFallback(module, program, epoch, argv -> probe(argv, null, program.env()));
-            if (module == null) {
-                return; // reported
-            }
-        }
-        Process proc = BusyExecutable.start(pb);
-        // DAP is on stdin/stdout; an undrained PIPE deadlocks
-        AdapterStderr stderr = adapterStderr(epoch, AdapterStderr.drain(proc));
-        boolean console = shared.programConsole;
-        String content = module == null ? readQuietly(file) : null;
-        PythonLaunch.Target target = module != null ? module : webOrScript(file, content, programArgs, true);
-        // What runs, first in the console (muted): which Python, in which venv, with which arguments.
-        onOutput(epoch, PythonLaunch.commandLine(program, target) + "\n", COMMAND_CATEGORY);
-        // The plan's PYTHONPATH (project root, src/, the user's) when it set one; else the user's own, or "" —
-        // never the adapter's, which carries Editora's debugpy folder.
-        String inherited = System.getenv("PYTHONPATH");
-        Map<String, Object> planned = PythonLaunch.request(
-                target, program, List.of(), inherited == null ? "" : inherited, File.pathSeparator, console);
-        if (shared.pythonSubprocesses || servesWeb(target, content, configured)) {
-            // Each subprocess a session of its own (onChildSession): a web server's reloader serves from a child.
-            planned.put("subProcess", true);
-        }
-        Map<String, Object> launch = overlay(planned, configured);
-        attachStdio(proc, spec, bps, filters, epoch, DapPaths.LOCAL, launch, console, stderr);
-    }
-
-    /**
-     * A pytest run when {@code program} can import pytest; else its unittest fallback; else null, with the
-     * session ended saying which interpreter lacks pytest.
-     */
-    private PythonLaunch.@Nullable Target pytestOrFallback(
-            PythonLaunch.Target pytest,
-            HostPython program,
-            long epoch,
-            java.util.function.Predicate<List<String>> runs) {
-        if (!"pytest".equals(pytest.module()) || runs.test(program.argv(List.of("-c", "import pytest")))) {
-            return pytest;
-        }
-        if (pytest.fallback() != null) {
-            return pytest.fallback();
-        }
-        fail(epoch, tr("debug.error.pytestMissing", program.executable()));
-        return null;
-    }
-
-    /**
-     * The program's interpreter and environment for a Python session on {@code file}, planned by Run's planner
-     * ({@link com.editora.run.PythonRunPlan}) so Run and Debug start the same Python the same way: the
-     * resolved interpreter (a project venv found on the target, named as the target names it; a picked one; a
-     * host's {@code python} tool), the file's shebang, and the project root with {@code src/} on {@code
-     * PYTHONPATH}. Taken apart as debugpy takes it ({@code python}, {@code pythonArgs}, {@code env}). Off the FX
-     * thread: elsewhere the lookups are network round trips.
-     */
-    private HostPython planProgram(Path file, com.editora.process.ExecTarget target, boolean local) {
-        com.editora.run.PythonRunPlan.Request asked = pythonRequest;
-        String firstLine = asked != null ? asked.firstLine() : null;
-        if (com.editora.run.PythonLaunch.isRunner(com.editora.run.PythonLaunch.shebang(firstLine))) {
-            firstLine = null; // debugpy needs an interpreter, not `uv run --script`: the project's Python runs it
-        }
-        // A run configuration's Interpreter, its options and its variables (Debug of a configuration) are kept.
-        com.editora.run.PythonRunPlan.Request request = new com.editora.run.PythonRunPlan.Request(
-                file,
-                asked != null ? asked.projectRoot() : pythonRootFor(file),
-                target.toTargetPath(file),
-                false,
-                List.of(),
-                firstLine,
-                asked != null ? asked.configured() : "",
-                asked != null ? asked.interpreterOptions() : List.of(),
-                asked != null ? asked.projectChoice() : pythonProjectChoice,
-                asked != null ? asked.setting() : local ? shared.pythonCommand : "",
-                asked != null ? asked.userEnv() : java.util.Map.of());
-        com.editora.run.PythonRunPlan.Host host = pythonHost != null
-                ? pythonHost
-                : local
-                        ? com.editora.run.PythonRunPlan.Host.here()
-                        : com.editora.run.PythonRunPlan.Host.elsewhere(target::toTargetPath);
-        com.editora.run.PythonRunPlan plan;
-        try {
-            plan = com.editora.run.PythonRunPlan.plan(request, host);
-        } catch (RuntimeException e) {
-            if (host.local()) {
-                throw e;
-            }
-            // A lookup over a dropped connection: the host's own python3, as Run does.
-            plan = com.editora.run.PythonRunPlan.plan(
-                    request,
-                    com.editora.run.PythonRunPlan.Host.elsewhere(host.toTarget())
-                            .withoutLookups());
-        }
-        List<String> command = plan.argv().subList(0, plan.argv().size() - 1); // the plan's argv ends in the script
-        // debugpy is handed a local interpreter by path: the adapter's PATH is not the one it was found on.
-        String exe = host.local()
-                ? ProcessRunner.resolveExecutable(List.of(command.get(0))).getFirst()
-                : command.get(0);
-        return new HostPython(exe, List.copyOf(command.subList(1, command.size())), plan.env());
-    }
-
-    /** The project root {@code file} belongs to (the window's project, when the file is inside it), else null. */
-    private @Nullable Path pythonRootFor(Path file) {
-        Path root = pythonProjectRoot;
-        if (root == null || file == null) {
-            return null;
-        }
-        try {
-            return file.toAbsolutePath()
-                            .normalize()
-                            .startsWith(root.toAbsolutePath().normalize())
-                    ? root
-                    : null;
-        } catch (RuntimeException e) {
-            return null;
-        }
-    }
-
-    /**
-     * Wires a started stdio adapter ({@code proc}) to a new session and sends it {@code launch}, whose paths are
-     * named as the adapter's machine names them. With {@code runsDebuggee}, the adapter hands the program's
-     * command line back and Editora starts it (its standard input is then the Debug console's).
-     */
-    private void attachStdio(
-            Process proc,
-            DapServerRegistry.DapServerSpec spec,
-            List<DapModels.FileBreakpoints> bps,
-            @Nullable List<String> filters,
-            long epoch,
-            DapPaths paths,
-            Map<String, Object> launch,
-            boolean runsDebuggee,
-            @Nullable AdapterStderr stderr) {
-        if (!isCurrent(epoch)) {
-            com.editora.process.ProcessRegistry.killTree(proc);
-            return;
-        }
-        DapClient c = new DapClient(sessionHost(epoch));
-        c.setPaths(paths);
-        c.setBreakpoints(bps);
-        c.setExceptionFilters(filters);
-        c.setRunsDebuggee(runsDebuggee);
-        if (Boolean.TRUE.equals(launch.get("subProcess")) && paths == DapPaths.LOCAL) {
-            // debugpy asks for each subprocess with startDebugging, naming a port of its own to attach a session to.
-            c.setChildSessions(childSessions(epoch, c));
-        }
-        if (!publishClient(epoch, c)) {
-            com.editora.process.ProcessRegistry.killTree(proc);
-            c.dispose();
-            return;
-        }
-        c.connectStdio(proc, spec.adapterId()).whenComplete((caps, e) -> {
-            if (e != null) {
-                fail(epoch, tr("debug.error.debugpyConnect", msg(e)) + AdapterStderr.suffix(stderr));
-                return;
-            }
-            if (!isCurrent(epoch)) {
-                c.dispose();
-                return;
-            }
-            trackLaunch(epoch, false, () -> c.launch(launch)).whenComplete((v, le) -> {
-                if (le != null) {
-                    fail(epoch, launchFailure(le, launch) + AdapterStderr.suffix(stderr));
-                }
-            });
-            fx(() -> {
-                if (isCurrent(epoch, c)) {
-                    setState(State.RUNNING);
-                    List<String> runtime = pythonRuntime(launch);
-                    if (!runtime.isEmpty()) {
-                        listener.onDebuggeeRuntime(
-                                runtime,
-                                runtimeWhere(paths, launch.get("cwd") instanceof String cwd ? cwd : null),
-                                stringMap(launch.get("env")));
-                    }
-                }
-            });
-        });
-    }
-
-    /**
-     * What a failed Python launch says. A timeout is debugpy waiting for a program it could not start — an
-     * interpreter that does not run — rather than anything the user can read in a Java exception's name.
-     */
+    /** See {@link PythonSessions#launchFailure}. */
     static String launchFailure(Throwable error, Map<String, Object> launch) {
-        Throwable t = error;
-        while (t.getCause() != null && !(t instanceof java.util.concurrent.TimeoutException)) {
-            t = t.getCause();
-        }
-        if (t instanceof java.util.concurrent.TimeoutException) {
-            return tr(
-                    "debug.error.debugpyNoStart",
-                    String.valueOf(DapClient.requestTimeoutSeconds()),
-                    String.valueOf(launch.get("python")));
-        }
-        return tr("debug.error.launchFailed", msg(error));
-    }
-
-    /**
-     * vscode-js-debug for a file on this machine: the Node.js {@link com.editora.run.NodeRuntimes} resolves for it
-     * runs the program (and js-debug, when it is new enough), from the file's package root; then connect, launch.
-     */
-    private void startSocket(
-            Path file,
-            DapServerRegistry.DapServerSpec spec,
-            List<DapModels.FileBreakpoints> bps,
-            @Nullable List<String> filters,
-            long epoch,
-            @Nullable Map<String, Object> configured)
-            throws Exception {
-        Path server = shared.jsServer;
-        if (server == null) {
-            fail(epoch, tr("debug.error.jsNotFound"));
-            return;
-        }
-        JsProgram planned = jsProgram;
-        List<String> runtime;
-        String program;
-        List<String> args;
-        Path cwd;
-        Path workspace;
-        Map<String, String> env;
-        String adapterNode;
-        Path projectRoot = jsProjectRoot;
-        if (planned != null) {
-            // A run configuration's launch, planned as Run plans it (NodeRunPlan / the package manager).
-            runtime = planned.runtime();
-            program = planned.program();
-            args = planned.args();
-            cwd = planned.cwd();
-            workspace = projectRoot != null && cwd.toAbsolutePath().startsWith(projectRoot.toAbsolutePath())
-                    ? projectRoot
-                    : cwd;
-            env = planned.env();
-            String exe = runtime.get(0);
-            boolean node = com.editora.run.NodeRunPlan.isNodeName(exe);
-            String version = node ? nodeVersion(exe) : null;
-            adapterNode =
-                    node ? adapterNodeFor(exe, version) : adapterNodeFor(adapterNode(), nodeVersion(adapterNode()));
-            if (adapterNode == null) {
-                String used = node ? exe : adapterNode();
-                fail(
-                        epoch,
-                        tr(
-                                "debug.error.jsNodeTooOld",
-                                String.valueOf(node ? version : nodeVersion(used)),
-                                used,
-                                JsLaunch.MIN_ADAPTER_NODE_MAJOR));
-                return;
-            }
-        } else {
-            com.editora.run.NodeRuntimes.NodeRuntime resolved =
-                    com.editora.run.NodeRuntimes.resolveLocal(file, projectRoot, "", shared.nodePath);
-            String version = nodeVersion(resolved.executable());
-            String problem = JsLaunch.launchProblemKey(file.getFileName().toString(), version);
-            if (problem != null) {
-                fail(epoch, tr(problem, version == null ? "?" : version));
-                return;
-            }
-            adapterNode = adapterNodeFor(resolved.executable(), version);
-            if (adapterNode == null) {
-                fail(
-                        epoch,
-                        tr(
-                                "debug.error.jsNodeTooOld",
-                                String.valueOf(version),
-                                resolved.executable(),
-                                JsLaunch.MIN_ADAPTER_NODE_MAJOR));
-                return;
-            }
-            runtime = JsLaunch.withNodeArgs(resolved.command(), jsNodeArgs);
-            program = file.toString();
-            args = programArgs;
-            cwd = com.editora.run.NodeRuntimes.workingDirectory(file, projectRoot);
-            // The workspace folder js-debug resolves ${workspaceFolder} from (source maps): the project when the
-            // file is in it, else its package root.
-            workspace = projectRoot != null && file.toAbsolutePath().startsWith(projectRoot.toAbsolutePath())
-                    ? projectRoot
-                    : cwd;
-            env = JsLaunch.colourEnvironment(System.getenv("NO_COLOR")); // as Run (review D104)
-        }
-        int denoPort = -1;
-        if (!runtime.isEmpty() && com.editora.run.DenoRun.isDeno(runtime.get(0))) {
-            // Deno is not started through NODE_OPTIONS: it waits on an inspector port, and js-debug attaches there.
-            denoPort = freePort();
-            runtime = com.editora.run.DenoRun.inspected(runtime, denoPort);
-        }
-        boolean clientConsole = shared.programConsole;
-        Map<String, Object> launch = overlay(
-                JsLaunch.request(
-                        spec.launchType(),
-                        program,
-                        cwd.toString(),
-                        workspace.toString(),
-                        runtime,
-                        args,
-                        clientConsole,
-                        env),
-                configured);
-        if (denoPort > 0) {
-            launch.put("attachSimplePort", denoPort);
-            // js-debug gives up on the port after 10 s by default; a cold Deno (its first type load) can take longer.
-            launch.putIfAbsent("timeout", com.editora.run.DenoRun.ATTACH_TIMEOUT_MS);
-        }
-        jsClientConsole = clientConsole;
-        // The command line that runs is printed when js-debug asks Editora to start it (startDebuggee): js-debug may
-        // run another file than the one planned — a .ts source's compiled output (review D106).
-        List<String> chip = runtime;
-        JsAdapter adapter = startJsAdapter(server, adapterNode, epoch);
-        if (adapter == null) {
-            return; // reported
-        }
-        attachSocket(
-                adapter.process(),
-                null,
-                adapter.port(),
-                spec,
-                bps,
-                filters,
-                epoch,
-                DapPaths.LOCAL,
-                launch,
-                clientConsole,
-                chip);
-    }
-
-    /**
-     * Editora's own JVM adapter ({@link com.editora.dap.jvm.JvmDebugAdapter}), served in this process on a
-     * loopback port: the program runs as Run runs it ({@code groovy Script.groovy args…} on the session's JDK),
-     * with the JDWP agent in the variable its launcher hands the JVM, started by this client
-     * ({@code runInTerminal}) so its output, input and exit code are the Debug console's.
-     */
-    private void startJvm(
-            Path file,
-            DapServerRegistry.DapServerSpec spec,
-            List<DapModels.FileBreakpoints> bps,
-            @Nullable List<String> filters,
-            long epoch)
-            throws java.io.IOException {
-        String language = spec.language();
-        if ("clojure".equals(language)
-                && file.getFileName() != null
-                && !com.editora.run.ClojureRun.runnable(file.getFileName().toString())) {
-            fail(
-                    epoch,
-                    tr(
-                            "debug.error.notDebuggable.clojureFile",
-                            file.getFileName().toString()));
-            return;
-        }
-        String toolName = com.editora.run.JvmScriptRun.tool(language, file);
-        if (!com.editora.run.JvmScriptRun.debuggable(toolName)) {
-            // Babashka is a native program: there is no JVM for a debugger to attach to.
-            fail(epoch, tr("debug.error.notDebuggable." + toolName));
-            return;
-        }
-        String tool = toolName == null ? null : jvmToolLocator.apply(toolName);
-        if (toolName == null || tool == null) {
-            fail(epoch, tr(com.editora.run.JvmScriptRun.missingToolKeyFor(toolName)));
-            return;
-        }
-        Map<String, Object> launch = new java.util.LinkedHashMap<>();
-        Map<String, String> launchEnv = env;
-        Path directory = null;
-        Path jar = jvmJar;
-        List<String> argv;
-        if (jar != null) {
-            // A Kotlin program: `java` is its own launcher, its VM arguments on that command line.
-            argv = com.editora.run.KotlinRun.programArgv(jvmJava, jvmOptions(), jar.toString(), programArgs);
-            launch.put("jvmOptionsInArgv", true); // the agent goes first
-        } else if (com.editora.run.JvmScriptRun.takesJvmOptionsInArgv(language)) {
-            // Scala CLI: the agent (and the VM arguments) as --java-opt; the file, or its project folder with
-            // the file's main class. It compiles before the JVM starts — a first run fetches the compiler too.
-            com.editora.run.ScalaRun.Owner owner =
-                    com.editora.run.ScalaRun.ownerOf(file, null, java.nio.file.Files::isRegularFile);
-            List<String> inputs = com.editora.run.ScalaRun.cliInputs(
-                    file.toString(),
-                    owner,
-                    owner.root() == null ? null : owner.root().toString(),
-                    com.editora.run.ScalaRun.mainClass(readQuietly(file)));
-            argv = com.editora.run.JvmScriptRun.scalaCliDebug(tool, inputs, jvmOptions(), programArgs);
-            launch.put("agentArgument", com.editora.run.JvmScriptRun.AGENT_ARGUMENT);
-            launch.put("connectTimeoutMs", SCALA_CLI_CONNECT_TIMEOUT_MS);
-            if (owner.root() != null) {
-                launch.put("sourceRoots", List.of(owner.root().toString()));
-            }
-        } else {
-            // The configuration's VM arguments go where the tool hands them to its JVM, beside the debugger's agent.
-            com.editora.run.JvmScriptRun.Launch how = com.editora.run.JvmScriptRun.launch(
-                    language,
-                    toolName,
-                    tool,
-                    file,
-                    file.toString(),
-                    programArgs,
-                    vmArgsFor(LaunchConfig.Target.LOCAL),
-                    true,
-                    env,
-                    System.getenv());
-            argv = how.argv();
-            launchEnv = how.env();
-            directory = how.directory();
-            launch.put("jvmOptionsVariable", com.editora.run.JvmScriptRun.jvmOptionsVariable(language, toolName));
-            String prefix = com.editora.run.JvmScriptRun.jvmOptionPrefix(toolName);
-            if (prefix != null) {
-                launch.put("jvmOptionPrefix", prefix);
-            }
-            if (directory != null) {
-                launch.put("sourceRoots", List.of(directory.toString()));
-            }
-        }
-        Map<String, String> programEnv = launchEnv;
-        launch.put("argv", argv);
-        Path folder = jvmCwd != null ? jvmCwd : directory;
-        launch.put("cwd", folder != null ? folder.toString() : cwdOf(file));
-        launch.put("env", programEnv);
-        launch.put("language", language);
-        launch.put("sourceFiles", List.of(file.toString())); // its frames find it whatever folder it sits in
-        onOutput(epoch, com.editora.run.RunService.commandLine(argv) + "\n", COMMAND_CATEGORY);
-        int port = com.editora.dap.jvm.JvmDebugServer.start(new com.editora.dap.jvm.JvmDebugAdapter());
-        DapClient c = new DapClient(sessionHost(epoch));
-        c.setPaths(DapPaths.LOCAL);
-        c.setBreakpoints(bps);
-        c.setExceptionFilters(filters);
-        c.setRunsDebuggee(true); // the program is this client's: the Debug console's output, input and exit code
-        if (!publishClient(epoch, c)) {
-            c.dispose();
-            return;
-        }
-        c.connect(port, spec.adapterId()).whenComplete((caps, e) -> {
-            if (e != null) {
-                fail(epoch, tr("debug.error.connectFailed", msg(e)));
-                return;
-            }
-            if (!isCurrent(epoch)) {
-                c.dispose();
-                return;
-            }
-            c.launch(launch).whenComplete((v, le) -> {
-                if (le != null) {
-                    fail(epoch, tr("debug.error.launchFailed", msg(le)));
-                }
-            });
-            fx(() -> {
-                if (isCurrent(epoch, c)) {
-                    setState(State.RUNNING);
-                    listener.onDebuggeeRuntime(List.of(tool), runtimeWhere(file), programEnv);
-                }
-            });
-        });
+        return PythonSessions.launchFailure(error, launch);
     }
 
     /** Finds the tool a JVM language's program runs with ({@code groovy}, {@code scala-cli}); a test supplies one. */
-    private volatile java.util.function.Function<String, @Nullable String> jvmToolLocator =
-            com.editora.run.JvmTools::locate;
+    volatile java.util.function.Function<String, @Nullable String> jvmToolLocator = com.editora.run.JvmTools::locate;
 
     /** Test seam for {@link #jvmToolLocator}: a stand-in tool, so the launch can be checked without one installed. */
     void setJvmToolLocatorForTest(java.util.function.Function<String, @Nullable String> locator) {
         this.jvmToolLocator = locator == null ? com.editora.run.JvmTools::locate : locator;
     }
 
-    /** How long a Scala CLI program may take to compile and connect back (a first run downloads the compiler). */
-    private static final long SCALA_CLI_CONNECT_TIMEOUT_MS = 5 * 60_000;
-
-    /** How long a language server may take to start a debug adapter: Metals compiles the build target first. */
-    private static final java.time.Duration HOSTED_START_TIMEOUT = java.time.Duration.ofMinutes(10);
-
-    /** The VM arguments set for the next launch, as arguments. */
-    private List<String> jvmOptions() {
-        List<String> list = vmArgList;
-        return list != null ? list : com.editora.run.ProgramArgs.tokenize(vmArgs);
-    }
-
-    private static String readQuietly(Path file) {
+    static String readQuietly(Path file) {
         try {
             return java.nio.file.Files.readString(file);
         } catch (java.io.IOException | RuntimeException e) {
@@ -3687,98 +1443,9 @@ public final class DapManager {
         }
     }
 
-    /**
-     * Whether {@code file} is debugged by its language server's own adapter ({@link DapServerRegistry.Kind
-     * #LANGUAGE_SERVER}) rather than the fallback: for Scala, a file of an sbt, Mill, Gradle or Maven build —
-     * Metals has imported it and knows its classpath. A script, or a Scala CLI project, runs under Scala CLI.
-     */
+    /** See {@link JvmSessions#serverDebugs}. */
     static boolean serverDebugs(Path file, String language) {
-        if (!"scala".equals(language)) {
-            return true;
-        }
-        com.editora.run.ScalaRun.Build build = com.editora.run.ScalaRun.ownerOf(
-                        file, null, java.nio.file.Files::isRegularFile)
-                .build();
-        return build == com.editora.run.ScalaRun.Build.SBT
-                || build == com.editora.run.ScalaRun.Build.MILL
-                || build == com.editora.run.ScalaRun.Build.OTHER;
-    }
-
-    /**
-     * A debug adapter the file's language server starts ({@link HostedDebugAdapter}): Metals'
-     * {@code debug-adapter-start} with the file, its arguments, VM arguments and environment compiles the build
-     * target, starts scala-debug-adapter and answers its socket. The adapter runs the program and reports its
-     * output; this client only connects, sends {@code launch} and the breakpoints.
-     */
-    private void startHosted(
-            Path file,
-            DapServerRegistry.DapServerSpec spec,
-            List<DapModels.FileBreakpoints> bps,
-            @Nullable List<String> filters,
-            long epoch) {
-        String language = spec.language();
-        String command = HostedDebugAdapter.startCommand(language);
-        Map<String, Object> params =
-                HostedDebugAdapter.discovery(file.toUri().toString(), false, programArgs, jvmOptions(), env);
-        fx(() -> {
-            if (!isCurrent(epoch)) {
-                return;
-            }
-            if (command == null || !lsp.isManaged(file)) {
-                fail(epoch, tr("debug.error.hostedNoServer", file.getFileName().toString()));
-                return;
-            }
-            onOutput(epoch, tr("debug.hosted.starting") + "\n", COMMAND_CATEGORY);
-            executeCommand(file, command, List.of(params), HOSTED_START_TIMEOUT, (res, err) -> {
-                if (!isCurrent(epoch)) {
-                    return;
-                }
-                if (err != null) {
-                    fail(epoch, tr("debug.error.sessionFailed", msg(err)));
-                    return;
-                }
-                HostedDebugAdapter.Address address = HostedDebugAdapter.address(res);
-                if (address == null) {
-                    fail(epoch, tr("debug.error.noPort"));
-                    return;
-                }
-                // The adapter (and the program it starts) live inside that server: pin it for the session.
-                lspLease.run();
-                lspLease = lsp.retain(file);
-                DapClient c = new DapClient(sessionHost(epoch));
-                c.setPaths(DapPaths.LOCAL);
-                c.setBreakpoints(bps);
-                c.setExceptionFilters(filters);
-                if (!publishClient(epoch, c)) {
-                    c.dispose();
-                    return;
-                }
-                Map<String, Object> launch = new java.util.LinkedHashMap<>();
-                launch.put("name", address.name().isBlank() ? file.getFileName().toString() : address.name());
-                launch.put("noDebug", false);
-                io.submit(() -> c.connect(address.port(), spec.adapterId()).whenComplete((caps, e) -> {
-                    if (e != null) {
-                        fail(epoch, tr("debug.error.connectFailed", msg(e)));
-                        return;
-                    }
-                    if (!isCurrent(epoch, c)) {
-                        c.dispose();
-                        return;
-                    }
-                    c.launch(launch).whenComplete((v, le) -> {
-                        if (le != null) {
-                            fail(epoch, tr("debug.error.launchFailed", msg(le)));
-                            return;
-                        }
-                        fx(() -> {
-                            if (isCurrent(epoch, c) && state == State.STARTING) {
-                                setState(State.RUNNING);
-                            }
-                        });
-                    });
-                }));
-            });
-        });
+        return JvmSessions.serverDebugs(file, language);
     }
 
     /**
@@ -3803,67 +1470,19 @@ public final class DapManager {
     }
 
     /** The planned launch for the next JavaScript session (null: plan it from the file); sticky across restart. */
-    private volatile @Nullable JsProgram jsProgram;
+    volatile @Nullable JsProgram jsProgram;
 
     /** Sets {@link #jsProgram}; {@code null} for an ordinary launch of a file. */
     public void setJsProgram(@Nullable JsProgram program) {
         this.jsProgram = program;
     }
 
-    /**
-     * The Node.js that runs js-debug for a program on {@code programNode} ({@code version}): that one when it is
-     * new enough, else the Node.js setting's when that is, else the newest nvm one or {@code node} on PATH — found
-     * without the setting, so an old Node.js chosen in Settings does not stop debugging (review D101); null when
-     * none is new enough. The program still runs on its own Node.
-     */
-    private @Nullable String adapterNodeFor(String programNode, @Nullable String version) {
-        if (JsLaunch.runsAdapter(version)) {
-            return programNode;
-        }
-        List<String> fallbacks = new ArrayList<>();
-        fallbacks.add(adapterNode());
-        fallbacks.addAll(adapterNodeFallbacks.get());
-        return JsAdapterNode.choose(programNode, version, fallbacks, DapManager::nodeVersion);
-    }
-
     /** Where js-debug's Node.js is looked for when the chosen one is too old; a test supplies its own. */
-    private volatile Supplier<List<String>> adapterNodeFallbacks = JsAdapterNode::localFallbacks;
+    volatile Supplier<List<String>> adapterNodeFallbacks = JsAdapterNode::localFallbacks;
 
     /** Test seam for {@link #adapterNodeFallbacks}. */
     void setAdapterNodeFallbacksForTest(Supplier<List<String>> fallbacks) {
         this.adapterNodeFallbacks = fallbacks;
-    }
-
-    /** A started js-debug server: its process, the port it announced on this machine, and its stderr. */
-    private record JsAdapter(Process process, int port, AdapterStderr stderr) {}
-
-    /**
-     * Starts js-debug on a port it picks itself and waits for the line announcing it ({@link #listeningPort}) —
-     * as on a remote host. A guessed free port, then connect retries for about two seconds, lost to any slower
-     * start (review D15). A server that dies first is reported with what it wrote to stderr; null then.
-     */
-    private @Nullable JsAdapter startJsAdapter(Path server, String node, long epoch) throws java.io.IOException {
-        List<String> cmd = ProcessRunner.resolveExecutable(List.of(node, server.toString(), "0", "127.0.0.1"));
-        ProcessBuilder pb = new ProcessBuilder(cmd);
-        ProcessRunner.applyUserEnv(pb);
-        Process proc = BusyExecutable.start(pb);
-        AdapterStderr stderr = adapterStderr(epoch, AdapterStderr.drain(proc));
-        int port = listeningPort(proc.getInputStream(), java.time.Duration.ofSeconds(20));
-        if (port < 0) {
-            boolean ended = false;
-            try {
-                ended = proc.waitFor(500, TimeUnit.MILLISECONDS); // let its last stderr lines arrive
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-            com.editora.process.ProcessRegistry.killTree(proc);
-            fail(
-                    epoch,
-                    tr(ended ? "debug.error.jsAdapterExited" : "debug.error.jsAdapterNoStart", node)
-                            + AdapterStderr.suffix(stderr));
-            return null;
-        }
-        return new JsAdapter(proc, port, stderr);
     }
 
     /**
@@ -3875,21 +1494,10 @@ public final class DapManager {
         startJsAttach("127.0.0.1", port, name, cwd, skipFiles, true);
     }
 
-    /**
-     * Attaches the JavaScript debugger to the Node.js inspector at {@code host:port} (Debug ▸ Attach on a JavaScript
-     * file, the HTTP Client's Debug Request). js-debug is started as for a launch and asked to {@code attach}
-     * ({@link LaunchConfig#nodeAttach}); {@code continueOnAttach} resumes a program held by {@code --inspect-brk}
-     * once the breakpoints are set. The session is called {@code name}; Stop detaches and leaves the program
-     * running unless it was waiting for this debugger.
-     */
+    /** See {@link JsSessions#startJsAttach}. */
     public void startJsAttach(
             String host, int port, String name, @Nullable Path cwd, List<String> skipFiles, boolean continueOnAttach) {
-        DapServerRegistry.DapServerSpec spec = DapServerRegistry.specFor("javascript");
-        String type = spec == null ? "pwa-node" : spec.launchType();
-        startJsRequest(
-                cwd,
-                () -> LaunchConfig.nodeAttach(type, name, host, port, skipFiles, continueOnAttach),
-                () -> startJsAttach(host, port, name, cwd, skipFiles, continueOnAttach));
+        jsSessions.startJsAttach(host, port, name, cwd, skipFiles, continueOnAttach);
     }
 
     /**
@@ -3901,158 +1509,7 @@ public final class DapManager {
      */
     public void startBrowser(@Nullable Path anchor, Map<String, Object> request) {
         Map<String, Object> copy = Map.copyOf(request);
-        startJsRequest(anchor, () -> new java.util.LinkedHashMap<>(copy), () -> startBrowser(anchor, copy));
-    }
-
-    /** Starts js-debug and sends it the request {@code body} makes; {@code restart} repeats it. */
-    private void startJsRequest(
-            @Nullable Path anchor, java.util.function.Supplier<Map<String, Object>> body, Runnable restart) {
-        if (managerClosed) {
-            return;
-        }
-        if (!shared.enabled) {
-            listener.onError(tr("debug.error.disabled"));
-            return;
-        }
-        DapServerRegistry.DapServerSpec spec = DapServerRegistry.specFor("javascript");
-        if (spec == null || !isLanguageAvailable("javascript")) {
-            listener.onError(tr("debug.error.jsUnavailable"));
-            return;
-        }
-        if (client != null) {
-            stop(); // one session at a time
-        }
-        restartAction = restart;
-        debugFile = anchor;
-        long epoch = beginSession();
-        setState(State.STARTING);
-        List<DapModels.FileBreakpoints> bps = shared.breakpointsSupplier.get();
-        List<String> filters = filtersFor("javascript");
-        Map<String, Object> request = body.get();
-        jsClientConsole = false;
-        startupTask = io.submit(() -> {
-            try {
-                Path server = shared.jsServer;
-                if (server == null) {
-                    fail(epoch, tr("debug.error.jsNotFound"));
-                    return;
-                }
-                String attachNode = adapterNode();
-                String runner = adapterNodeFor(attachNode, nodeVersion(attachNode));
-                if (runner == null) {
-                    fail(
-                            epoch,
-                            tr(
-                                    "debug.error.jsNodeTooOld",
-                                    String.valueOf(nodeVersion(attachNode)),
-                                    attachNode,
-                                    JsLaunch.MIN_ADAPTER_NODE_MAJOR));
-                    return;
-                }
-                JsAdapter adapter = startJsAdapter(server, runner, epoch);
-                if (adapter == null) {
-                    return; // reported
-                }
-                attachSocket(
-                        adapter.process(),
-                        null,
-                        adapter.port(),
-                        spec,
-                        bps,
-                        filters,
-                        epoch,
-                        DapPaths.LOCAL,
-                        request,
-                        false,
-                        null);
-            } catch (Exception e) {
-                fail(epoch, tr("debug.error.startFailed", msg(e)));
-            }
-        });
-    }
-
-    /**
-     * Wires a started socket adapter ({@code proc}, listening on this machine's {@code port} — through
-     * {@code forward} for one on a remote host) to a new session and sends it {@code request} (a {@code launch} or
-     * an {@code attach}). With {@code runsDebuggee} the adapter hands the program's command line back and Editora
-     * starts it (standard input, all output, exit code). {@code runtime} is the launched program's Node command,
-     * for the runtime chip (null for an attach).
-     */
-    private void attachSocket(
-            Process proc,
-            com.editora.process.@Nullable PortForward forward,
-            int port,
-            DapServerRegistry.DapServerSpec spec,
-            List<DapModels.FileBreakpoints> bps,
-            @Nullable List<String> filters,
-            long epoch,
-            DapPaths paths,
-            Map<String, Object> request,
-            boolean runsDebuggee,
-            @Nullable List<String> runtime) {
-        if (!isCurrent(epoch)) {
-            com.editora.process.ProcessRegistry.killTree(proc);
-            if (forward != null) {
-                forward.close();
-            }
-            return;
-        }
-        boolean attach = "attach".equals(request.get("request"));
-        DapClient c = new DapClient(sessionHost(epoch));
-        c.setPaths(paths);
-        c.setBreakpoints(bps);
-        c.setExceptionFilters(filters);
-        c.setRunsDebuggee(runsDebuggee);
-        // Stop detaches from a program it attached to: vscode-js-debug ends it on terminateDebuggee (seen with 1.117).
-        c.setTerminateOnDisconnect(!attach);
-        c.setAdapterProcess(proc); // killed on dispose (it serves the socket)
-        if (forward != null) {
-            c.closeOnDispose(forward);
-        }
-        if (!publishClient(epoch, c)) {
-            c.dispose();
-            return;
-        }
-        c.connect(port, spec.adapterId()).whenComplete((caps, e) -> {
-            if (e != null) {
-                fail(epoch, tr("debug.error.jsConnect", msg(e)) + AdapterStderr.suffix(adapterStderr(epoch)));
-                return;
-            }
-            if (!isCurrent(epoch)) {
-                c.dispose();
-                return;
-            }
-            trackLaunch(
-                            epoch,
-                            BrowserLaunch.isBrowserType(String.valueOf(request.get("type"))),
-                            () -> attach ? c.attach(request) : c.launch(request))
-                    .whenComplete((v, le) -> {
-                        if (le != null) {
-                            fail(epoch, tr(attach ? "debug.error.attachFailed" : "debug.error.launchFailed", msg(le)));
-                        } else if (attach && Boolean.FALSE.equals(request.get("continueOnAttach"))) {
-                            // A user's Node.js attach: nothing else says it worked, a running server prints nothing
-                            // (D103).
-                            onOutput(
-                                    epoch,
-                                    tr(
-                                                    "debug.js.attached",
-                                                    request.getOrDefault("address", "127.0.0.1") + ":"
-                                                            + request.get("port"))
-                                            + "\n",
-                                    COMMAND_CATEGORY);
-                        }
-                    });
-            fx(() -> {
-                if (isCurrent(epoch, c)) {
-                    setState(State.RUNNING);
-                    if (runtime != null && !runtime.isEmpty()) {
-                        Object cwd = request.get("cwd");
-                        listener.onDebuggeeRuntime(
-                                runtime, runtimeWhere(paths, cwd instanceof String s ? s : null), Map.of());
-                    }
-                }
-            });
-        });
+        jsSessions.startJsRequest(anchor, () -> new java.util.LinkedHashMap<>(copy), () -> startBrowser(anchor, copy));
     }
 
     // --- On a remote host ------------------------------------------------------------------------
@@ -4075,25 +1532,6 @@ public final class DapManager {
             return tr("debug.error.remoteNoCommands");
         }
         return null;
-    }
-
-    /**
-     * The Python that runs debugpy on {@code file}'s host: the host's {@code dap.python} tool, else the
-     * Debugging setting when it is a bare command name (a path names a file on this machine), else
-     * {@code python3}.
-     */
-    private List<String> remotePython(Path file) {
-        String tool = com.editora.process.ExecTargets.remoteTool(file, "dap.python");
-        if (tool != null && !tool.isBlank()) {
-            return DapServerRegistry.tokenize(tool);
-        }
-        List<String> configured = DapServerRegistry.interpreterArgv("python", shared.pythonCommand);
-        if (!configured.isEmpty()
-                && configured.get(0).indexOf('/') < 0
-                && configured.get(0).indexOf('\\') < 0) {
-            return configured;
-        }
-        return List.of(DapServerRegistry.DEFAULT_PYTHON_INTERPRETER);
     }
 
     /**
@@ -4129,59 +1567,6 @@ public final class DapManager {
         }
     }
 
-    /** debugpy on the host of {@code file}: asked for first, then run over an SSH channel as its stdio adapter. */
-    private void startRemoteStdio(
-            Path file,
-            DapServerRegistry.DapServerSpec spec,
-            List<DapModels.FileBreakpoints> bps,
-            @Nullable List<String> filters,
-            long epoch,
-            PythonLaunch.@Nullable Target module)
-            throws Exception {
-        var target = com.editora.process.ExecTargets.forPath(file);
-        Path dir = file.getParent();
-        HostPython python = HostPython.parse(remotePython(file));
-        List<String> probe = python.argv(List.of("-c", "import debugpy"));
-        if (!ProcessRunner.run(dir, java.time.Duration.ofSeconds(20), probe, python.env())
-                .ok()) {
-            fail(epoch, tr("debug.error.remoteDebugpyMissing", python.executable(), target.id()));
-            return;
-        }
-        if (!isCurrent(epoch)) {
-            return;
-        }
-        // The program runs as Run runs it there (the project's venv on the host, its python tool, PYTHONPATH);
-        // the adapter stays on the host's debugpy-capable Python.
-        HostPython program = planProgram(file, target, false);
-        if (module != null && "pytest".equals(module.module())) {
-            module = pytestOrFallback(
-                    module,
-                    program,
-                    epoch,
-                    run -> ProcessRunner.run(dir, java.time.Duration.ofSeconds(20), run, program.env())
-                            .ok());
-            if (module == null) {
-                return; // reported
-            }
-        }
-        if (!isCurrent(epoch)) {
-            return;
-        }
-        List<String> argv = python.argv(spec.adapterArgs()); // -m debugpy.adapter
-        Process proc = target.start(
-                com.editora.process.ExecSpec.of(argv, dir, python.env(), com.editora.process.ExecSpec.Locale.USER)
-                        .withLongLived(true)
-                        .withDiscardedOutput(false, true));
-        // A web server's reloader serves from a child process, which a host's launch does not follow: it is off.
-        PythonLaunch.Target what = module != null
-                ? withoutReload(module)
-                : withoutReload(webOrScript(file, readQuietly(file), programArgs, false));
-        onOutput(epoch, PythonLaunch.commandLine(program, what) + "\n", COMMAND_CATEGORY);
-        // The host's own PYTHONPATH is not known here (null): the plan's is used, else it is left as the host has it.
-        Map<String, Object> launch = PythonLaunch.request(what, program, List.of(), null, ":", false);
-        attachStdio(proc, spec, bps, filters, epoch, DapPaths.on(target, file.getFileSystem()), launch, false, null);
-    }
-
     /**
      * Finds {@code dapDebugServer.js} on the host: the {@code dap.js} tool ($1: the file, or a folder to
      * search), else where Editora's installer and mason put it (VS Code's js-debug has no DAP server entry). Prints the path; exits 1
@@ -4204,431 +1589,106 @@ public final class DapManager {
             exit 1
             """;
 
-    /** vscode-js-debug on the host: started on a free port there, reached through a tunnel from this machine. */
-    private void startRemoteSocket(
-            Path file,
-            DapServerRegistry.DapServerSpec spec,
-            List<DapModels.FileBreakpoints> bps,
-            @Nullable List<String> filters,
-            long epoch)
-            throws Exception {
-        jsClientConsole = false; // js-debug starts the program on the host
-        var target = com.editora.process.ExecTargets.forPath(file);
-        Path dir = file.getParent();
-        String configured = com.editora.process.ExecTargets.remoteTool(file, "dap.js");
-        String nodeTool = com.editora.process.ExecTargets.remoteTool(file, "node");
-        String node = nodeTool == null || nodeTool.isBlank() ? spec.defaultInterpreter() : nodeTool.strip();
-        ProcessRunner.Result found = ProcessRunner.run(
-                dir,
-                java.time.Duration.ofSeconds(20),
-                List.of("sh", "-c", FIND_JS_DEBUG, "sh", configured == null ? "" : configured.strip(), node));
-        String server = found.ok() ? found.out().strip() : "";
-        if (server.isEmpty()) {
-            fail(
-                    epoch,
-                    found.exit() == 2
-                            ? tr("debug.error.remoteNodeMissing", target.id())
-                            : tr("debug.error.remoteJsMissing", target.id()));
-            return;
-        }
-        if (!isCurrent(epoch)) {
-            return;
-        }
-        // The package root as the working folder and workspace, as on this machine (review D110): a compiled
-        // project's source maps map, and process.cwd() is what a local Debug gets. Looked up on the host's files.
-        Path projectRoot = jsProjectRoot;
-        Path root = projectRoot != null && projectRoot.getFileSystem() == file.getFileSystem() ? projectRoot : null;
-        Path remoteCwd = com.editora.run.NodeRuntimes.packageRoot(file, root, null, Files::isRegularFile)
-                .orElse(dir);
-        Path remoteWorkspace =
-                root != null && file.toAbsolutePath().startsWith(root.toAbsolutePath()) ? root : remoteCwd;
-        // Port 0: the host picks a free one and the server prints it; 127.0.0.1, so the tunnel's end is known.
-        Process proc = target.start(com.editora.process.ExecSpec.of(
-                        List.of(node, server, "0", "127.0.0.1"),
-                        dir,
-                        java.util.Map.of(),
-                        com.editora.process.ExecSpec.Locale.USER)
-                .withLongLived(true)
-                .withDiscardedOutput(false, true));
-        int remotePort = listeningPort(proc.getInputStream(), java.time.Duration.ofSeconds(20));
-        if (remotePort < 0) {
-            com.editora.process.ProcessRegistry.killTree(proc);
-            fail(epoch, tr("debug.error.remoteJsNoStart", target.id()));
-            return;
-        }
-        com.editora.process.PortForward forward;
-        try {
-            forward = target.forwardLocal("127.0.0.1", remotePort);
-        } catch (java.io.IOException e) {
-            com.editora.process.ProcessRegistry.killTree(proc);
-            throw e;
-        }
-        attachSocket(
-                proc,
-                forward,
-                forward.localPort(),
-                spec,
-                bps,
-                filters,
-                epoch,
-                DapPaths.on(target, file.getFileSystem()),
-                // js-debug starts the program on the host (Editora cannot start it there), so its output is read
-                // with outputCapture "std"; its folder is the file's, which is what the host can be asked for.
-                JsLaunch.request(
-                        spec.launchType(),
-                        target.toTargetPath(file),
-                        target.toTargetPath(remoteCwd),
-                        target.toTargetPath(remoteWorkspace),
-                        List.of(node),
-                        programArgs,
-                        false),
-                false,
-                List.of(node));
-    }
-
-    /** Matches the line vscode-js-debug's server prints once it listens: {@code … listening at host:port}. */
-    private static final java.util.regex.Pattern LISTENING =
-            java.util.regex.Pattern.compile("listening at .*:(\\d+)\\s*$");
-
-    /**
-     * The port an adapter announces on {@code out} ({@link #LISTENING}), or -1 when it ends or says nothing
-     * in {@code timeout}. Whatever it prints afterwards is read and dropped, so its channel never fills.
-     */
+    /** See {@link JsSessions#listeningPort}. */
     static int listeningPort(java.io.InputStream out, java.time.Duration timeout) {
-        CompletableFuture<Integer> port = new CompletableFuture<>();
-        Thread.ofVirtual().name("dap-adapter-stdout").start(() -> {
-            try (var reader = new java.io.BufferedReader(
-                    new java.io.InputStreamReader(out, java.nio.charset.StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    var m = LISTENING.matcher(line);
-                    if (!port.isDone() && m.find()) {
-                        port.complete(Integer.parseInt(m.group(1)));
-                    }
-                }
-            } catch (java.io.IOException | RuntimeException ended) {
-                // the adapter is gone
-            } finally {
-                port.complete(-1);
-            }
-        });
-        try {
-            return port.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
-        } catch (Exception e) {
-            return -1;
-        }
+        return JsSessions.listeningPort(out, timeout);
     }
 
-    private static int freePort() throws Exception {
+    static int freePort() throws Exception {
         try (ServerSocket s = new ServerSocket(0)) {
             return s.getLocalPort();
         }
     }
 
-    /**
-     * What Debug File runs for the Python {@code file}: the development server of a web app it is
-     * ({@link com.editora.run.PythonWebApps#serve}: {@code manage.py runserver}, Flask's, uvicorn's), else the file
-     * with {@code args}. Paths as the machine the program runs on names them ({@code local}: this one).
-     */
+    /** See {@link PythonSessions#webOrScript}. */
     static PythonLaunch.Target webOrScript(Path file, @Nullable String content, List<String> args, boolean local) {
-        var exec = com.editora.process.ExecTargets.forPath(file);
-        com.editora.run.PythonWebApps.Server web = com.editora.run.PythonWebApps.serve(
-                file, content, args, d -> java.nio.file.Files.isRegularFile(d.resolve("__init__.py")));
-        String program = local ? file.toString() : exec.toTargetPath(file);
-        Path dir = file.getParent();
-        String cwd = dir == null ? null : local ? cwdOf(file) : exec.toTargetPath(dir);
-        if (web == null) {
-            return PythonLaunch.Target.script(program, args, cwd);
-        }
-        if (web.module() == null) {
-            return PythonLaunch.Target.script(program, web.args(), cwd);
-        }
-        String folder = local ? web.folder().toString() : exec.toTargetPath(web.folder());
-        return PythonLaunch.Target.module(web.module(), web.args(), folder);
+        return PythonSessions.webOrScript(file, content, args, local);
     }
 
-    /**
-     * Whether a local launch serves a web app — its target a server ({@code python -m flask}, {@code manage.py}),
-     * a launch.json configuration's {@code module} or {@code program} one, or the file a web app that starts its own
-     * server ({@code app.run(debug=True)}) — and so follows subprocesses: the reloader's child is what serves.
-     */
+    /** See {@link PythonSessions#servesWeb}. */
     static boolean servesWeb(
             PythonLaunch.Target target, @Nullable String content, @Nullable Map<String, Object> configured) {
-        if (com.editora.run.PythonWebApps.servesWeb(target.module(), target.program())) {
-            return true;
-        }
-        if (configured != null
-                && com.editora.run.PythonWebApps.servesWeb(
-                        configured.get("module") instanceof String m ? m : null,
-                        configured.get("program") instanceof String p ? p : null)) {
-            return true;
-        }
-        if (target.module() != null || target.program() == null || content == null) {
-            return false;
-        }
-        Path name = Path.of(target.program()).getFileName();
-        return com.editora.run.PythonWebApps.framework(name == null ? null : name.toString(), content) != null;
+        return PythonSessions.servesWeb(target, content, configured);
     }
 
-    /** {@code target} with its web server's reloader off ({@link com.editora.run.PythonWebApps#withoutReload}). */
+    /** See {@link PythonSessions#withoutReload}. */
     static PythonLaunch.Target withoutReload(PythonLaunch.Target target) {
-        List<String> args =
-                com.editora.run.PythonWebApps.withoutReload(target.module(), target.program(), target.args());
-        return new PythonLaunch.Target(target.program(), target.module(), args, target.cwd(), target.fallback());
+        return PythonSessions.withoutReload(target);
     }
 
-    private static @Nullable String cwdOf(Path file) {
+    static @Nullable String cwdOf(Path file) {
         return file.getParent() == null ? null : file.getParent().toString();
     }
 
     /** Where a debuggee's runtime is asked its version: {@code file}'s folder, so its host; null is here. */
-    private static @Nullable Path runtimeWhere(@Nullable Path file) {
+    static @Nullable Path runtimeWhere(@Nullable Path file) {
         return file == null ? null : file.getParent();
     }
 
-    /** The interpreter argv a debugpy {@code launch} runs the program with ({@code python} + {@code pythonArgs});
-     *  empty when it names none and debugpy uses its own. */
+    /** See {@link PythonSessions#pythonRuntime}. */
     static List<String> pythonRuntime(Map<String, Object> launch) {
-        if (!(launch.get("python") instanceof String python) || python.isBlank()) {
-            return List.of();
-        }
-        List<String> argv = new ArrayList<>(List.of(python));
-        if (launch.get("pythonArgs") instanceof List<?> args) {
-            args.forEach(a -> argv.add(String.valueOf(a)));
-        }
-        return argv;
-    }
-
-    /** A launch body's {@code env} as strings (a null value, which unsets, stays null); empty when absent. */
-    private static Map<String, String> stringMap(@Nullable Object env) {
-        if (!(env instanceof Map<?, ?> m)) {
-            return Map.of();
-        }
-        Map<String, String> out = new java.util.LinkedHashMap<>();
-        m.forEach((k, v) -> out.put(String.valueOf(k), v == null ? null : String.valueOf(v)));
-        return out;
+        return PythonSessions.pythonRuntime(launch);
     }
 
     /** Where a debuggee's runtime is asked its version: its launch folder, named as the adapter's machine names
      *  it (so its host); null is here. */
-    private static @Nullable Path runtimeWhere(DapPaths paths, @Nullable String cwd) {
+    static @Nullable Path runtimeWhere(DapPaths paths, @Nullable String cwd) {
         return cwd == null || cwd.isBlank() ? null : paths.fromAdapter(cwd);
     }
 
     // --- Controls -------------------------------------------------------------------------------
 
+    /** See {@link ExecutionControl#resume}. */
     public void resume() {
-        DapClient c = client;
-        if (c == null) {
-            return;
-        }
-        if (refusePostMortem() || (state == State.SUSPENDED && refuseWhileEvaluating())) {
-            return;
-        }
-        long epoch = sessionEpoch;
-        int threadId = currentThreadId;
-        stepInFlight = false;
-        tempTripResumed = tempBreakpointFile != null; // a Run to Cursor trip goes on from here
-        stoppedThreads.remove(threadId);
-        boolean wholeProgram = allSuspended && javaDebugSession();
-        allSuspended = false;
-        resumedSinceSuspendAll.clear();
-        (wholeProgram ? c.resumeAll(threadId) : c.resume(threadId))
-                .whenComplete((all, e) -> fx(() -> {
-                    if (e == null && isCurrent(epoch, c)) {
-                        afterThreadResumed(epoch, c, all == null || all);
-                    }
-                }));
-        setState(State.RUNNING);
+        execution.resume();
     }
 
-    /**
-     * One thread was resumed. When the adapter says the others were not ({@code allThreadsContinued=false})
-     * and one of them is still stopped, show that one instead of reporting a running session: nothing else
-     * would ever bring it back, and the program waits on it for good.
-     */
-    private void afterThreadResumed(long epoch, DapClient c, boolean allThreads) {
-        if (allThreads) {
-            stoppedThreads.clear();
-            return;
-        }
-        if (state != State.RUNNING || stoppedThreads.isEmpty()) {
-            return;
-        }
-        var next = stoppedThreads.entrySet().iterator().next();
-        presentStop(epoch, c, next.getKey(), next.getValue(), false, false, -1);
-    }
-
-    /** Pauses a running session: targets the current thread if the adapter reports it, else the first. A Java
-     *  session suspends every thread (java-debug's {@code pauseAll}); debugpy pauses all threads by itself. The
-     *  adapter answers with a {@code stopped(reason=pause)} event, which flows through onStopped. */
+    /** See {@link ExecutionControl#pause}. */
     public void pause() {
-        DapClient c = client;
-        if (c == null || state != State.RUNNING || postMortem) {
-            return;
-        }
-        c.threads().whenComplete((list, e) -> {
-            if (client != c || e != null || list == null || list.isEmpty()) {
-                return;
-            }
-            int id = list.get(0).id();
-            for (DapModels.ThreadInfo t : list) {
-                if (t.id() == currentThreadId) {
-                    id = t.id();
-                    break;
-                }
-            }
-            if (javaDebugSession()) {
-                c.pauseAll(id);
-            } else {
-                c.pause(id);
-            }
-        });
+        execution.pause();
     }
 
-    /**
-     * The session's threads with whether each is suspended (callback on the FX thread): the Threads view. Empty with
-     * no session.
-     */
+    /** See {@link ExecutionControl#threadStatuses}. */
     public void threadStatuses(Consumer<List<DapModels.ThreadStatus>> cb) {
-        threads(list -> cb.accept(threadStatuses(
-                list,
-                stoppedThreads,
-                allSuspended,
-                resumedSinceSuspendAll,
-                state == State.SUSPENDED ? currentThreadId : -1)));
+        execution.threadStatuses(cb);
     }
 
-    /**
-     * Which of {@code threads} are suspended: those stopped since the last continue ({@code stopped}, with their
-     * reason), the one shown ({@code shownId}, -1 when none is), and — the whole program suspended — every thread not
-     * resumed on its own since. Pure.
-     */
+    /** See {@link ExecutionControl#threadStatuses}. */
     static List<DapModels.ThreadStatus> threadStatuses(
             List<DapModels.ThreadInfo> threads,
             Map<Integer, String> stopped,
             boolean allSuspended,
             java.util.Set<Integer> resumedSinceSuspendAll,
             int shownId) {
-        List<DapModels.ThreadStatus> out = new ArrayList<>();
-        for (DapModels.ThreadInfo t : threads) {
-            String stoppedFor = stopped.get(t.id());
-            boolean paused = stoppedFor != null
-                    || t.id() == shownId
-                    || (allSuspended && !resumedSinceSuspendAll.contains(t.id()));
-            String reason = stoppedFor != null ? stoppedFor : paused && t.id() != shownId ? "pause" : "";
-            out.add(new DapModels.ThreadStatus(t.id(), t.name(), paused, reason, t.id() == shownId));
-        }
-        return out;
+        return ExecutionControl.threadStatuses(threads, stopped, allSuspended, resumedSinceSuspendAll, shownId);
     }
 
-    /**
-     * Threads view → Pause Thread: suspends {@code threadId} alone (java-debug; debugpy suspends the whole program).
-     * The adapter's {@code stopped} event then shows it like any stop.
-     */
+    /** See {@link ExecutionControl#pauseThread}. */
     public void pauseThread(int threadId) {
-        DapClient c = client;
-        if (c != null && state != State.INACTIVE && state != State.STARTING) {
-            c.pause(threadId);
-        }
+        execution.pauseThread(threadId);
     }
 
-    /**
-     * Threads view → Resume Thread: resumes {@code threadId} alone, the others staying as they are. When it is the
-     * thread shown, the next still-suspended one is brought forward, as after Continue; when the adapter resumed the
-     * whole program instead (debugpy), the session runs.
-     */
+    /** See {@link ExecutionControl#resumeThread}. */
     public void resumeThread(int threadId) {
-        DapClient c = client;
-        if (c == null || state == State.INACTIVE || state == State.STARTING) {
-            return;
-        }
-        if (refusePostMortem()
-                || (state == State.SUSPENDED && threadId == currentThreadId && refuseWhileEvaluating())) {
-            return;
-        }
-        long epoch = sessionEpoch;
-        boolean shown = state == State.SUSPENDED && threadId == currentThreadId;
-        stoppedThreads.remove(threadId);
-        if (allSuspended) {
-            resumedSinceSuspendAll.add(threadId);
-        }
-        if (shown) {
-            stepInFlight = false;
-            setState(State.RUNNING);
-        }
-        c.resume(threadId)
-                .whenComplete((all, e) -> fx(() -> {
-                    if (e != null || !isCurrent(epoch, c)) {
-                        return;
-                    }
-                    if (all == null || all) {
-                        stoppedThreads.clear();
-                        allSuspended = false;
-                        resumedSinceSuspendAll.clear();
-                        if (state == State.SUSPENDED) {
-                            setState(State.RUNNING);
-                        }
-                    } else if (shown) {
-                        afterThreadResumed(epoch, c, false);
-                    }
-                    listener.onThreadsChanged();
-                }));
+        execution.resumeThread(threadId);
     }
 
-    /**
-     * Threads view → Show Frames on a suspended thread while no thread is shown (the one on screen was resumed on
-     * its own): shows it as the stopped thread. A thread already shown, or with the session suspended, is selected
-     * as from the thread dropdown instead (the caller's part). False when nothing was done.
-     */
+    /** See {@link ExecutionControl#showSuspendedThread}. */
     public boolean showSuspendedThread(int threadId, String reason) {
-        DapClient c = client;
-        if (c == null || state != State.RUNNING) {
-            return false;
-        }
-        stoppedThreads.put(threadId, reason == null ? "" : reason);
-        presentStop(sessionEpoch, c, threadId, reason == null ? "" : reason, false, false, -1);
-        return true;
+        return execution.showSuspendedThread(threadId, reason);
     }
 
-    /** Lists the session's threads (callback on the FX thread). */
+    /** See {@link ExecutionControl#threads}. */
     public void threads(Consumer<List<DapModels.ThreadInfo>> cb) {
-        DapClient c = client;
-        if (c == null) {
-            cb.accept(List.of());
-            return;
-        }
-        c.threads()
-                .whenComplete((list, e) -> fx(() -> {
-                    if (client == c) {
-                        if (list != null) {
-                            threadNames.clear();
-                            list.forEach(t -> threadNames.put(t.id(), t.name()));
-                        }
-                        cb.accept(list == null ? List.of() : list);
-                    }
-                }));
+        execution.threads(cb);
     }
 
     /** The threads' names from the last {@code threads} reply, until a thread starts or ends (FX thread). */
-    private final Map<Integer, String> threadNames = new HashMap<>();
+    final Map<Integer, String> threadNames = new HashMap<>();
 
-    /**
-     * The name of thread {@code threadId} (callback on the FX thread; "" when the adapter does not list it): from the
-     * last listing when it named the thread and no thread started or ended since, else asked for. A token logpoint in a
-     * loop asked for every thread at each hit (perf review 2026-11-23, D4).
-     */
+    /** See {@link ExecutionControl#threadName}. */
     public void threadName(int threadId, Consumer<String> cb) {
-        String known = client == null ? null : threadNames.get(threadId);
-        if (known != null) {
-            cb.accept(known);
-            return;
-        }
-        threads(list -> cb.accept(list.stream()
-                .filter(t -> t.id() == threadId)
-                .map(DapModels.ThreadInfo::name)
-                .findFirst()
-                .orElse("")));
+        execution.threadName(threadId, cb);
     }
 
     /** Whether the live session's adapter lists the sources its debuggee loaded (js-debug does). */
@@ -4643,68 +1703,27 @@ public final class DapManager {
         return c != null && c.listsModules();
     }
 
-    /** The sources the debuggee has loaded (callback on the FX thread; empty with no session, or on failure). */
+    /** See {@link InspectionRequests#loadedSources}. */
     public void loadedSources(Consumer<List<DapModels.LoadedSource>> cb) {
-        DapClient c = client;
-        if (c == null) {
-            cb.accept(List.of());
-            return;
-        }
-        c.loadedSources()
-                .whenComplete((list, e) -> fx(() -> {
-                    if (client == c) {
-                        cb.accept(list == null ? List.of() : list);
-                    }
-                }));
+        inspection.loadedSources(cb);
     }
 
-    /** The modules the debuggee has loaded (callback on the FX thread; empty with no session, or on failure). */
+    /** See {@link InspectionRequests#modules}. */
     public void modules(Consumer<List<DapModels.ModuleInfo>> cb) {
-        DapClient c = client;
-        if (c == null) {
-            cb.accept(List.of());
-            return;
-        }
-        c.modules()
-                .whenComplete((list, e) -> fx(() -> {
-                    if (client == c) {
-                        cb.accept(list == null ? List.of() : list);
-                    }
-                }));
+        inspection.modules(cb);
     }
 
-    /**
-     * Sets the breakpoints of {@code source}, code the debugger has only by reference, for this session (callback on the
-     * FX thread with one status per line; empty with no session).
-     */
+    /** See {@link InspectionRequests#updateReferenceBreakpoints}. */
     public void updateReferenceBreakpoints(
             DapModels.LoadedSource source,
             List<DapModels.LineBreakpoint> lines,
             Consumer<List<DapModels.BreakpointStatus>> cb) {
-        DapClient c = client;
-        if (c == null) {
-            cb.accept(List.of());
-            return;
-        }
-        c.setReferenceBreakpoints(source, lines)
-                .whenComplete((statuses, e) -> fx(() -> {
-                    if (client == c) {
-                        cb.accept(statuses == null ? List.of() : statuses);
-                    }
-                }));
+        inspection.updateReferenceBreakpoints(source, lines, cb);
     }
 
-    /**
-     * The text of a loaded source that is not a file, as the adapter gives it (callback on the FX thread: the text,
-     * or null when the adapter could not give it).
-     */
+    /** See {@link InspectionRequests#sourceContent}. */
     public void sourceContent(DapModels.LoadedSource source, Consumer<@Nullable String> cb) {
-        DapClient c = client;
-        if (c == null) {
-            cb.accept(null);
-            return;
-        }
-        c.sourceContent(source).whenComplete((text, e) -> fx(() -> cb.accept(e == null ? text : null)));
+        inspection.sourceContent(source, cb);
     }
 
     /** Switches the inspected thread and loads its call stack (callback on the FX thread). */
@@ -4714,10 +1733,11 @@ public final class DapManager {
     }
 
     /** While a run-to-cursor temp breakpoint is planted: the file holding it (re-sent clean on stop). */
-    private @Nullable Path tempBreakpointFile;
+    @Nullable
+    Path tempBreakpointFile;
 
     /** The 0-based line of the run-to-cursor temp breakpoint in {@link #tempBreakpointFile}. */
-    private int tempBreakpointLine = -1;
+    int tempBreakpointLine = -1;
 
     /**
      * The program was resumed toward the run-to-cursor line, by Run to Cursor itself or by a Resume from a stop on the
@@ -4726,60 +1746,22 @@ public final class DapManager {
      * hit count did not match, Thread Dump's pause — and clearing it at those left Run to Cursor never arriving. A stop
      * reached any other way (a step) ends the trip.
      */
-    private boolean tempTripResumed;
+    boolean tempTripResumed;
 
-    /** Resumes and stops at {@code line} (0-based) in {@code file} via a temporary breakpoint that is
-     *  removed when the program stops there, stops elsewhere and is not resumed, or ends
-     *  ({@link #settleTempBreakpoint}). Call on the FX thread while SUSPENDED. */
+    /** See {@link ExecutionControl#runToCursor}. */
     public void runToCursor(Path file, int line) {
-        DapClient c = client;
-        if (c == null || state != State.SUSPENDED || file == null || refusePostMortem()) {
-            return;
-        }
-        clearTempBreakpoint(); // the last trip's, kept from a stop on the way
-        tempBreakpointFile = file;
-        tempBreakpointLine = line;
-        c.sendSetBreakpoints(adapterBreakpoint(withTempLine(shared.breakpointsSupplier.get(), file, line)));
-        resume();
+        execution.runToCursor(file, line);
     }
 
     /** Files whose breakpoints Force Run to Cursor took away for the trip; restored at the next stop (FX thread). */
-    private List<Path> forceRunMuted = List.of();
+    List<Path> forceRunMuted = List.of();
 
     /** Whether Force Run to Cursor took the method breakpoints and field watchpoints away for the trip (FX thread). */
-    private boolean forceRunMutedMembers;
+    boolean forceRunMutedMembers;
 
-    /**
-     * Force Run to Cursor (IntelliJ, Visual Studio): runs to {@code line} (0-based) of {@code file} with every
-     * breakpoint set aside, so none on the way stops the program. Exception breakpoints still stop it. The stop at the
-     * cursor, or any stop the program is not resumed from, puts the breakpoints back ({@link #settleTempBreakpoint}).
-     * FX thread, while SUSPENDED.
-     */
+    /** See {@link ExecutionControl#forceRunToCursor}. */
     public void forceRunToCursor(Path file, int line) {
-        DapClient c = client;
-        if (c == null || state != State.SUSPENDED || file == null || refusePostMortem()) {
-            return;
-        }
-        clearTempBreakpoint(); // the last trip's, kept from a stop on the way
-        List<Path> muted = new ArrayList<>();
-        for (DapModels.FileBreakpoints fb : shared.breakpointsSupplier.get()) {
-            if (fb.file() != null
-                    && !fb.breakpoints().isEmpty()
-                    && !com.editora.config.PathKeys.samePath(fb.file(), file)) {
-                muted.add(fb.file());
-                c.sendSetBreakpoints(adapterBreakpoint(new DapModels.FileBreakpoints(fb.file(), List.of())));
-            }
-        }
-        forceRunMuted = List.copyOf(muted);
-        if (!shared.memberBreakpoints.isEmpty()) {
-            forceRunMutedMembers = true; // method entries and field writes on the way must not stop it either
-            c.setMemberBreakpoints(List.of());
-        }
-        tempBreakpointFile = file;
-        tempBreakpointLine = line;
-        c.sendSetBreakpoints(adapterBreakpoint(
-                new DapModels.FileBreakpoints(file, List.of(new DapModels.LineBreakpoint(line, null, null)))));
-        resume();
+        execution.forceRunToCursor(file, line);
     }
 
     /**
@@ -4798,129 +1780,41 @@ public final class DapManager {
         return c != null && c.supportsGotoTargets();
     }
 
-    /**
-     * Jump to Line (the IntelliJ plugin's move-the-execution-pointer): teleports the suspended thread
-     * to {@code line} (0-based) of {@code file} <em>without executing</em> the code in between. The
-     * adapter's {@code stopped(reason=goto)} event then refreshes the UI like any stop. {@code onError}
-     * is called on the FX thread with "" when the line has no valid target, else the failure message.
-     */
+    /** See {@link ExecutionControl#jumpToLine}. */
     public void jumpToLine(Path file, int line, Consumer<String> onError) {
-        DapClient c = client;
-        if (c == null || state != State.SUSPENDED || file == null || refusePostMortem()) {
-            return;
-        }
-        int threadId = currentThreadId;
-        c.gotoTargets(file, line)
-                .whenComplete((ids, e) -> fx(() -> {
-                    if (client != c) {
-                        return;
-                    }
-                    if (e != null) {
-                        onError.accept(msg(e));
-                        return;
-                    }
-                    if (ids == null || ids.isEmpty()) {
-                        onError.accept(""); // no jump target on that line
-                        return;
-                    }
-                    c.gotoTarget(threadId, ids.get(0)).whenComplete((v, e2) -> {
-                        if (e2 != null) {
-                            fx(() -> {
-                                if (client == c) {
-                                    onError.accept(msg(e2));
-                                }
-                            });
-                        }
-                    });
-                }));
+        execution.jumpToLine(file, line, onError);
     }
 
-    /**
-     * The file's existing breakpoints plus a temporary plain one at {@code line}. A breakpoint already on that
-     * line is made plain for the trip: left as it was, a condition that was false or a logpoint (which never
-     * suspends) let the program run past the cursor. {@link #clearTempBreakpoint} restores it. Pure — tested.
-     */
+    /** See {@link ExecutionControl#withTempLine}. */
     static DapModels.FileBreakpoints withTempLine(List<DapModels.FileBreakpoints> all, Path file, int line) {
-        List<DapModels.LineBreakpoint> lines = new ArrayList<>();
-        for (DapModels.FileBreakpoints fb : all == null ? List.<DapModels.FileBreakpoints>of() : all) {
-            if (com.editora.config.PathKeys.samePath(fb.file(), file)) {
-                for (DapModels.LineBreakpoint lb : fb.breakpoints()) {
-                    if (lb.line() != line) {
-                        lines.add(lb);
-                    }
-                }
-            }
-        }
-        lines.add(new DapModels.LineBreakpoint(line, null, null));
-        return new DapModels.FileBreakpoints(file, lines);
+        return ExecutionControl.withTempLine(all, file, line);
     }
 
-    /**
-     * The window showed the current stop to the user (not one it resumes by itself: a logpoint, a recording or
-     * filtered breakpoint): a Run to Cursor trip ends there, as in VS Code and IntelliJ. FX thread.
-     */
+    /** See {@link ExecutionControl#stopShown}. */
     public void stopShown() {
-        if (tempBreakpointFile != null || !forceRunMuted.isEmpty() || forceRunMutedMembers) {
-            clearTempBreakpoint();
-        }
-    }
-
-    /** Restores the real breakpoint set after a run-to-cursor temp breakpoint did its job (FX thread). */
-    private void clearTempBreakpoint() {
-        Path f = tempBreakpointFile;
-        tempBreakpointFile = null;
-        tempBreakpointLine = -1;
-        tempTripResumed = false;
-        List<Path> muted = forceRunMuted;
-        forceRunMuted = List.of();
-        DapClient c = client;
-        if (c != null && forceRunMutedMembers) {
-            c.setMemberBreakpoints(shared.memberBreakpoints);
-        }
-        forceRunMutedMembers = false;
-        if (c != null && !muted.isEmpty()) {
-            for (Path file : muted) {
-                List<DapModels.LineBreakpoint> real = new ArrayList<>();
-                for (DapModels.FileBreakpoints fb : shared.breakpointsSupplier.get()) {
-                    if (com.editora.config.PathKeys.samePath(fb.file(), file)) {
-                        real.addAll(fb.breakpoints());
-                    }
-                }
-                c.sendSetBreakpoints(adapterBreakpoint(new DapModels.FileBreakpoints(file, real)));
-            }
-        }
-        if (f == null || c == null) {
-            return;
-        }
-        List<DapModels.LineBreakpoint> real = new ArrayList<>();
-        for (DapModels.FileBreakpoints fb : shared.breakpointsSupplier.get()) {
-            if (com.editora.config.PathKeys.samePath(fb.file(), f)) {
-                real.addAll(fb.breakpoints());
-            }
-        }
-        c.sendSetBreakpoints(adapterBreakpoint(new DapModels.FileBreakpoints(f, real)));
+        execution.stopShown();
     }
 
     public void stepOver() {
-        step(DapClient::next);
+        execution.step(DapClient::next);
     }
 
     public void stepInto() {
-        step(DapClient::stepIn);
+        execution.step(DapClient::stepIn);
     }
 
     public void stepOut() {
-        step(DapClient::stepOut);
+        execution.step(DapClient::stepOut);
     }
 
     /** Step Over one machine instruction (the Disassembly view's step), where the adapter steps that finely. */
     public void stepOverInstruction() {
-        step((c, threadId) -> c.next(threadId, true));
+        execution.step((c, threadId) -> c.next(threadId, true));
     }
 
     /** Step Into one machine instruction (into a call), where the adapter steps that finely. */
     public void stepIntoInstruction() {
-        step((c, threadId) -> c.stepIn(threadId, true));
+        execution.step((c, threadId) -> c.stepIn(threadId, true));
     }
 
     /** Whether the session's adapter steps one machine instruction at a time. */
@@ -4965,60 +1859,25 @@ public final class DapManager {
         return new boolean[] {c != null && c.supportsConditions(), c != null && c.supportsHitConditions()};
     }
 
-    /**
-     * Sets the shown session's instruction breakpoints to {@code addresses}; what the adapter made of each goes to
-     * {@code cb} on the FX thread (none when the session ended or the request failed, with why to {@code failed}).
-     */
+    /** See {@link LowLevelRequests#setInstructionBreakpoints}. */
     public void setInstructionBreakpoints(
             List<String> addresses, Consumer<List<DapModels.InstructionBreakpoint>> cb, Consumer<String> failed) {
-        DapClient c = client;
-        setInstructionBreakpoints(addresses, c == null ? Map.of() : c.instructionConditions(), cb, failed);
+        lowLevel.setInstructionBreakpoints(addresses, cb, failed);
     }
 
-    /** As above, with each address's {@code conditions}. */
+    /** See {@link LowLevelRequests#setInstructionBreakpoints}. */
     public void setInstructionBreakpoints(
             List<String> addresses,
             Map<String, DapModels.InstructionConditions> conditions,
             Consumer<List<DapModels.InstructionBreakpoint>> cb,
             Consumer<String> failed) {
-        DapClient c = client;
-        if (c == null || !c.supportsInstructionBreakpoints()) {
-            return;
-        }
-        c.setInstructionBreakpoints(addresses, conditions)
-                .whenComplete((list, e) -> fx(() -> {
-                    if (client != c) {
-                        return;
-                    }
-                    if (e != null || list == null) {
-                        failed.accept(e == null ? "" : msg(e));
-                    } else {
-                        cb.accept(list);
-                    }
-                }));
+        lowLevel.setInstructionBreakpoints(addresses, conditions, cb, failed);
     }
 
-    /**
-     * {@code count} instructions around {@code memoryReference} from {@code instructionOffset} on (to {@code cb} on the
-     * FX thread; empty when the adapter could not, or the session ended).
-     */
+    /** See {@link LowLevelRequests#disassemble}. */
     public void disassemble(
             String memoryReference, int instructionOffset, int count, Consumer<List<DapModels.Instruction>> cb) {
-        DapClient c = client;
-        if (c == null || !c.supportsDisassemble()) {
-            cb.accept(List.of());
-            return;
-        }
-        if (instructionOffset < 0 && isGdbSession()) {
-            disassembleBackOnGdb(c, memoryReference, -instructionOffset, count, 0, cb);
-            return;
-        }
-        c.disassemble(memoryReference, instructionOffset, count)
-                .whenComplete((list, e) -> fx(() -> {
-                    if (client == c) {
-                        cb.accept(e != null || list == null ? List.of() : list);
-                    }
-                }));
+        lowLevel.disassemble(memoryReference, instructionOffset, count, cb);
     }
 
     /** Bytes before the instruction GDB is asked to disassemble from, per instruction wanted before it. */
@@ -5027,103 +1886,25 @@ public final class DapManager {
     /** Start bytes tried, one byte further back each time, before GDB's listing is taken from the address on. */
     public static final int GDB_SYNC_TRIES = 8;
 
-    /**
-     * {@code count} instructions, {@code before} of them before {@code address}, from GDB: GDB (16) counts a negative
-     * {@code instructionOffset} from the end of a listing forward from the address, so the instructions before it are
-     * listed from bytes before it. x86 instructions vary in length: a start byte inside one decodes wrongly until the
-     * listing falls into step, so a listing that never reaches the address exactly is tried again a byte further back;
-     * after {@link #GDB_SYNC_TRIES}, the listing starts at the address.
-     */
-    private void disassembleBackOnGdb(
-            DapClient c, String address, int before, int count, int attempt, Consumer<List<DapModels.Instruction>> cb) {
-        if (attempt >= GDB_SYNC_TRIES) {
-            c.disassemble(address, 0, count - before)
-                    .whenComplete((list, e) -> fx(() -> {
-                        if (client == c) {
-                            cb.accept(e != null || list == null ? List.of() : list);
-                        }
-                    }));
-            return;
-        }
-        int back = before * GDB_BYTES_PER_INSTRUCTION + attempt;
-        // As many instructions as those bytes could hold (one byte each), then the rest after the address.
-        c.disassemble(address, -back, 0, back + count - before)
-                .whenComplete((list, e) -> fx(() -> {
-                    if (client != c) {
-                        return;
-                    }
-                    List<DapModels.Instruction> around =
-                            e != null || list == null ? null : aroundAddress(list, address, before, count);
-                    if (around != null) {
-                        cb.accept(around);
-                    } else {
-                        disassembleBackOnGdb(c, address, before, count, attempt + 1, cb);
-                    }
-                }));
-    }
-
-    /**
-     * Of {@code listing}, the {@code count} instructions from {@code before} before the one at {@code address}; null
-     * when no instruction of it starts at {@code address} (the listing decoded out of step). Pure.
-     */
+    /** See {@link LowLevelRequests#aroundAddress}. */
     static @Nullable List<DapModels.Instruction> aroundAddress(
             List<DapModels.Instruction> listing, String address, int before, int count) {
-        Long wanted = parseAddress(address);
-        int at = -1;
-        for (int i = 0; i < listing.size() && wanted != null; i++) {
-            if (wanted.equals(parseAddress(listing.get(i).address()))) {
-                at = i;
-                break;
-            }
-        }
-        if (at < 0) {
-            return null;
-        }
-        int from = Math.max(0, at - before);
-        return List.copyOf(listing.subList(from, Math.min(listing.size(), from + count)));
+        return LowLevelRequests.aroundAddress(listing, address, before, count);
     }
 
-    /** {@code 0x…} or decimal as a number; null when it is neither. Pure. */
+    /** See {@link LowLevelRequests#parseAddress}. */
     public static @Nullable Long parseAddress(@Nullable String address) {
-        if (address == null || address.isBlank()) {
-            return null;
-        }
-        String a = address.strip();
-        try {
-            return a.startsWith("0x") || a.startsWith("0X")
-                    ? Long.parseUnsignedLong(a.substring(2), 16)
-                    : Long.parseUnsignedLong(a);
-        } catch (NumberFormatException e) {
-            return null;
-        }
+        return LowLevelRequests.parseAddress(address);
     }
 
-    /**
-     * {@code count} bytes at {@code memoryReference} + {@code offset} (to {@code cb} on the FX thread; null when they
-     * could not be read, with why to {@code failed}).
-     */
+    /** See {@link LowLevelRequests#readMemory}. */
     public void readMemory(
             String memoryReference,
             long offset,
             int count,
             Consumer<DapModels.MemoryBlock> cb,
             Consumer<String> failed) {
-        DapClient c = client;
-        if (c == null || !c.supportsReadMemory()) {
-            failed.accept("");
-            return;
-        }
-        c.readMemory(memoryReference, offset, count)
-                .whenComplete((block, e) -> fx(() -> {
-                    if (client != c) {
-                        return;
-                    }
-                    if (e != null || block == null) {
-                        failed.accept(e == null ? "" : msg(e));
-                    } else {
-                        cb.accept(block);
-                    }
-                }));
+        lowLevel.readMemory(memoryReference, offset, count, cb, failed);
     }
 
     /** Whether the session changes the program's memory ({@code writeMemory}: CodeLLDB, GDB, Delve). */
@@ -5132,50 +1913,15 @@ public final class DapManager {
         return c != null && c.supportsWriteMemory();
     }
 
-    /**
-     * Writes {@code data} at {@code memoryReference} + {@code offset} (how many bytes were written to {@code cb} on the
-     * FX thread; why not, to {@code failed}).
-     */
+    /** See {@link LowLevelRequests#writeMemory}. */
     public void writeMemory(
             String memoryReference, long offset, byte[] data, Consumer<Integer> cb, Consumer<String> failed) {
-        DapClient c = client;
-        if (c == null || !c.supportsWriteMemory()) {
-            failed.accept("");
-            return;
-        }
-        c.writeMemory(memoryReference, offset, data)
-                .whenComplete((written, e) -> fx(() -> {
-                    if (client != c) {
-                        return;
-                    }
-                    if (e != null || written == null) {
-                        failed.accept(e == null ? "" : msg(e));
-                    } else {
-                        cb.accept(written);
-                    }
-                }));
+        lowLevel.writeMemory(memoryReference, offset, data, cb, failed);
     }
 
-    /**
-     * The memory reference of {@code expression}'s value in frame {@code frameId} (to {@code cb} on the FX thread; null
-     * when it has none or could not be evaluated).
-     */
+    /** See {@link LowLevelRequests#memoryReferenceOf}. */
     public void memoryReferenceOf(String expression, int frameId, Consumer<@Nullable String> cb) {
-        DapClient c = client;
-        if (c == null) {
-            cb.accept(null);
-            return;
-        }
-        String address = addressOf(expression);
-        c.memoryReferenceOf(expression, frameId)
-                .thenCompose(ref -> ref != null || address == null
-                        ? CompletableFuture.completedFuture(ref)
-                        : c.memoryReferenceOf(address, frameId))
-                .whenComplete((ref, e) -> fx(() -> {
-                    if (client == c) {
-                        cb.accept(e != null ? null : ref);
-                    }
-                }));
+        lowLevel.memoryReferenceOf(expression, frameId, cb);
     }
 
     /**
@@ -5186,55 +1932,6 @@ public final class DapManager {
     static @Nullable String addressOf(String expression) {
         String e = expression.strip();
         return e.isEmpty() || e.startsWith("&") ? null : "&(" + e + ")";
-    }
-
-    /**
-     * Sends a step for the current thread. Once the adapter <em>acknowledges</em> it the thread is running
-     * again until the next stop, exactly as after {@link #resume()}: leaving the state SUSPENDED kept the
-     * execution line, inline values and frame list of the previous stop on screen — and offered
-     * Step/Evaluate against frames that no longer exist — for as long as the step took, which for a step
-     * over a blocking call is indefinitely. It also made {@link #pause()} a no-op during that time.
-     *
-     * <p>A step the adapter <em>refuses</em> (java-debug: "the thread is not suspended", when another thread
-     * was picked in the selector) changes nothing: the debuggee is still where it was, so the session stays
-     * SUSPENDED with its controls usable and the adapter's message is reported.
-     */
-    private void step(
-            java.util.function.BiFunction<DapClient, Integer, java.util.concurrent.CompletableFuture<Void>> request) {
-        DapClient c = client;
-        if (c == null || state != State.SUSPENDED || stepPendingEpoch == sessionEpoch) {
-            return;
-        }
-        if (refusePostMortem() || refuseWhileEvaluating()) {
-            return;
-        }
-        clearTempBreakpoint(); // a Run to Cursor trip kept from a stop on the way ends with a step
-        long epoch = sessionEpoch;
-        int threadId = currentThreadId;
-        int stops = stopCount;
-        stepPendingEpoch = epoch;
-        request.apply(c, threadId)
-                .whenComplete((v, e) -> fx(() -> {
-                    if (stepPendingEpoch == epoch) {
-                        stepPendingEpoch = -1;
-                    }
-                    if (!isCurrent(epoch, c)) {
-                        return;
-                    }
-                    if (e != null) {
-                        listener.onError(msg(
-                                e instanceof java.util.concurrent.CompletionException && e.getCause() != null
-                                        ? e.getCause()
-                                        : e));
-                        return;
-                    }
-                    if (stopCount != stops || state != State.SUSPENDED) {
-                        return; // the step has already ended in a new stop (or the session moved on)
-                    }
-                    stoppedThreads.remove(threadId);
-                    stepInFlight = true;
-                    setState(State.RUNNING);
-                }));
     }
 
     public void stop() {
@@ -5249,138 +1946,22 @@ public final class DapManager {
             c = client;
             client = null;
         }
-        killDebuggee(); // disconnect(terminateDebuggee) does not end a program the adapter did not start
+        debuggees.killDebuggee(); // disconnect(terminateDebuggee) does not end a program the adapter did not start
         if (c != null) {
             // Ended for us now; the wait for the adapter's answer and the close happen off the FX thread.
             c.disposeInBackground();
         }
-        killAdapterProgram(); // an adapter that is gone cannot end the program it launched
-        releaseCompilationDirectory();
-        releaseExitWrapper();
-        releaseGoDebugBinary();
+        sessionEvents.killAdapterProgram(); // an adapter that is gone cannot end the program it launched
+        javaLaunch.releaseCompilationDirectory();
+        debuggees.releaseExitWrapper();
+        debuggees.releaseGoDebugBinary();
         setState(State.INACTIVE);
     }
 
     // --- the program the adapter launched (java-debug's processid) ------------------------------------
 
-    /**
-     * The program java-debug launched itself (program console off), from its {@code processid} event; null when
-     * Editora started the program ({@link #debuggee}), for an attach, or on another machine. Ended with the
-     * session: when the adapter is still there its {@code disconnect} has already done so and this finds
-     * nothing alive, but when jdtls crashed the program was left running with no way to stop it.
-     */
-    private @Nullable ProcessHandle adapterProgram;
-
-    /** Records the program the adapter of session {@code epoch} launched (FX thread). */
-    private void onProcessId(long epoch, long pid) {
-        if (!isCurrent(epoch) || debugFile == null || !com.editora.process.ExecTargets.runsHere(debugFile)) {
-            return; // a pid on another machine names some other process here
-        }
-        adapterProgram = ProcessHandle.of(pid).orElse(null);
-    }
-
-    /** Ends the program the adapter launched, with its children, if it is still running (FX thread). */
-    private void killAdapterProgram() {
-        ProcessHandle program = adapterProgram;
-        adapterProgram = null;
-        if (program != null && program.isAlive()) { // isAlive also checks the start time: never a reused pid
-            program.descendants().forEach(ProcessHandle::destroyForcibly);
-            program.destroyForcibly();
-        }
-    }
-
     /** The session whose adapter announced it was done ({@code terminated}); its transport closing is normal. */
-    private volatile long terminatedEpoch = -1;
-
-    /**
-     * The adapter's transport closed. After a {@code terminated} event that is how a session ends. Without one,
-     * the adapter is gone while its program may still run — jdtls crashed: the program resumed the moment its
-     * debugger connection dropped, and used to run on for the 3 s grace an ordinary end gets (or for good, when
-     * the adapter had launched it). End it at once and say why the session ended.
-     */
-    private void onTransportClosed(long epoch) {
-        awaitWhyLaunchWasDropped(epoch);
-        fx(() -> {
-            if (!isCurrent(epoch)) {
-                return;
-            }
-            if (terminatedEpoch == epoch) {
-                return; // the terminated event is ending it (or has ended it) already
-            }
-            UnansweredLaunch pending = unansweredLaunch;
-            UnansweredLaunch unanswered = pending != null && pending.epoch() == epoch ? pending : null;
-            Debuggee program = debuggee;
-            ProcessHandle launched = adapterProgram;
-            boolean programRunning =
-                    (program != null && program.isRunning()) || (launched != null && launched.isAlive());
-            killDebuggee();
-            killAdapterProgram();
-            if (programRunning) {
-                outputPump.flush();
-                listener.onAdapterLost();
-            } else if (state == State.STARTING || unanswered != null) {
-                // The adapter died before the program ran: ending quietly showed "Starting…" then "Not debugging"
-                // and nothing else (review D4) — say so, with what it wrote to stderr (`gdb -i dap` before GDB 14:
-                // "Interpreter `dap' unrecognized"). The connect or launch failure that would say it comes after
-                // this has ended the session, and is dropped. So does a launch it never answered: js-debug 1.117
-                // closes the connection, with no error, when the browser it started has exited or is not ready
-                // within its "timeout" — the session ended with nothing said at all.
-                listener.onError(adapterDiedText(unanswered) + AdapterStderr.suffix(adapterStderr(epoch)));
-            }
-            endSession(epoch);
-        });
-    }
-
-    /** What the user is told when the adapter of the starting session ended (FX thread). */
-    private String adapterDiedText(@Nullable UnansweredLaunch unanswered) {
-        if (jsSession) {
-            return unanswered != null && unanswered.browser()
-                    ? tr(
-                            "debug.error.browserNotReady",
-                            TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - unanswered.sentNanos()))
-                    : tr("debug.error.jsAdapterDied");
-        }
-        DebugLanguage language = DebugLanguages.byId(sessionLanguage);
-        return tr("debug.error.adapterDied", language == null ? sessionLanguage : language.displayName());
-    }
-
-    /**
-     * Sends a session's {@code launch} or {@code attach} ({@code send}), remembered as {@link #unansweredLaunch} until
-     * the adapter answers: an adapter that closes the connection before it does has not started the program.
-     */
-    private CompletableFuture<Void> trackLaunch(long epoch, boolean browser, Supplier<CompletableFuture<Void>> send) {
-        UnansweredLaunch sent = new UnansweredLaunch(epoch, System.nanoTime(), browser);
-        unansweredLaunch = sent;
-        return send.get().whenComplete((v, e) -> {
-            if (unansweredLaunch == sent) {
-                unansweredLaunch = null; // answered, or refused: the refusal is reported by the caller
-            }
-        });
-    }
-
-    /** How long a dropped launch waits for the adapter's reason to arrive on its standard error. */
-    private static final long DROPPED_LAUNCH_STDERR_MILLIS = 300;
-
-    /**
-     * An adapter writes why it gave up ("Unable to launch browser: …", "Interpreter `dap' unrecognized") to its
-     * standard error as it closes the connection, and nothing orders the two: gives those lines a moment to arrive, so
-     * the message has them. Only for a session that did not end normally ({@code terminated}) and whose adapter's
-     * stderr is drained, and never on the FX thread.
-     */
-    private void awaitWhyLaunchWasDropped(long epoch) {
-        AdapterStderr stderr = adapterStderr(epoch);
-        if (terminatedEpoch == epoch || stderr == null || Platform.isFxApplicationThread()) {
-            return;
-        }
-        long end = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(DROPPED_LAUNCH_STDERR_MILLIS);
-        try {
-            while (stderr.text().isEmpty() && isCurrent(epoch) && System.nanoTime() < end) {
-                Thread.sleep(20);
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-    }
+    volatile long terminatedEpoch = -1;
 
     /** Final per-window shutdown: invalidates the session, stops transports, and releases the connect worker. */
     public void shutdown() {
@@ -5403,36 +1984,9 @@ public final class DapManager {
 
     // --- Inspection (results marshaled to FX) ---------------------------------------------------
 
-    /**
-     * A thread dump: every thread of the session with its status and call stack, in the order the adapter lists them
-     * (callback on the FX thread). Every thread is asked for its stack, a running one too — an adapter that stops the
-     * whole program without saying so still walks it — and one it refuses has none. Empty with no session.
-     */
+    /** See {@link InspectionRequests#threadStacks}. */
     public void threadStacks(Consumer<List<DapModels.ThreadStack>> cb) {
-        DapClient c = client;
-        if (c == null) {
-            cb.accept(List.of());
-            return;
-        }
-        threadStatuses(statuses -> {
-            List<CompletableFuture<List<DapModels.StackFrameInfo>>> asked = new ArrayList<>();
-            for (DapModels.ThreadStatus t : statuses) {
-                asked.add(c.stackTrace(t.id(), false).exceptionally(e -> List.of()));
-            }
-            CompletableFuture.allOf(asked.toArray(CompletableFuture[]::new))
-                    .whenComplete((v, e) -> fx(() -> {
-                        if (client != c) {
-                            return;
-                        }
-                        List<DapModels.ThreadStack> out = new ArrayList<>();
-                        for (int i = 0; i < statuses.size(); i++) {
-                            List<DapModels.StackFrameInfo> frames = asked.get(i).getNow(List.of());
-                            out.add(new DapModels.ThreadStack(
-                                    statuses.get(i), frames == null ? List.of() : originalFrames(frames)));
-                        }
-                        cb.accept(out);
-                    }));
-        });
+        inspection.threadStacks(cb);
     }
 
     /** The frame-file looks of the stack replies so far, in the order the replies came (see {@link #fxAfterLooks}). */
@@ -5443,7 +1997,7 @@ public final class DapManager {
      * reader thread (PERF-01; perf review 2026-11-23, D2), before the FX thread picks one. Replies reach the FX thread
      * in the order they came, though one waited for its looks and the next did not.
      */
-    private synchronized void fxAfterLooks(@Nullable List<DapModels.StackFrameInfo> frames, Runnable r) {
+    synchronized void fxAfterLooks(@Nullable List<DapModels.StackFrameInfo> frames, Runnable r) {
         frameLooks = frameLooks
                 .thenCompose(v -> FrameFiles.warmAsync(frames))
                 .handle((v, e) -> null)
@@ -5451,116 +2005,45 @@ public final class DapManager {
                 .exceptionally(e -> null); // the next reply's turn comes all the same
     }
 
-    /** The first {@link DapClient#FIRST_FRAMES} frames of {@code threadId}'s stack (callback on the FX thread). */
+    /** See {@link InspectionRequests#stackTrace}. */
     public void stackTrace(int threadId, Consumer<List<DapModels.StackFrameInfo>> cb) {
-        DapClient c = client;
-        if (c == null) {
-            cb.accept(List.of());
-            return;
-        }
-        c.stackPage(threadId, true, 0, DapClient.FIRST_FRAMES).whenComplete((page, e) -> {
-            List<DapModels.StackFrameInfo> frames = page == null ? null : page.frames();
-            fxAfterLooks(frames, () -> {
-                if (client == c) {
-                    shownStack = page == null ? DapModels.StackPage.EMPTY : page;
-                    cb.accept(originalFrames(frames));
-                }
-            });
-        });
+        inspection.stackTrace(threadId, cb);
     }
 
     /**
      * The page of the stack the last stop or thread switch asked for (FX thread): how deep the stack is and whether
      * the Call Stack can list more of it ({@link #moreFrames}).
      */
-    private DapModels.StackPage shownStack = DapModels.StackPage.EMPTY;
+    DapModels.StackPage shownStack = DapModels.StackPage.EMPTY;
 
     /** See {@link #shownStack}. */
     public DapModels.StackPage shownStack() {
         return shownStack;
     }
 
-    /**
-     * The frames of {@code threadId}'s stack below the first {@code loaded}, up to {@link DapClient#STACK_FRAME_LIMIT}
-     * in all (callback on the FX thread; an empty page when the session moved on or the adapter could not say).
-     */
+    /** See {@link InspectionRequests#moreFrames}. */
     public void moreFrames(int threadId, int loaded, Consumer<DapModels.StackPage> cb) {
-        DapClient c = client;
-        if (c == null || state != State.SUSPENDED || loaded >= DapClient.STACK_FRAME_LIMIT) {
-            cb.accept(DapModels.StackPage.EMPTY);
-            return;
-        }
-        long epoch = sessionEpoch;
-        long stops = stopCount;
-        c.stackPage(threadId, true, loaded, DapClient.STACK_FRAME_LIMIT - loaded)
-                .whenComplete((page, e) -> {
-                    List<DapModels.StackFrameInfo> frames = page == null ? null : page.frames();
-                    fxAfterLooks(frames, () -> {
-                        if (!isCurrent(epoch, c) || stops != stopCount || state != State.SUSPENDED || page == null) {
-                            cb.accept(DapModels.StackPage.EMPTY);
-                            return;
-                        }
-                        cb.accept(new DapModels.StackPage(originalFrames(frames), page.depth(), page.more()));
-                    });
-                });
+        inspection.moreFrames(threadId, loaded, cb);
     }
 
+    /** See {@link InspectionRequests#scopes}. */
     public void scopes(int frameId, Consumer<List<DapModels.ScopeInfo>> cb) {
-        DapClient c = client;
-        if (c == null) {
-            cb.accept(List.of());
-            return;
-        }
-        c.scopes(frameId)
-                .whenComplete((scopes, e) -> fx(() -> {
-                    if (client == c) {
-                        cb.accept(scopes == null ? List.of() : scopes);
-                    }
-                }));
+        inspection.scopes(frameId, cb);
     }
 
     public void variables(int ref, Consumer<List<DapModels.VariableInfo>> cb) {
         variables(ref, null, 0, 0, cb);
     }
 
-    /** One page of a container's children — see {@link DapClient#variables(int, String, int, int)}. */
+    /** See {@link InspectionRequests#variables}. */
     public void variables(
             int ref, @Nullable String filter, int start, int count, Consumer<List<DapModels.VariableInfo>> cb) {
-        DapClient c = client;
-        if (c == null) {
-            cb.accept(List.of());
-            return;
-        }
-        // One request per stop however many views ask (the tree and the inline values both read Locals: B207).
-        lazyValues
-                .reply(ref + "/" + filter + "/" + start + "/" + count, () -> c.variables(ref, filter, start, count))
-                .thenCompose(vars -> lazyValues.resolveAll(vars, child -> c.variables(child, null, 0, 0)))
-                .thenCompose(vars -> repairStrings(c, vars))
-                .whenComplete((vars, e) -> fx(() -> {
-                    if (client == c) {
-                        cb.accept(vars == null ? List.of() : vars);
-                    }
-                }));
+        inspection.variables(ref, filter, start, count, cb);
     }
 
-    /**
-     * Loads one row the stop's budget left unloaded ({@link DapModels.ValueNote#NOT_LOADED}): a click on it. {@code
-     * cb} gets the resolved row (FX thread), or the row as it was when the adapter did not answer.
-     */
+    /** See {@link InspectionRequests#loadValue}. */
     public void loadValue(DapModels.VariableInfo row, Consumer<DapModels.VariableInfo> cb) {
-        DapClient c = client;
-        if (c == null) {
-            cb.accept(row);
-            return;
-        }
-        lazyValues
-                .resolveNow(row, child -> c.variables(child, null, 0, 0))
-                .thenCompose(r -> repairStrings(c, List.of(r)))
-                .whenComplete((rows, e) -> fx(() -> {
-                    if (client == c) {
-                        cb.accept(rows == null || rows.isEmpty() ? row : rows.get(0));
-                    }
-                }));
+        inspection.loadValue(row, cb);
     }
 
     /**
@@ -5575,86 +2058,31 @@ public final class DapManager {
         return shared.hexValues;
     }
 
-    /**
-     * Shows numbers in hexadecimal (or not) from the next request on, in this session and the next ones; the caller
-     * fetches the values again. FX thread.
-     */
+    /** See {@link InspectionRequests#setHexValues}. */
     public void setHexValues(boolean on) {
-        shared.hexValues = on;
-        DapClient c = client;
-        if (c != null) {
-            c.setHexValues(on);
-        }
-        lazyValues.clear(); // the answers so far are in the other format
+        inspection.setHexValues(on);
     }
 
     /** Lazy rows resolved during the current stop (B101, B201); forgotten whenever the program runs. */
-    private final LazyValues lazyValues = new LazyValues();
+    final LazyValues lazyValues = new LazyValues();
 
     // --- strings java-debug garbles (follow-up 4: emoji arrive as two wrong characters) -------------------
-
-    /**
-     * The {@code evaluate} context the adapter is sent for {@code context}: PSES answers a {@code repl} evaluation in
-     * its console, which a debug session has none of (the result came back empty), so the Debug console asks it as a
-     * {@code watch}, which returns the value — and still runs the expression, an assignment included.
-     */
-    private String adapterContext(String context) {
-        return "repl".equals(context) && "powershell".equals(sessionLanguage) ? "watch" : context;
-    }
 
     /**
      * Whether the session is java-debug's: its string values may need {@link JdwpStringRepair}, and it pauses and
      * resumes threads one at a time unless asked for all of them.
      */
-    private boolean javaDebugSession() {
+    boolean javaDebugSession() {
         return "java".equals(sessionLanguage);
     }
 
-    private CompletableFuture<List<DapModels.VariableInfo>> repairStrings(
-            DapClient c, List<DapModels.VariableInfo> vars) {
-        return javaDebugSession()
-                ? JdwpStringRepair.repairAll(c, vars).thenApply(JavaValueText::tidyAll) // B108: lambdas
-                : CompletableFuture.completedFuture(vars);
-    }
-
-    private CompletableFuture<DapModels.EvalResult> repairString(DapClient c, DapModels.EvalResult result) {
-        return javaDebugSession()
-                ? JdwpStringRepair.repair(c, result).thenApply(JavaValueText::tidy) // B108: lambdas
-                : CompletableFuture.completedFuture(result);
-    }
-
+    /** See {@link InspectionRequests#evaluate}. */
     public void evaluate(String expression, int frameId, String context, Consumer<ConsoleEvaluation> cb) {
-        DapClient c = client;
-        if (c == null) {
-            cb.accept(ConsoleEvaluation.value(""));
-            return;
-        }
-        boolean console = "repl".equals(context);
-        if (console) {
-            consoleEvaluations++;
-        }
-        c.evaluateFull(
-                        adapterExpression(expression),
-                        frameId,
-                        adapterContext(context)) // the full answer: a string can be repaired
-                .thenCompose(full -> repairString(c, full))
-                .whenComplete((full, e) -> fx(() -> {
-                    if (console && client == c) {
-                        consoleEvaluations = Math.max(0, consoleEvaluations - 1);
-                    }
-                    if (client == c) {
-                        String r = full == null ? null : full.result();
-                        cb.accept(
-                                e != null
-                                        ? ConsoleEvaluation.failure(
-                                                isTimeout(e) ? stillEvaluating(c.evaluationWaitSeconds()) : msg(e))
-                                        : ConsoleEvaluation.value(r == null ? "" : r));
-                    }
-                }));
+        inspection.evaluate(expression, frameId, context, cb);
     }
 
     /** Console evaluations the adapter has not answered yet (FX thread); reset with each session. */
-    private int consoleEvaluations;
+    int consoleEvaluations;
 
     /**
      * Whether an expression typed in the Debug console is still being evaluated. The program runs it on the
@@ -5671,7 +2099,7 @@ public final class DapManager {
     }
 
     /** In a core dump's session: says it cannot be run, and true. */
-    private boolean refusePostMortem() {
+    boolean refusePostMortem() {
         if (!isPostMortem()) {
             return false;
         }
@@ -5680,7 +2108,7 @@ public final class DapManager {
     }
 
     /** Refuses a control while a console evaluation runs, saying why (FX thread); true when refused. */
-    private boolean refuseWhileEvaluating() {
+    boolean refuseWhileEvaluating() {
         String toString = lazyValues.stuck();
         if (toString != null) {
             // java-debug runs a toString() on the stopped thread and takes no other request until it returns: a
@@ -5695,15 +2123,6 @@ public final class DapManager {
         return true;
     }
 
-    private static boolean isTimeout(Throwable t) {
-        for (Throwable x = t; x != null; x = x.getCause()) {
-            if (x instanceof java.util.concurrent.TimeoutException) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     /** What a console evaluation that timed out says: it has not failed, the program is still running it. */
     static String stillEvaluating() {
         return stillEvaluating(DapClient.requestTimeoutSeconds());
@@ -5714,53 +2133,14 @@ public final class DapManager {
         return tr("debug.eval.stillRunning", seconds);
     }
 
-    /** Full evaluate (result + expandable reference + type) for watches and the hover value popup.
-     *  Failures deliver an {@code EvalResult} with the error text and no children. */
+    /** See {@link InspectionRequests#evaluateFull}. */
     public void evaluateFull(String expression, int frameId, String context, Consumer<DapModels.EvalResult> cb) {
-        DapClient c = client;
-        if (c == null) {
-            cb.accept(new DapModels.EvalResult("", 0, null));
-            return;
-        }
-        // Code the user asked to run (the evaluate field, the Evaluate window, Quick Evaluate) holds the stopped
-        // thread as a console evaluation does: a Step meanwhile is refused, saying why, rather than queued.
-        boolean code = "repl".equals(context);
-        if (code) {
-            consoleEvaluations++;
-        }
-        c.evaluateFull(adapterExpression(expression), frameId, adapterContext(context))
-                .thenCompose(r -> repairString(c, r))
-                .whenComplete((r, e) -> fx(() -> {
-                    if (code && client == c) {
-                        consoleEvaluations = Math.max(0, consoleEvaluations - 1);
-                    }
-                    if (client == c) {
-                        cb.accept(
-                                e != null
-                                        ? DapModels.EvalResult.failure(
-                                                code && isTimeout(e)
-                                                        ? stillEvaluating(c.evaluationWaitSeconds())
-                                                        : msg(e))
-                                        : (r == null ? new DapModels.EvalResult("", 0, null) : r));
-                    }
-                }));
+        inspection.evaluateFull(expression, frameId, context, cb);
     }
 
-    /** Hover evaluate (context "hover"): failures deliver {@code null} — hovering a non-variable
-     *  identifier (keyword, type name) is normal and must show nothing, not an error. */
+    /** See {@link InspectionRequests#evaluateHover}. */
     public void evaluateHover(String expression, int frameId, Consumer<String> cb) {
-        DapClient c = client;
-        if (c == null) {
-            cb.accept(null);
-            return;
-        }
-        c.evaluateFull(adapterExpression(expression), frameId, "hover")
-                .thenCompose(r -> repairString(c, r))
-                .whenComplete((r, e) -> fx(() -> {
-                    if (client == c) {
-                        cb.accept(e != null || r == null ? null : r.result());
-                    }
-                }));
+        inspection.evaluateHover(expression, frameId, cb);
     }
 
     /**
@@ -5772,89 +2152,20 @@ public final class DapManager {
         setVariable(ref, name, value, null, -1, cb);
     }
 
-    /**
-     * {@link #setVariable(int, String, String, Consumer)}, and when the adapter cannot set a variable of that type
-     * (java-debug sets only primitives and Strings: an {@code Integer}, a record or an enum failed with "Set value
-     * is not supported yet for type java.lang.Integer"), assigns it instead by evaluating {@code assignTo = value}
-     * in frame {@code frameId}, as IntelliJ does (review 3, B208). {@code assignTo} null: no such fallback.
-     */
+    /** See {@link InspectionRequests#setVariable}. */
     public void setVariable(
             int ref, String name, String value, @Nullable String assignTo, int frameId, Consumer<String> cb) {
-        DapClient c = client;
-        if (c == null) {
-            return; // no session: nothing was set
-        }
-        c.setVariable(ref, name, value)
-                .whenComplete((r, e) -> fx(() -> {
-                    if (client != c) {
-                        return;
-                    }
-                    if (e == null) {
-                        cb.accept(r == null ? value : r);
-                    } else if (SetValueText.unsupportedType(msg(e)) && assignTo != null && frameId >= 0) {
-                        assign(c, name, SetValueText.assignment(assignTo, value), frameId, cb);
-                    } else {
-                        listener.onError(
-                                SetValueText.unsupportedType(msg(e)) ? tr("debug.setValue.unsupported", name) : msg(e));
-                    }
-                }));
+        inspection.setVariable(ref, name, value, assignTo, frameId, cb);
     }
 
-    /**
-     * Set Value on a watch: assigns {@code value} to {@code expression} in frame {@code frameId}. Where the adapter
-     * assigns to an expression ({@code setExpression}: debugpy, js-debug) it is asked to; else, when the watch names a
-     * variable of the frame's scopes ({@code variableRef}, that scope's reference; 0 when none), that variable is set
-     * ({@code setVariable}: Delve, CodeLLDB); else the assignment is evaluated ({@code expression = value}: java-debug).
-     * {@code cb} gets the value it has now; a failure goes to {@link Listener#onError}.
-     */
+    /** See {@link InspectionRequests#setExpression}. */
     public void setExpression(String expression, String value, int frameId, int variableRef, Consumer<String> cb) {
-        DapClient c = client;
-        if (c == null) {
-            return;
-        }
-        if (c.supportsSetExpression()) {
-            c.setExpression(expression, value, frameId)
-                    .whenComplete((r, e) -> fx(() -> {
-                        if (client != c) {
-                            return;
-                        }
-                        if (e == null) {
-                            cb.accept(r);
-                        } else {
-                            listener.onError(tr("debug.setValue.failed", expression, msg(e)));
-                        }
-                    }));
-        } else if (variableRef > 0) {
-            setVariable(variableRef, expression.strip(), value, expression, frameId, cb);
-        } else {
-            assign(c, expression, SetValueText.assignment(expression, value), frameId, cb);
-        }
+        inspection.setExpression(expression, value, frameId, variableRef, cb);
     }
 
-    /**
-     * Sets a value no container of the debugger's holds (a type renderer's child) by evaluating {@code assignTo =
-     * value} in frame {@code frameId}; {@code cb} gets the new value, a failure goes to {@link Listener#onError}.
-     */
+    /** See {@link InspectionRequests#assignValue}. */
     public void assignValue(String name, String assignTo, String value, int frameId, Consumer<String> cb) {
-        DapClient c = client;
-        if (c != null) {
-            assign(c, name, SetValueText.assignment(assignTo, value), frameId, cb);
-        }
-    }
-
-    private void assign(DapClient c, String name, String assignment, int frameId, Consumer<String> cb) {
-        c.evaluateFull(assignment, frameId, "repl")
-                .thenCompose(r -> repairString(c, r))
-                .whenComplete((r, e) -> fx(() -> {
-                    if (client != c) {
-                        return;
-                    }
-                    if (e != null || r == null) {
-                        listener.onError(tr("debug.setValue.failed", name, e == null ? "" : msg(e)));
-                    } else {
-                        cb.accept(r.result());
-                    }
-                }));
+        inspection.assignValue(name, assignTo, value, frameId, cb);
     }
 
     /**
@@ -5905,123 +2216,11 @@ public final class DapManager {
     /** (Re)sends a file's breakpoints to the live adapter (after the user toggled one while running). */
     public void updateBreakpoints(DapModels.FileBreakpoints fb) {
         if (client != null && state != State.INACTIVE) {
-            client.sendSetBreakpoints(adapterBreakpoint(fb));
+            client.sendSetBreakpoints(javaLaunch.adapterBreakpoint(fb));
         }
     }
 
     // --- DAP events (launcher reader thread → FX), reached only through sessionHost(epoch) -------
-
-    private void onStopped(long epoch, int threadId, String reason, boolean allThreadsStopped) {
-        DapClient c = client;
-        if (c == null || !isCurrent(epoch, c)) {
-            return;
-        }
-        presentStop(epoch, c, threadId, reason, true, allThreadsStopped, resumesOf(threadId));
-    }
-
-    /**
-     * The {@code continued} events each thread has had, by id ({@link #ALL_THREADS}: those for every thread), counted
-     * as they arrive (on the adapter's reader thread, before the stop they follow has its frames).
-     */
-    private final Map<Integer, Long> resumes = new java.util.concurrent.ConcurrentHashMap<>();
-
-    private static final int ALL_THREADS = Integer.MIN_VALUE;
-
-    private long resumesOf(int threadId) {
-        return resumes.getOrDefault(threadId, 0L) + resumes.getOrDefault(ALL_THREADS, 0L);
-    }
-
-    /**
-     * Shows {@code threadId} as the stopped thread. {@code event} is a stop the adapter just reported;
-     * otherwise it is a thread that was already stopped and is being brought forward because the one on
-     * screen was resumed — which is dropped if a real stop arrives first, and must not consume a
-     * run-to-cursor temp breakpoint that the resumed thread has yet to reach.
-     */
-    private void presentStop(
-            long epoch,
-            DapClient c,
-            int threadId,
-            String reason,
-            boolean event,
-            boolean allThreadsStopped,
-            long resumed) {
-        c.stackPage(threadId, true, 0, DapClient.FIRST_FRAMES).whenComplete((page, e) -> {
-            List<DapModels.StackFrameInfo> frames = page == null ? null : page.frames();
-            fxAfterLooks(frames, () -> {
-                if (!isCurrent(epoch, c)) {
-                    return;
-                }
-                if (event && (resumesOf(threadId) != resumed || passesDartPause(reason))) {
-                    // Resumed before its frames came back — Dart's adapter resumes its own entry stop at once:
-                    // shown now, it would leave a running program looking paused. Or a Dart pause of its own.
-                    return;
-                }
-                if (e != null) {
-                    LOG.log(Level.WARNING, "stackTrace failed for thread " + threadId, e);
-                }
-                if (event && passesBashEntry(c, threadId, frames)) {
-                    return; // bashdb's own stop at the script's first line, where no breakpoint is
-                }
-                if (event && passesRemoteEntry(c, threadId, reason, frames)) {
-                    return; // a debug server's hold on the program before its first instruction
-                }
-                if (event) {
-                    if (allThreadsStopped) {
-                        stoppedThreads.clear(); // one stop stands for all of them, and so will one continue
-                        allSuspended = true;
-                        resumedSinceSuspendAll.clear();
-                    }
-                    resumedSinceSuspendAll.remove(threadId);
-                    stoppedThreads.put(threadId, reason == null ? "" : reason);
-                    settleTempBreakpoint(frames);
-                } else if (state != State.RUNNING || !stoppedThreads.containsKey(threadId)) {
-                    return;
-                }
-                stopCount++;
-                stepInFlight = false;
-                currentThreadId = threadId;
-                lazyValues.newStop("pause".equals(stoppedThreads.get(threadId))); // B202
-                shownStack = page == null ? DapModels.StackPage.EMPTY : page;
-                state = State.SUSPENDED;
-                listener.onState(State.SUSPENDED);
-                listener.onStopped(threadId, reason, originalFrames(frames));
-                if ("exception".equals(reason)) {
-                    reportException(epoch, c, threadId, stopCount);
-                }
-            });
-        });
-    }
-
-    /**
-     * A stop while a Run to Cursor temp breakpoint is planted (FX thread). At the cursor line, or reached by a step, it
-     * has done its job and goes; elsewhere after a resume it stays until the program is resumed from this stop or the
-     * user acts otherwise ({@link #tempTripResumed}): the window may be about to resume it without showing it.
-     */
-    private void settleTempBreakpoint(@Nullable List<DapModels.StackFrameInfo> frames) {
-        Path f = tempBreakpointFile;
-        if (f == null && forceRunMuted.isEmpty() && !forceRunMutedMembers) {
-            return;
-        }
-        if (tempTripResumed && f != null && !atLine(frames, f, tempBreakpointLine)) {
-            tempTripResumed = false; // kept: a resume from this stop carries the trip on, anything else ends it
-            return;
-        }
-        clearTempBreakpoint();
-    }
-
-    /** Whether {@code frames}' top frame is on 0-based {@code line} of {@code file}, as the adapter or the user names it. */
-    private boolean atLine(@Nullable List<DapModels.StackFrameInfo> frames, Path file, int line) {
-        if (frames == null || frames.isEmpty()) {
-            return false;
-        }
-        for (DapModels.StackFrameInfo top :
-                List.of(frames.getFirst(), originalFrames(frames).getFirst())) {
-            if (top.line() == line && top.file() != null && com.editora.config.PathKeys.samePath(top.file(), file)) {
-                return true;
-            }
-        }
-        return false;
-    }
 
     /**
      * {@code expression} as the session's debugger reads it: in a Bash session, a variable written as in a script
@@ -6032,180 +2231,25 @@ public final class DapManager {
         return DebugLanguages.BASH.id().equals(sessionLanguage) ? ScriptLaunch.bashName(expression) : expression;
     }
 
-    /**
-     * Whether {@code reason} is a pause Dart's adapter takes and ends itself: the isolate paused as it starts
-     * ({@code entry}: the breakpoints are set, then it resumes) or as it exits ({@code exit}). In a Dart (or Flutter)
-     * session such a stop is not shown: the program runs on, as under any other debugger.
-     */
-    private boolean passesDartPause(@Nullable String reason) {
-        return DebugLanguages.DART.id().equals(sessionLanguage) && ("entry".equals(reason) || "exit".equals(reason));
-    }
-
-    /**
-     * Whether a stop of a remote attach is the debug server's hold before the program's first instruction: while no
-     * stop has reached code with a source yet, one at a frame without a file (the loader), for no breakpoint. Resumed,
-     * and true; the first stop in code with a source ends that.
-     */
-    private boolean passesRemoteEntry(
-            DapClient c, int threadId, @Nullable String reason, @Nullable List<DapModels.StackFrameInfo> frames) {
-        if (!remoteEntryPending) {
-            return false;
-        }
-        DapModels.StackFrameInfo top = frames == null || frames.isEmpty() ? null : frames.getFirst();
-        if ("breakpoint".equals(reason) || (top != null && top.file() != null)) {
-            remoteEntryPending = false; // the program's own code: shown from now on
-            return false;
-        }
-        c.resume(threadId);
-        return true;
-    }
-
     /** Whether this Bash session has had its first stop (bashdb stops at the script's first line). */
-    private boolean bashEntryPassed;
+    boolean bashEntryPassed;
 
-    /**
-     * bashdb stops at the script's first command, and vscode-bash-debug reports it as any other stop: the first stop
-     * of a Bash session, on a line with no breakpoint, is not shown and the script goes on (as a program started under
-     * any other debugger does). True when that is so.
-     */
-    private boolean passesBashEntry(DapClient c, int threadId, @Nullable List<DapModels.StackFrameInfo> frames) {
-        if (bashEntryPassed || !DebugLanguages.BASH.id().equals(sessionLanguage)) {
-            return false;
-        }
-        bashEntryPassed = true;
-        DapModels.StackFrameInfo top = frames == null || frames.isEmpty() ? null : frames.getFirst();
-        if (top == null
-                || top.file() == null
-                || plainBreakpointAt(shared.breakpointsSupplier.get(), top.file(), top.line())) {
-            return false;
-        }
-        c.resume(threadId);
-        return true;
-    }
-
-    /**
-     * Whether a plain breakpoint — no condition, hit count, log message, filters or recording — is set on 0-based
-     * {@code line} of {@code file}: the one kind for which bashdb's entry stop is the stop the user asked for. Any other
-     * kind would have the entry stop shown as a pause the user never asked for: bashdb stops at the first command
-     * before it evaluates breakpoints, so the stop says nothing about the condition, and a log message is not a stop.
-     * Such a breakpoint on the script's very first command is passed over with the entry stop (bashdb does not check
-     * the line it continues from again). Pure.
-     */
+    /** See {@link SessionEvents#plainBreakpointAt}. */
     static boolean plainBreakpointAt(List<DapModels.FileBreakpoints> all, Path file, int line) {
-        for (DapModels.FileBreakpoints fb : all) {
-            if (fb.file() != null && com.editora.config.PathKeys.samePath(normalized(fb.file()), normalized(file))) {
-                for (DapModels.LineBreakpoint b : fb.breakpoints()) {
-                    if (b.line() == line
-                            && blank(b.condition())
-                            && blank(b.logMessage())
-                            && blank(b.hitCondition())
-                            && !b.recording()
-                            && b.filters().none()) {
-                        return true;
-                    }
-                }
-            }
-        }
-        return false;
-    }
-
-    private static boolean blank(@Nullable String s) {
-        return s == null || s.isBlank();
-    }
-
-    /** {@code p} absolute and normalized (bashdb names a script as it was started), or as it is when it cannot be. */
-    private static Path normalized(Path p) {
-        try {
-            return p.toAbsolutePath().normalize();
-        } catch (RuntimeException e) {
-            return p;
-        }
-    }
-
-    /** Asks which exception {@code threadId} stopped on and reports it, unless the stop has ended meanwhile. */
-    private void reportException(long epoch, DapClient c, int threadId, int stop) {
-        c.exceptionInfo(threadId)
-                .whenComplete((info, e) -> fx(() -> {
-                    if (info != null
-                            && !info.isEmpty()
-                            && isCurrent(epoch, c)
-                            && state == State.SUSPENDED
-                            && stopCount == stop
-                            && currentThreadId == threadId) {
-                        listener.onExceptionInfo(threadId, info);
-                    }
-                }));
-    }
-
-    private void onBreakpointStatus(long epoch, Path file, List<DapModels.BreakpointStatus> statuses, boolean whole) {
-        fx(() -> {
-            if (!isCurrent(epoch) || file == null) {
-                return;
-            }
-            SourceAlias alias = activeSourceAlias(); // a compiled copy stands in for the file the user sees
-            listener.onBreakpointStatus(
-                    alias != null && alias.compiled().equals(file) ? alias.original() : file, statuses, whole);
-        });
-    }
-
-    private void onNotice(long epoch, String message, boolean error) {
-        fx(() -> {
-            if (isCurrent(epoch)) {
-                outputPump.flush(); // keep it after the program output that preceded it
-                listener.onNotice(message, error);
-            }
-        });
-    }
-
-    private void onContinued(long epoch, int threadId, boolean allThreads) {
-        resumes.merge(allThreads ? ALL_THREADS : threadId, 1L, Long::sum); // here, before the fx hop (presentStop)
-        fx(() -> {
-            if (!isCurrent(epoch)) {
-                return;
-            }
-            if (allThreads) {
-                stoppedThreads.clear();
-                allSuspended = false;
-                resumedSinceSuspendAll.clear();
-            } else {
-                stoppedThreads.remove(threadId);
-                if (state == State.SUSPENDED && threadId != currentThreadId) {
-                    return; // another thread resumed; the one on screen is still stopped
-                }
-            }
-            setState(State.RUNNING);
-        });
+        return SessionEvents.plainBreakpointAt(all, file, line);
     }
 
     /** Batches adapter output onto the FX thread (see {@link DapOutputPump}); the sink runs on FX. */
-    private final DapOutputPump outputPump = new DapOutputPump(Platform::runLater, (epoch, text, category) -> {
+    final DapOutputPump outputPump = new DapOutputPump(Platform::runLater, (epoch, text, category) -> {
         if (isCurrent(epoch)) {
             listener.onOutput(text, category);
         }
     });
 
-    private void onOutput(long epoch, String text, String category) {
-        if (jsSession) {
-            text = jsOutput(epoch, text, category);
-            if (text == null || text.isEmpty()) {
-                return;
-            }
-        }
-        String original = text;
-        String shown = JavaLaunchSupport.withoutJvmVersionWarning(text);
-        if (shown != text) {
-            LOG.fine(() -> "java-debug: " + original.strip());
-        }
-        if (!shown.isEmpty()) {
-            lastOutput = new OutputStamp(epoch, System.nanoTime());
-            outputPump.offer(epoch, shown, category);
-        }
-    }
-
     /** When the adapter last sent program output, and for which session (see {@link OutputTail}). */
-    private record OutputStamp(long epoch, long nanos) {}
+    record OutputStamp(long epoch, long nanos) {}
 
-    private volatile OutputStamp lastOutput = new OutputStamp(-1, 0);
+    volatile OutputStamp lastOutput = new OutputStamp(-1, 0);
 
     /**
      * TEST SEAM — makes the last program output {@code millis} older, so a test sees output that has stopped without
@@ -6216,572 +2260,59 @@ public final class DapManager {
         lastOutput = new OutputStamp(last.epoch(), last.nanos() - TimeUnit.MILLISECONDS.toNanos(millis));
     }
 
-    /** A program java-debug started itself (the program console off): its output trails its exit (E104). */
-    private boolean outputTrails(long epoch) {
-        return javaAdapterEpoch == epoch && programStartedEpoch != epoch;
-    }
-
-    /**
-     * Runs {@code then} on the FX thread once the session's output has gone quiet ({@link OutputTail}), so the
-     * program's last lines are shown before the session ends; dropped if the session ends meanwhile (Stop).
-     */
-    private void whenOutputQuiet(long epoch, long doneNanos, Runnable then) {
-        OutputStamp last = lastOutput;
-        long wait = OutputTail.waitMillis(System.nanoTime(), last.epoch() == epoch ? last.nanos() : 0, doneNanos);
-        if (wait <= 0) {
-            then.run();
-            return;
-        }
-        CompletableFuture.delayedExecutor(wait, TimeUnit.MILLISECONDS)
-                .execute(() -> fx(() -> {
-                    if (isCurrent(epoch)) {
-                        whenOutputQuiet(epoch, doneNanos, then);
-                    }
-                }));
-    }
-
     /** The session whose exit report waits for its trailing output; -1 for none. */
-    private long exitAwaitingOutput = -1;
+    long exitAwaitingOutput = -1;
 
     /** How long a program's output may trail its end before the console says so (choice 27). */
     static final long TRAILING_NOTICE_MILLIS = 1000;
 
-    /** The session whose program ended while its output still arrives; -1 for none (see {@link #outputTrailing}). */
-    private long trailingEpoch = -1;
-
-    /**
-     * The program of {@code epoch} ended and its output is still arriving: if the session still waits a moment
-     * later, the listener is told once, so the state stops saying Running (review 3, choice 27). FX thread.
-     */
-    private void outputTrailing(long epoch) {
-        if (trailingEpoch == epoch) {
-            return;
-        }
-        trailingEpoch = epoch;
-        CompletableFuture.delayedExecutor(TRAILING_NOTICE_MILLIS, TimeUnit.MILLISECONDS)
-                .execute(() -> fx(() -> {
-                    if (isCurrent(epoch) && state != State.INACTIVE) {
-                        outputPump.flush(); // after the output that came before it
-                        listener.onOutputTrailing();
-                    }
-                }));
-    }
-
-    /** Reports the exit of {@code epoch} if it is still waiting for the output before it (FX thread). */
-    private void reportAwaitedExit(long epoch) {
-        if (exitAwaitingOutput == epoch) {
-            exitAwaitingOutput = -1;
-            outputPump.flush();
-            reportJavaExit(epoch);
-        }
-    }
-
-    /**
-     * What js-debug sends as program output, as the console should show it: Node's inspector lines
-     * ("Debugger attached.") removed, and a breakpoint condition it could not compile turned into a notice that
-     * marks that breakpoint rejected — once, though js-debug repeats it for every script it loads (review D12).
-     */
-    private @Nullable String jsOutput(long epoch, String text, String category) {
-        var error = JsLaunch.conditionError(text);
-        if (error.isPresent()) {
-            JsLaunch.ConditionError ce = error.get();
-            if (reportedConditionErrors.add(ce.condition() + "\u0000" + ce.line())) {
-                onNotice(epoch, tr("debug.notice.jsCondition", ce.condition(), ce.line(), ce.reason()), true);
-            }
-            return null;
-        }
-        if (jsClientConsole && ("stdout".equals(category) || "stderr".equals(category))) {
-            return null; // the program's own pipes carry it (startDebuggee); this is js-debug's copy
-        }
-        return jsNoise.filter(text);
-    }
-
     /** The inspector's lines dropped from this session's output (reset per session). */
-    private volatile JsLaunch.InspectorNoise jsNoise = new JsLaunch.InspectorNoise();
+    volatile JsLaunch.InspectorNoise jsNoise = new JsLaunch.InspectorNoise();
 
     /** An external adapter that is the debugged program itself (Ruby's rdbg), for session {@code epoch}. */
-    private record ProgramAdapter(long epoch, Process process) {}
+    record ProgramAdapter(long epoch, Process process) {}
 
-    private volatile @Nullable ProgramAdapter programAdapter;
+    volatile @Nullable ProgramAdapter programAdapter;
 
     /** How long a program that is its own adapter has to exit after it says it terminated. */
     static final long PROGRAM_ADAPTER_EXIT_GRACE_MILLIS = 3_000;
 
-    private void onTerminated(long epoch) {
-        ProgramAdapter self = programAdapter;
-        if (self != null && self.epoch() == epoch && self.process().isAlive()) {
-            // rdbg says terminated before Ruby has flushed its standard output and exited: the session ends once
-            // the program has (bounded), and its last output is in, rather than killing it with that output unread.
-            self.process()
-                    .onExit()
-                    .completeOnTimeout(self.process(), PROGRAM_ADAPTER_EXIT_GRACE_MILLIS, TimeUnit.MILLISECONDS)
-                    .thenRun(() -> fx(() -> {
-                        if (isCurrent(epoch)) {
-                            whenOutputQuiet(epoch, System.nanoTime(), () -> endSession(epoch));
-                        }
-                    }));
-            return;
-        }
-        fx(() -> {
-            Debuggee program = debuggee;
-            if (isCurrent(epoch) && program != null && program.isRunning()) {
-                // The adapter is done with a program Editora started. Its last output is still in our pipe
-                // and the process may not be gone yet: the session ends when its exit is delivered
-                // (startDebuggee's sink), and a program that outlives its debugger is ended, not left running.
-                CompletableFuture.delayedExecutor(DEBUGGEE_EXIT_GRACE_MILLIS, TimeUnit.MILLISECONDS)
-                        .execute(() -> fx(() -> {
-                            if (debuggee == program) {
-                                program.terminate();
-                            }
-                        }));
-                return;
-            }
-            if (isCurrent(epoch) && outputTrails(epoch)) {
-                outputTrailing(epoch);
-                whenOutputQuiet(epoch, System.nanoTime(), () -> {
-                    reportAwaitedExit(epoch);
-                    endSession(epoch);
-                });
-                return;
-            }
-            endSession(epoch);
-        });
-    }
-
-    /** Ends the session of {@code epoch}, if it is still the current one (FX thread). */
-    private void endSession(long epoch) {
-        if (!isCurrent(epoch)) {
-            return;
-        }
-        outputPump.flush(); // the program's last lines arrived before this event — show them first
-        tempBreakpointFile = null; // session over — nothing to restore
-        forceRunMuted = List.of();
-        forceRunMutedMembers = false;
-        DapClient c;
-        synchronized (sessionLock) {
-            if (!isCurrent(epoch)) {
-                return;
-            }
-            sessionEpoch++;
-            c = client;
-            client = null;
-        }
-        killDebuggee();
-        if (c != null) {
-            c.disposeInBackground(); // as in stop(): never hold the FX thread on the adapter
-        }
-        killAdapterProgram();
-        releaseCompilationDirectory();
-        releaseExitWrapper(); // no exited event came for it
-        releaseGoDebugBinary();
-        setState(State.INACTIVE);
-    }
-
-    /**
-     * The adapter's {@code runInTerminal}: starts the program of session {@code epoch} as Editora's child and
-     * completes {@code started} with its process id. The command, working directory and environment are the
-     * adapter's, untouched; the environment goes over the user's own with the augmented PATH, as for Run.
-     */
-    private void startDebuggee(
-            long epoch, String cwd, List<String> argv, Map<String, String> env, CompletableFuture<Long> started) {
-        if (!isCurrent(epoch)) {
-            started.completeExceptionally(new java.util.concurrent.CancellationException("the session has ended"));
-            return;
-        }
-        killDebuggee(); // a session has one program
-        boolean launcher = isAdapterLauncher(argv);
-        if (!launcher) {
-            programStartedEpoch = epoch; // its exit is the program's: the adapter's exited event is not reported
-        }
-        // A Node.js program's stdout and stderr share one pipe: two pipes read by two threads reordered its lines
-        // (review D102). Java and Python keep their red stderr.
-        Debuggee program = new Debuggee(shared.programTerminal, programTitle(), jsSession);
-        try {
-            // The adapter names the folder as its machine does: on a remote file's host, a path there.
-            Path file = debugFile;
-            DapPaths paths = pathsFor(file);
-            Path dir = cwd == null || cwd.isBlank() ? null : paths.fromAdapter(cwd);
-            if (dir == null && file != null && paths != DapPaths.LOCAL) {
-                dir = file.getParent(); // never this machine's folder of the same name
-            }
-            if (jsSession && !program.inTerminal()) {
-                // What runs, first in the console (muted), as for Python: exactly what js-debug asked for, which
-                // for a compiled project's .ts source is its built .js (review D106).
-                onOutput(epoch, com.editora.run.RunService.commandLine(argv) + "\n", COMMAND_CATEGORY);
-                Path source = debugFile;
-                Path built = JsLaunch.compiledInstead(source, dir, argv);
-                if (built != null && source != null) {
-                    // The two files' times are read off the FX thread (PERF-01), and the program starts after the
-                    // notice, which comes first in the console as before.
-                    Path from = dir;
-                    Thread.ofVirtual().name("dap-js-stale-check").start(() -> {
-                        boolean stale = JsLaunch.builtIsStale(source, built, fileTimes);
-                        fx(() -> {
-                            if (!isCurrent(epoch)) {
-                                // Stop or Restart while the times were read: no program for a session that is gone.
-                                program.kill();
-                                started.completeExceptionally(
-                                        new java.util.concurrent.CancellationException("the session has ended"));
-                                return;
-                            }
-                            if (stale) {
-                                // A notice, not stderr: js-debug's copies of the program's streams are dropped.
-                                onNotice(
-                                        epoch,
-                                        tr(
-                                                "debug.js.builtStale",
-                                                String.valueOf(built.getFileName()),
-                                                source.getFileName()),
-                                        true);
-                            }
-                            startProgram(epoch, program, from, argv, env, started, launcher);
-                        });
-                    });
-                    return;
-                }
-            }
-            startProgram(epoch, program, dir, argv, env, started, launcher);
-        } catch (RuntimeException e) {
-            program.kill();
-            started.completeExceptionally(e); // the adapter fails the launch with this, which reports it
-        }
-    }
-
     /** How long an adapter's launcher's end waits for the adapter's {@code exited} event before ending the session. */
     static final long LAUNCHER_EXIT_GRACE_MILLIS = 2_000;
 
-    /**
-     * Ends session {@code epoch}, whose adapter's launcher ended at {@code since} ({@link System#nanoTime}), once the
-     * adapter has reported the program's exit; after {@link #LAUNCHER_EXIT_GRACE_MILLIS} without it, says only that
-     * the program ended (FX thread).
-     */
-    private void endAfterAdapterExit(long epoch, long since) {
-        if (!isCurrent(epoch)) {
-            return; // the adapter ended it meanwhile
-        }
-        if (exitReportedEpoch != epoch) {
-            if (System.nanoTime() - since < TimeUnit.MILLISECONDS.toNanos(LAUNCHER_EXIT_GRACE_MILLIS)) {
-                CompletableFuture.delayedExecutor(50, TimeUnit.MILLISECONDS)
-                        .execute(() -> fx(() -> endAfterAdapterExit(epoch, since)));
-                return;
-            }
-            outputPump.flush();
-            listener.onOutput(com.editora.i18n.Messages.tr("debug.console.programEnded") + "\n", "console");
-        }
-        endSession(epoch);
-    }
-
-    /**
-     * Whether {@code argv}, asked for by an adapter's {@code runInTerminal}, starts the adapter's own launcher rather
-     * than the program: recent CodeLLDB (1.12) has the client start {@code codelldb-launch --connect=…}, which connects
-     * back, has the adapter start the program with its standard streams, and is ended by the adapter with SIGTERM
-     * once the program has exited. Its exit code (143 on Linux) is not the program's; the adapter's {@code exited}
-     * event has that.
-     */
+    /** See {@link DebuggeeProcesses#isAdapterLauncher}. */
     static boolean isAdapterLauncher(List<String> argv) {
-        if (argv == null || argv.isEmpty() || argv.getFirst() == null) {
-            return false;
-        }
-        String first = argv.getFirst().replace('\\', '/');
-        String name = first.substring(first.lastIndexOf('/') + 1).toLowerCase(java.util.Locale.ROOT);
-        if (name.endsWith(".exe")) {
-            name = name.substring(0, name.length() - ".exe".length());
-        }
-        return name.equals("codelldb-launch");
-    }
-
-    /**
-     * Starts {@code program} for the session of {@code epoch} and answers the adapter's request when it has. When an
-     * adapter's {@code launcher} ({@link #isAdapterLauncher}) ends, its own code is not reported: the session ends
-     * after the adapter's exited event ({@link #endAfterAdapterExit}).
-     */
-    private void startProgram(
-            long epoch,
-            Debuggee program,
-            @Nullable Path dir,
-            List<String> argv,
-            Map<String, String> env,
-            CompletableFuture<Long> started,
-            boolean launcher) {
-        try {
-            debuggee = program; // a Stop while it starts ends it as soon as it has started
-            program.start(dir, argv, env, new Debuggee.Sink() {
-                        @Override
-                        public void output(String text, boolean stderr) {
-                            String shown = jsSession ? jsNoise.filter(text) : text;
-                            if (debuggee == program && isCurrent(epoch) && !shown.isEmpty()) {
-                                listener.onOutput(shown, stderr ? "stderr" : "stdout");
-                            }
-                        }
-
-                        @Override
-                        public void exited(int code) {
-                            if (debuggee != program) {
-                                return; // stopped: whoever stopped it has ended, or is ending, the session
-                            }
-                            boolean inputWasOpen = program.inputOpen();
-                            debuggee = null;
-                            if (isCurrent(epoch)) {
-                                if (inputWasOpen) {
-                                    listener.onProgramInput(false);
-                                }
-                                if (launcher) {
-                                    // The adapter's exited event says how the program ended (its code, not this
-                                    // launcher's SIGTERM): the session ends once it has come, or after a grace.
-                                    endAfterAdapterExit(epoch, System.nanoTime());
-                                    return;
-                                }
-                                listener.onProgramExit(code);
-                                endSession(epoch);
-                            }
-                        }
-                    })
-                    .whenComplete((pid, failure) -> {
-                        if (failure != null) {
-                            if (debuggee == program) {
-                                debuggee = null;
-                            }
-                            program.kill();
-                            started.completeExceptionally(
-                                    failure); // the adapter fails the launch with this, which reports it
-                            return;
-                        }
-                        started.complete(pid);
-                        if (debuggee != program || !isCurrent(epoch)) {
-                            return; // stopped while it started
-                        }
-                        if (!program.inTerminal()) {
-                            listener.onProgramInput(true); // in a terminal, the terminal takes the input
-                        } else {
-                            // The Debug console stays empty: say where the program's output and input are (review
-                            // E106).
-                            onOutput(epoch, tr("debug.console.inTerminal", programTitle()) + "\n", COMMAND_CATEGORY);
-                        }
-                    });
-        } catch (RuntimeException e) {
-            if (debuggee == program) {
-                debuggee = null;
-            }
-            program.kill();
-            started.completeExceptionally(e); // the adapter fails the launch with this, which reports it
-        }
+        return DebuggeeProcesses.isAdapterLauncher(argv);
     }
 
     /** How a file's modification time is read for the compiled-JavaScript check (a test holds it). */
-    private volatile java.util.function.Function<Path, Optional<java.time.Instant>> fileTimes =
-            DapManager::modifiedTime;
+    volatile java.util.function.Function<Path, Optional<java.time.Instant>> fileTimes = DebuggeeProcesses::modifiedTime;
 
     /** Test seam for {@link #fileTimes}. */
     void setFileTimesForTest(java.util.function.Function<Path, Optional<java.time.Instant>> times) {
         this.fileTimes = times;
     }
 
-    private static Optional<java.time.Instant> modifiedTime(Path file) {
-        try {
-            return Optional.of(java.nio.file.Files.getLastModifiedTime(file).toInstant());
-        } catch (java.io.IOException | RuntimeException e) {
-            return Optional.empty();
-        }
-    }
-
-    /** A Terminal tab's title for the debugged program: the file being debugged. */
-    private String programTitle() {
-        Path file = debugFile;
-        String name = file == null || file.getFileName() == null
-                ? ""
-                : file.getFileName().toString();
-        return com.editora.i18n.Messages.tr("terminal.debugTitle", name);
-    }
-
     /** The session served by java-debug (whose {@code exited} event carries no real exit code). */
-    private long javaAdapterEpoch = -1;
+    long javaAdapterEpoch = -1;
 
     /** The session whose program Editora started itself (its exit is reported by its own process). */
-    private long programStartedEpoch = -1;
+    long programStartedEpoch = -1;
 
-    /**
-     * The adapter reports the program exited: the console says with which code, after the program's last
-     * output. A program Editora started itself reports its own exit instead (see {@link #startDebuggee}); an
-     * adapter's own launcher it started does not ({@link #isAdapterLauncher}).
-     */
-    private void onExited(long epoch, int exitCode) {
-        fx(() -> {
-            if (!isCurrent(epoch) || programStartedEpoch == epoch || exitReportedEpoch == epoch) {
-                return;
-            }
-            exitReportedEpoch = epoch;
-            outputPump.flush();
-            if (javaAdapterEpoch == epoch) {
-                // java-debug reports 0 whatever the program exited with (System.exit(3) included, seen live).
-                // The wrapper the program was started through recorded its real code; without one the console
-                // says only that the program ended, not a code that is not its own (review A10). It waits for
-                // the output still on its way, which would otherwise come after it (E104).
-                exitAwaitingOutput = epoch;
-                outputTrailing(epoch);
-                whenOutputQuiet(epoch, System.nanoTime(), () -> reportAwaitedExit(epoch));
-                return;
-            }
-            listener.onProgramExit(exitCode);
-        });
-    }
-
-    /** A session's exit-code wrapper ({@link JavaExitCodeWrapper}) and the session it belongs to. */
-    private record ExitWrapper(long epoch, JavaExitCodeWrapper wrapper, String realJava) {}
-
-    /**
-     * The {@code java} a launch of {@code epoch} really runs: its {@code javaExec}, or the one behind the
-     * exit-code wrapper. Anything that runs it itself (the runtime chip's {@code -version}) must run this one: a
-     * run of the wrapper would record that run's exit code as the program's.
-     */
-    private String realJavaExec(long epoch, String javaExec) {
-        ExitWrapper own = exitWrapper;
-        return own != null && own.epoch() == epoch ? own.realJava() : javaExec;
-    }
-
-    /** The current session's exit-code wrapper, or null (the program console is on, a remote file, Windows). */
-    private volatile @Nullable ExitWrapper exitWrapper;
-
-    /** An exit-code wrapper made ahead of time for each {@code java}, off the FX thread (PERF-01). */
-    private static final Map<String, JavaExitCodeWrapper> SPARE_EXIT_WRAPPERS =
-            new java.util.concurrent.ConcurrentHashMap<>();
-
-    /** Makes a spare wrapper for {@code java} on a virtual thread, unless one is ready (not on Windows). */
+    /** See {@link DebuggeeProcesses#prepareExitWrapper}. */
     static void prepareExitWrapper(@Nullable String java) {
-        if (java == null
-                || java.isBlank()
-                || LaunchConfig.Target.LOCAL.windows()
-                || SPARE_EXIT_WRAPPERS.containsKey(java)) {
-            return;
-        }
-        Thread.ofVirtual().name("dap-java-exit-wrapper").start(() -> {
-            com.editora.perf.BlockingSites.enter("JavaExitCodeWrapper.create");
-            try {
-                JavaExitCodeWrapper made = JavaExitCodeWrapper.create(java);
-                if (SPARE_EXIT_WRAPPERS.putIfAbsent(java, made) != null) {
-                    made.delete(); // another was made meanwhile
-                }
-            } catch (java.io.IOException | RuntimeException e) {
-                LOG.log(Level.FINE, "No exit-code wrapper made ahead", e);
-            }
-        });
-    }
-
-    /**
-     * Starts the program of a launch java-debug runs itself (the program console off) through a wrapper that
-     * records its exit code: {@code args}' {@code javaExec} becomes the wrapper, which runs the real one. Only for
-     * a program on this machine and not on Windows (see {@link JavaExitCodeWrapper}); and only when the launch
-     * names its {@code java} — without one java-debug picks its own, which the wrapper cannot know. Off the FX
-     * thread: the connect thread, before the launch request.
-     */
-    private void wrapForExitCode(@Nullable Path file, Map<String, Object> args, long epoch) {
-        Object java = args.get("javaExec");
-        if (!(java instanceof String real)
-                || real.isBlank()
-                || !com.editora.process.ExecTargets.runsHere(file)
-                || LaunchConfig.Target.LOCAL.windows()) {
-            return;
-        }
-        try {
-            // Called on the connect thread, never the FX thread (PERF-01): the one made ahead for this java (a
-            // launch's plan makes it) is taken, else one is made here — a launch without its wrapper never
-            // reports its exit code (the regression of #1664 for a loose file). The next one is made ahead.
-            JavaExitCodeWrapper spare = SPARE_EXIT_WRAPPERS.remove(real);
-            JavaExitCodeWrapper wrapper = spare != null ? spare : JavaExitCodeWrapper.create(real);
-            prepareExitWrapper(real);
-            if (!isCurrent(epoch)) {
-                wrapper.delete(); // stopped meanwhile: no program runs through it
-                return;
-            }
-            releaseExitWrapper();
-            exitWrapper = new ExitWrapper(epoch, wrapper, real);
-            args.put("javaExec", wrapper.script().toString());
-        } catch (java.io.IOException | RuntimeException e) {
-            LOG.log(Level.FINE, "No exit-code wrapper; the program runs as before", e);
-        }
-    }
-
-    /**
-     * Says how the program of {@code epoch} ended: its real exit code when its wrapper recorded one — written a
-     * moment after java-debug reports the VM's death, so it is waited for off the FX thread — else that it
-     * ended. Nothing when another session has started meanwhile (its console is not this program's).
-     */
-    private void reportJavaExit(long epoch) {
-        ExitWrapper own = exitWrapper;
-        if (own == null || own.epoch() != epoch) {
-            listener.onOutput(com.editora.i18n.Messages.tr("debug.console.programEnded") + "\n", "console");
-            return;
-        }
-        exitWrapper = null;
-        // On a thread of its own, not the common pool: the wait polls a file for up to three seconds. Not the
-        // connect thread either, which the next session's start-up would then queue behind.
-        CompletableFuture.supplyAsync(
-                        () -> own.wrapper().awaitExitCode(java.time.Duration.ofSeconds(3)),
-                        com.editora.process.BlockingTasks.named("dap-java-exit-code"))
-                .whenComplete((code, e) -> fx(() -> {
-                    // Its folder is removed off the FX thread (PERF-01, Pauta 6.2.0).
-                    Thread.ofVirtual()
-                            .name("dap-java-exit-wrapper")
-                            .start(() -> own.wrapper().delete());
-                    if (managerClosed || sessionEpoch - epoch > 1) {
-                        return; // a new session (or a Stop after the end) owns the console now
-                    }
-                    outputPump.flush();
-                    if (code != null) {
-                        listener.onProgramExit(code);
-                    } else {
-                        listener.onOutput(com.editora.i18n.Messages.tr("debug.console.programEnded") + "\n", "console");
-                    }
-                }));
+        DebuggeeProcesses.prepareExitWrapper(java);
     }
 
     /** The {@code output} of the launch request of the session started last (Delve's program), or null. */
-    private volatile @Nullable Object goDebugBinary;
-
-    /** The session is over: Delve's program it ran is no longer in use, and goes ({@link GoLaunch#releaseDebugBinary}). */
-    private void releaseGoDebugBinary() {
-        Object output = goDebugBinary;
-        goDebugBinary = null;
-        if (output != null) {
-            GoLaunch.releaseDebugBinary(output, com.editora.process.BlockingTasks.named("dap-remove-go-binary"));
-        }
-    }
-
-    /** Removes the exit-code wrapper of a session that will not report its exit (stopped, replaced). */
-    private void releaseExitWrapper() {
-        ExitWrapper old = exitWrapper;
-        exitWrapper = null;
-        if (old != null) {
-            // After the stop: java-debug may still be ending the program the wrapper runs.
-            CompletableFuture.delayedExecutor(10, TimeUnit.SECONDS).execute(old.wrapper()::delete);
-        }
-    }
-
-    /** The session whose exit code was already reported (a child session may report it again). */
-    private long exitReportedEpoch = -1;
-
-    /** Ends the session's own program, if it has one, and stops listening to it (FX thread). */
-    private void killDebuggee() {
-        Debuggee program = debuggee;
-        debuggee = null;
-        if (program != null) {
-            program.kill();
-        }
-    }
-
-    private void onError(long epoch, String message) {
-        fx(() -> {
-            if (isCurrent(epoch)) {
-                listener.onError(message);
-            }
-        });
-    }
+    volatile @Nullable Object goDebugBinary;
 
     // --- Internals ------------------------------------------------------------------------------
 
     /** Keeps the jdtls hosting a Java debug session from being evicted as idle; released when it ends. */
-    private Runnable lspLease = () -> {};
+    Runnable lspLease = () -> {};
 
-    private void setState(State s) {
+    void setState(State s) {
         if (s == State.INACTIVE) {
             lspLease.run();
             lspLease = () -> {};
@@ -6810,7 +2341,7 @@ public final class DapManager {
      * path goes through here, so none can leave the session before it running (review D102: an attach of
      * Editora's JVM adapter used to replace a live Java session's connection without ending it).
      */
-    private long beginSession() {
+    long beginSession() {
         jsNoise = new JsLaunch.InspectorNoise();
         postMortem = false;
         recording = false;
@@ -6828,31 +2359,31 @@ public final class DapManager {
             client = null;
         }
         tempBreakpointFile = null;
-        killDebuggee();
+        debuggees.killDebuggee();
         if (previous != null) {
             previous.disposeInBackground();
         }
-        killAdapterProgram();
+        sessionEvents.killAdapterProgram();
         lspLease.run(); // the old session's jdtls pin; a Java session takes its own once it has an adapter
         lspLease = () -> {};
         // A launch still waiting for its adapter has no client for ready() to stop, but it may already hold
         // its compiled classes: the next launch would overwrite the only reference to them (review D6).
-        releaseCompilationDirectory();
-        releaseExitWrapper();
-        releaseGoDebugBinary();
+        javaLaunch.releaseCompilationDirectory();
+        debuggees.releaseExitWrapper();
+        debuggees.releaseGoDebugBinary();
         return epoch;
     }
 
-    private boolean isCurrent(long epoch) {
+    boolean isCurrent(long epoch) {
         return !managerClosed && sessionEpoch == epoch;
     }
 
-    private boolean isCurrent(long epoch, @Nullable DapClient expected) {
+    boolean isCurrent(long epoch, @Nullable DapClient expected) {
         return isCurrent(epoch) && client == expected;
     }
 
     /** Atomically publishes a client only while the start operation that created it still owns the session. */
-    private boolean publishClient(long epoch, DapClient candidate) {
+    boolean publishClient(long epoch, DapClient candidate) {
         synchronized (sessionLock) {
             if (!isCurrent(epoch)) {
                 return false;
@@ -6883,62 +2414,62 @@ public final class DapManager {
         }
     }
 
-    private DapClient.Host sessionHost(long epoch) {
+    DapClient.Host sessionHost(long epoch) {
         return new DapClient.Host() {
             @Override
             public void onStopped(int threadId, String reason) {
-                DapManager.this.onStopped(epoch, threadId, reason, false);
+                sessionEvents.onStopped(epoch, threadId, reason, false);
             }
 
             @Override
             public void onStopped(int threadId, String reason, boolean allThreadsStopped) {
-                DapManager.this.onStopped(epoch, threadId, reason, allThreadsStopped);
+                sessionEvents.onStopped(epoch, threadId, reason, allThreadsStopped);
             }
 
             @Override
             public void onContinued() {
-                DapManager.this.onContinued(epoch, 0, true);
+                sessionEvents.onContinued(epoch, 0, true);
             }
 
             @Override
             public void onContinued(int threadId, boolean allThreadsContinued) {
-                DapManager.this.onContinued(epoch, threadId, allThreadsContinued);
+                sessionEvents.onContinued(epoch, threadId, allThreadsContinued);
             }
 
             @Override
             public void onOutput(String text, String category) {
-                DapManager.this.onOutput(epoch, text, category);
+                sessionEvents.onOutput(epoch, text, category);
             }
 
             @Override
             public void onTerminated() {
                 terminatedEpoch = epoch; // a plain long written once per session: read on the FX thread later
-                DapManager.this.onTerminated(epoch);
+                sessionEvents.onTerminated(epoch);
             }
 
             @Override
             public void onError(String message) {
-                DapManager.this.onError(epoch, message);
+                sessionEvents.onError(epoch, message);
             }
 
             @Override
             public void onProcessId(long pid) {
-                fx(() -> DapManager.this.onProcessId(epoch, pid));
+                fx(() -> sessionEvents.onProcessId(epoch, pid));
             }
 
             @Override
             public void onBreakpointStatus(Path file, List<DapModels.BreakpointStatus> statuses, boolean whole) {
-                DapManager.this.onBreakpointStatus(epoch, file, statuses, whole);
+                sessionEvents.onBreakpointStatus(epoch, file, statuses, whole);
             }
 
             @Override
             public void onNotice(String message, boolean error) {
-                DapManager.this.onNotice(epoch, message, error);
+                sessionEvents.onNotice(epoch, message, error);
             }
 
             @Override
             public void onExited(int exitCode) {
-                DapManager.this.onExited(epoch, exitCode);
+                debuggees.onExited(epoch, exitCode);
             }
 
             @Override
@@ -6953,13 +2484,13 @@ public final class DapManager {
 
             @Override
             public void onHotCodeReplace(String changeType, String message) {
-                DapManager.this.onHotCodeReplace(epoch, changeType, message);
+                codeReplace.onHotCodeReplace(epoch, changeType, message);
             }
 
             @Override
             public CompletableFuture<Long> onRunInTerminal(String cwd, List<String> argv, Map<String, String> env) {
                 CompletableFuture<Long> started = new CompletableFuture<>();
-                fx(() -> startDebuggee(epoch, cwd, argv, env, started));
+                fx(() -> debuggees.startDebuggee(epoch, cwd, argv, env, started));
                 return started;
             }
 
@@ -6968,7 +2499,7 @@ public final class DapManager {
                 if (error != null) {
                     LOG.log(Level.FINE, "Debug adapter transport closed", error);
                 }
-                DapManager.this.onTransportClosed(epoch);
+                sessionEvents.onTransportClosed(epoch);
             }
         };
     }
@@ -6977,12 +2508,12 @@ public final class DapManager {
      * Ends the starting session of {@code epoch} because of a failure with a report: {@code console} goes to
      * the Debug console (as error output, links and all) and {@code status} to the status line.
      */
-    private void failWithConsole(long epoch, String console, String status) {
+    void failWithConsole(long epoch, String console, String status) {
         failWithConsole(epoch, console, status, false);
     }
 
     /** As above; {@code compileFailed}: the launched file did not compile, so nothing was started (review 3, A201). */
-    private void failWithConsole(long epoch, String console, String status, boolean compileFailed) {
+    void failWithConsole(long epoch, String console, String status, boolean compileFailed) {
         fx(() -> {
             if (!isCurrent(epoch)) {
                 return;
@@ -6998,7 +2529,7 @@ public final class DapManager {
         });
     }
 
-    private void fail(long epoch, @Nullable String message) {
+    void fail(long epoch, @Nullable String message) {
         fx(() -> {
             if (!isCurrent(epoch)) {
                 return;
@@ -7107,20 +2638,11 @@ public final class DapManager {
 
     /** Receives java-debug's {@code hotcodereplace} progress and problems (FX thread); see {@link
      *  #setCodeReplaceNotices}. */
-    private java.util.function.BiConsumer<String, String> codeReplaceNotices = (type, message) -> {};
+    java.util.function.BiConsumer<String, String> codeReplaceNotices = (type, message) -> {};
 
     /** Who is told java-debug's hot code replace events ({@code changeType}, message), on the FX thread. */
     public void setCodeReplaceNotices(java.util.function.BiConsumer<String, String> notices) {
         this.codeReplaceNotices = notices == null ? (type, message) -> {} : notices;
-    }
-
-    private void onHotCodeReplace(long epoch, String changeType, String message) {
-        fx(() -> {
-            if (isCurrent(epoch)) {
-                outputPump.flush(); // after the program output that preceded it
-                codeReplaceNotices.accept(changeType, message);
-            }
-        });
     }
 
     /** Whether a Java session is running or paused, so that saved code changes can be loaded into it. */
@@ -7128,25 +2650,9 @@ public final class DapManager {
         return client != null && "java".equals(sessionLanguage) && (state == State.RUNNING || state == State.SUSPENDED);
     }
 
-    /** The session whose jdtls build {@link #primeCodeReplace} has started; -1 for none. */
-    private long codeReplacePrimedEpoch = -1;
-
-    /**
-     * Gives jdtls a build to compare saved changes with. A program Editora compiled itself (a Java file outside
-     * a build project) runs classes jdtls never built: without an earlier build, jdtls's first one reports every
-     * class as new rather than changed, and java-debug then has nothing to replace. Building once at session
-     * start fixes that. Only then: that build writes to jdtls's own output in its workspace, not the user's
-     * folder (a build project's output is built before its launch, see the launch path). Once per session.
-     */
+    /** See {@link HotCodeReplace#primeCodeReplace}. */
     public void primeCodeReplace() {
-        if (compilationDirectory == null
-                || debugFile == null
-                || !canReplaceCode()
-                || codeReplacePrimedEpoch == sessionEpoch) {
-            return;
-        }
-        codeReplacePrimedEpoch = sessionEpoch;
-        buildJavaWorkspace(debugFile, false, built -> {});
+        codeReplace.primeCodeReplace();
     }
 
     /** The file the session was started for (it routes a build to that session's jdtls); null when none. */
@@ -7154,63 +2660,14 @@ public final class DapManager {
         return debugFile;
     }
 
-    /**
-     * Apply Code Changes: has jdtls build {@code file}'s workspace (incrementally — Editora runs it without
-     * autobuild, so nothing else compiles a saved file), then asks java-debug to load the rebuilt classes into
-     * the running program. A build with compile errors replaces nothing. {@code cb} runs on the FX thread,
-     * exactly once — with {@link CodeReplaceResult#NO_SESSION} when the session ended meanwhile.
-     */
+    /** See {@link HotCodeReplace#applyCodeChanges}. */
     public void applyCodeChanges(@Nullable Path file, Consumer<CodeReplaceOutcome> cb) {
-        DapClient c = client;
-        if (c == null || !canReplaceCode() || file == null) {
-            cb.accept(new CodeReplaceOutcome(CodeReplaceResult.NO_SESSION, List.of(), ""));
-            return;
-        }
-        long epoch = sessionEpoch;
-        buildJavaWorkspace(file, false, built -> {
-            if (!isCurrent(epoch, c)) {
-                cb.accept(ended()); // the caller waits for an answer (review D101)
-                return;
-            }
-            switch (built) {
-                case WITH_ERRORS ->
-                    cb.accept(new CodeReplaceOutcome(
-                            javacEpoch == epoch ? CodeReplaceResult.JAVAC_CLASSES : CodeReplaceResult.COMPILE_ERRORS,
-                            List.of(),
-                            ""));
-                case SUCCEEDED ->
-                    c.redefineClasses()
-                            .whenComplete((r, e) -> fx(() -> {
-                                cb.accept(
-                                        isCurrent(epoch, c)
-                                                ? codeReplaceOutcome(r, e == null ? null : msg(e))
-                                                : ended());
-                            }));
-                default -> cb.accept(new CodeReplaceOutcome(CodeReplaceResult.BUILD_FAILED, List.of(), ""));
-            }
-        });
+        codeReplace.applyCodeChanges(file, cb);
     }
 
-    /** The outcome of a replace whose session ended before it finished. */
-    private static CodeReplaceOutcome ended() {
-        return new CodeReplaceOutcome(CodeReplaceResult.NO_SESSION, List.of(), "");
-    }
-
-    /** Pure: the outcome of a {@code redefineClasses} answer, or of the request failing with {@code error}. */
+    /** See {@link HotCodeReplace#codeReplaceOutcome}. */
     static CodeReplaceOutcome codeReplaceOutcome(DapModels.CodeReplace reply, @Nullable String error) {
-        if (error != null) {
-            return new CodeReplaceOutcome(CodeReplaceResult.FAILED, List.of(), error);
-        }
-        if (reply == null || (!reply.failed() && reply.changedClasses().isEmpty())) {
-            return new CodeReplaceOutcome(CodeReplaceResult.NOTHING_CHANGED, List.of(), "");
-        }
-        // java-debug words "JVM contains obsolete methods" as an error although the classes were replaced: a method
-        // that was running when the code changed (main's loop, typically) goes on with its old code. That is a
-        // replace that worked, with a note (review 2, B103) — it used to read "not applied, restart".
-        if (!reply.failed() || !reply.changedClasses().isEmpty() || reply.obsoleteMethods()) {
-            return new CodeReplaceOutcome(CodeReplaceResult.APPLIED, reply.changedClasses(), reply.error());
-        }
-        return new CodeReplaceOutcome(CodeReplaceResult.FAILED, reply.changedClasses(), reply.error());
+        return HotCodeReplace.codeReplaceOutcome(reply, error);
     }
 
     /** Whether the session's adapter can restart a frame ({@code restartFrame}). */
@@ -7225,7 +2682,7 @@ public final class DapManager {
      * is reported and leaves the session paused where it was. FX thread, while SUSPENDED.
      */
     public void restartFrame(int frameId) {
-        step((c, threadId) -> c.restartFrame(frameId));
+        execution.step((c, threadId) -> c.restartFrame(frameId));
     }
 
     // --- running backward ------------------------------------------------------------------------------------
@@ -7307,10 +2764,11 @@ public final class DapManager {
             return;
         }
         if (c.supportsStepBack()) {
-            step(request);
+            execution.step(request);
         } else {
             // GDB's DAP mode has no stepBack request: its own command, through its console, stops as a step does.
-            step((client, threadId) -> client.consoleCommand(gdbCommand).thenApply(r -> null));
+            execution.step(
+                    (client, threadId) -> client.consoleCommand(gdbCommand).thenApply(r -> null));
         }
     }
 
@@ -7350,7 +2808,7 @@ public final class DapManager {
 
     /** Smart Step Into: steps the current thread into the call {@code targetId} (see {@link #stepInTargets}). */
     public void stepIntoTarget(int targetId) {
-        step((c, threadId) -> c.stepIn(threadId, targetId));
+        execution.step((c, threadId) -> c.stepIn(threadId, targetId));
     }
 
     private static Listener noopListener() {

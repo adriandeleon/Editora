@@ -89,7 +89,7 @@ public final class DoctorProbes {
 
     /**
      * The environment that puts {@code dir} ahead of any inherited {@code PYTHONPATH} — what the debugger
-     * does with a located debugpy bundle ({@code DapManager.prependPythonPath}); empty for a null dir.
+     * does with a located debugpy bundle ({@code AdapterDetection.prependPythonPath}); empty for a null dir.
      */
     public static Map<String, String> pythonPathWith(Path dir) {
         if (dir == null) {

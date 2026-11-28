@@ -63,7 +63,6 @@ class MenuRowCommandCoverageTest {
                     "the environment menu http.selectEnvironment opens: an environment, a hint, a file to open"),
             allow("LambdaBreakpoints", 1, "a lambda's row names it (debug.toggleLambdaBreakpoint acts at the caret)"),
             allow("LazyContextMenu", 2, "a placeholder; the row helper, whose callers tag the rows"),
-            allow("MainController", 1, "the menu bar's empty Open Recent placeholder"),
             allow(
                     "MainMenuBar",
                     2,
@@ -83,7 +82,8 @@ class MenuRowCommandCoverageTest {
             allow(
                     "ToolWindowManager",
                     2,
-                    "a stripe icon's rows name its tool window (view.hideToolWindowIcon, view.splitToolWindow)"));
+                    "a stripe icon's rows name its tool window (view.hideToolWindowIcon, view.splitToolWindow)"),
+            allow("WindowWelcome", 1, "the menu bar's empty Open Recent placeholder"));
 
     private record Allowed(int count, String reason) {}
 
