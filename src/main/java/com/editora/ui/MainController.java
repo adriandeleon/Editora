@@ -1112,6 +1112,16 @@ public class MainController implements com.editora.mcp.McpBridge {
                     config.getSettings().setKeymapChosen(true); // kept the one there is
                     config.save();
                 });
+        pane.setUpdateCheckChoice(() -> !config.getSettings().isUpdateCheckAsked(), on -> {
+            config.getSettings().chooseUpdateCheck(on);
+            config.save();
+            if (settingsWindow != null) {
+                settingsWindow.syncAll();
+            }
+            if (on) {
+                updates.applyAtStartup(); // the first check, now that it is allowed
+            }
+        });
         welcomePane = pane;
         return pane;
     }

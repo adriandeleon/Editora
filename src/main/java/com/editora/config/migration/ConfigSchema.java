@@ -471,7 +471,11 @@ public enum ConfigSchema {
                     // v190→191: mcpEditsNeedApproval on for existing installs too (HN dry run: an agent's edits applied
                     // unasked by default). + mcpCommandsNeedApproval (on) and mcpAllowedCommands (empty): each command
                     // an agent runs is asked about first. Safe to repeat.
-                    Map.entry(190, (Migration) ConfigMigrations::mcpEditApprovalForExistingInstalls)),
+                    Map.entry(190, (Migration) ConfigMigrations::mcpEditApprovalForExistingInstalls),
+                    // v191→192: + updateCheckAsked (off: a fresh install's Welcome page asks before anything goes to
+                    // GitHub). An existing install has checked all along, so a file without the key gets it on. Safe
+                    // to repeat: a stored value is kept.
+                    Map.entry(191, (Migration) ConfigMigrations::updateCheckAskedForExistingInstalls)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without
@@ -750,7 +754,8 @@ public enum ConfigSchema {
                         // First-run state, not preferences: v189→190 turns keymapChosen on for every older file, so
                         // an older build's defaults would otherwise never read as defaults again (StoreIntegrityTest)
                         "keymapChosen",
-                        "javaSourcesOffered");
+                        "javaSourcesOffered",
+                        "updateCheckAsked");
             case PROJECTS -> java.util.Set.of("activeProjectId", "openProjectIds");
             default -> java.util.Set.of();
         };

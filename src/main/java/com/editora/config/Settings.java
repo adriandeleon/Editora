@@ -46,7 +46,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 191;
+    public static final int SCHEMA_VERSION = 192;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -231,6 +231,12 @@ public class Settings {
     private boolean copyWithSyntaxHighlighting = true;
     /** Check GitHub for a newer release on startup (at most once/day). Contacts the GitHub API over HTTPS. */
     private boolean updateCheck = true;
+    /**
+     * Whether the user has answered whether to check for updates: until then nothing is asked of GitHub, and the
+     * Welcome page asks (HN dry run, 2026-11-27: the check ran on the first launch, before it could be turned off).
+     * Off for a fresh install; v191→192 turns it on for an older file, whose install has checked all along.
+     */
+    private boolean updateCheckAsked = false;
     /** Epoch millis of the last background update check (throttles to once/day); 0 = never checked. */
     private long lastUpdateCheckEpoch = 0;
     /** The version whose update notice the user dismissed (so it isn't re-shown); "" = none dismissed. */
@@ -3001,6 +3007,20 @@ public class Settings {
 
     public void setUpdateCheck(boolean updateCheck) {
         this.updateCheck = updateCheck;
+    }
+
+    public boolean isUpdateCheckAsked() {
+        return updateCheckAsked;
+    }
+
+    public void setUpdateCheckAsked(boolean updateCheckAsked) {
+        this.updateCheckAsked = updateCheckAsked;
+    }
+
+    /** The user's own answer to "check for updates?": the setting, and that it was asked. */
+    public void chooseUpdateCheck(boolean on) {
+        updateCheck = on;
+        updateCheckAsked = true;
     }
 
     public long getLastUpdateCheckEpoch() {

@@ -16,9 +16,10 @@ There are no accounts, no telemetry, no analytics and no crash uploads (a
 problem report is a file you choose to attach). Nothing about you or your code
 is collected. This is everything Editora itself sends over the network:
 
-- **The update check.** A few seconds after startup, at most once a day and on
-  the first launch too, Editora asks GitHub's API whether a newer release
-  exists. It carries nothing about you or your files; GitHub sees your IP
+- **The update check.** On the first launch the Welcome page asks whether to
+  check for new versions, and nothing is sent until you answer. Said yes, a few
+  seconds after startup and at most once a day, Editora asks GitHub's API
+  whether a newer release exists. It carries nothing about you or your files; GitHub sees your IP
   address, as with any request, and Editora's version in the User-Agent. It's a
   checkbox in **Settings → Advanced → Updates**, or start with
   `-Deditora.updateCheck=off`. **About Editora** shows the answer under the
