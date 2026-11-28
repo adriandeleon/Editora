@@ -119,6 +119,7 @@ class PyrightProbeFxTest {
         try (FxWindowFixture fx = FxWindowFixture.create(Files.createDirectories(work.resolve("cfg")), shared -> {
             shared.getSettings().setLspSupport(true);
             shared.getSettings().setLspInstallPrompts(false);
+            shared.getTrustStore().trust(project); // a folder's own .venv is used once it is trusted
         })) {
             MainController c = fx.controller;
             LspManager lsp = FxTestSupport.field(c, "lspManager");
