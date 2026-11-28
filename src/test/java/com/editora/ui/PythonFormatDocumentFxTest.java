@@ -55,6 +55,8 @@ class PythonFormatDocumentFxTest {
 
         try (FxWindowFixture fx = FxWindowFixture.create(Files.createDirectories(work.resolve("cfg")), shared -> {})) {
             MainController c = fx.controller;
+            // The formatter lives in the folder's own .venv, which runs only in a trusted folder (HN dry run).
+            FxTestSupport.runOnFx(() -> c.config.getTrustStore().trust(project));
             FxTestSupport.runOnFx(() -> c.openAndNavigate(app, 1));
             FxTestSupport.drainFx();
             com.editora.command.CommandRegistry registry = FxTestSupport.field(c, "registry");
@@ -106,6 +108,8 @@ class PythonFormatDocumentFxTest {
         Path app = Files.writeString(project.resolve("migration_0001.py"), "x = 1\nprint(x)\n");
         try (FxWindowFixture fx = FxWindowFixture.create(Files.createDirectories(work.resolve("cfg")), shared -> {})) {
             MainController c = fx.controller;
+            // The formatter lives in the folder's own .venv, which runs only in a trusted folder (HN dry run).
+            FxTestSupport.runOnFx(() -> c.config.getTrustStore().trust(project));
             FxTestSupport.runOnFx(() -> c.openAndNavigate(app, 1));
             FxTestSupport.drainFx();
             com.editora.command.CommandRegistry registry = FxTestSupport.field(c, "registry");
@@ -131,6 +135,8 @@ class PythonFormatDocumentFxTest {
         Path app = Files.writeString(project.resolve("app.py"), "x=1\nprint(x)\n");
         try (FxWindowFixture fx = FxWindowFixture.create(Files.createDirectories(work.resolve("cfg")), shared -> {})) {
             MainController c = fx.controller;
+            // The formatter lives in the folder's own .venv, which runs only in a trusted folder (HN dry run).
+            FxTestSupport.runOnFx(() -> c.config.getTrustStore().trust(project));
             FxTestSupport.runOnFx(() -> c.openAndNavigate(app, 1));
             FxTestSupport.drainFx();
             com.editora.command.CommandRegistry registry = FxTestSupport.field(c, "registry");
@@ -157,6 +163,8 @@ class PythonFormatDocumentFxTest {
         try (FxWindowFixture fx = FxWindowFixture.create(
                 Files.createDirectories(work.resolve("cfg")), shared -> settings[0] = shared.getSettings())) {
             MainController c = fx.controller;
+            // The formatter lives in the folder's own .venv, which runs only in a trusted folder (HN dry run).
+            FxTestSupport.runOnFx(() -> c.config.getTrustStore().trust(project));
             FxTestSupport.runOnFx(() -> c.openAndNavigate(app, 1));
             FxTestSupport.drainFx();
             com.editora.command.CommandRegistry registry = FxTestSupport.field(c, "registry");
@@ -180,6 +188,37 @@ class PythonFormatDocumentFxTest {
                     Duration.ofSeconds(15));
             assertEquals("b = 2\na = 1\nprint(1)\n", Files.readString(app), "formatted, then saved again");
             assertFalse(FxTestSupport.callOnFx(() -> c.activeBuffer().isDirty()));
+        }
+    }
+
+    /**
+     * Regression (HN dry run, 2026-11-27): an untrusted folder's own Ruff is the folder's code: Format Document does not
+     * run it, and says it waits for trust rather than "install a formatter".
+     */
+    @Test
+    void anUntrustedFoldersOwnFormatterIsNotRunAndSaysWhy() throws Exception {
+        assumeTrue(!com.editora.run.PythonInterpreters.isWindows(), "POSIX stand-in tools");
+        assumeTrue(
+                System.getenv("VIRTUAL_ENV") == null && System.getenv("CONDA_PREFIX") == null,
+                "an activated environment would win, by design");
+        assumeTrue(
+                com.editora.run.PythonInterpreters.onAugmentedPath("ruff").isEmpty()
+                        && com.editora.run.PythonInterpreters.onAugmentedPath("black")
+                                .isEmpty(),
+                "a formatter on PATH would be the user's own, and used");
+        FxTestSupport.bootToolkit();
+        Path marker = work.resolve("ran.txt");
+        Path project = project(work, "cloned", "ruff", "#!/bin/sh\necho ran >> '" + marker + "'\ncat\n");
+        Path app = Files.writeString(project.resolve("app.py"), "x=1\n");
+        try (FxWindowFixture fx = FxWindowFixture.create(Files.createDirectories(work.resolve("cfg")), shared -> {})) {
+            MainController c = fx.controller;
+            FxTestSupport.runOnFx(() -> c.openAndNavigate(app, 1));
+            FxTestSupport.drainFx();
+            com.editora.command.CommandRegistry registry = FxTestSupport.field(c, "registry");
+            FxTestSupport.runOnFx(() -> registry.run("lsp.formatDocument"));
+            String expected = com.editora.i18n.Messages.tr("status.python.formatNeedsTrust", ".venv");
+            assertTrue(waitForEcho(c, expected).contains(expected), echo(c));
+            assertTrue(!Files.exists(marker), "the folder's ruff never ran");
         }
     }
 }

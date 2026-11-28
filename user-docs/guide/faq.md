@@ -12,21 +12,37 @@ Yes, it's free and released under the MIT License. Source is on
 
 ## Does it phone home or collect telemetry?
 
-There are no accounts, no telemetry, and no analytics. Nothing about you or your
-code is collected or sent anywhere as a matter of course.
+There are no accounts, no telemetry, no analytics and no crash uploads (a
+problem report is a file you choose to attach). Nothing about you or your code
+is collected. This is everything Editora itself sends over the network:
 
-There are two exceptions:
-
-- **The update check.** Once a day at startup Editora asks GitHub whether a
-  newer release exists. It sends nothing about you or your files, and it's a
-  checkbox in **Settings → Advanced → Updates** if you'd rather it didn't. **About
-  Editora** shows the answer under the version ("You are up to date." or the
-  release available), when the last check answered, and a **Check now** link
-  that asks again.
+- **The update check.** A few seconds after startup, at most once a day and on
+  the first launch too, Editora asks GitHub's API whether a newer release
+  exists. It carries nothing about you or your files; GitHub sees your IP
+  address, as with any request, and Editora's version in the User-Agent. It's a
+  checkbox in **Settings → Advanced → Updates**, or start with
+  `-Deditora.updateCheck=off`. **About Editora** shows the answer under the
+  version, when the last check answered, and a **Check now** link.
+- **GitHub, through your own `gh`.** When the [GitHub CLI](/docs/github) is
+  installed and signed in, opening a GitHub repository lists its pull requests,
+  issues and workflow runs, and the checks of the branch you're on, with your
+  `gh` credentials and to GitHub only. Turn **GitHub** off in Settings to stop
+  it.
+- **Things a folder you trusted asks for.** Once you [trust a folder](/docs/workspace#trusted-folders),
+  its Maven or Gradle build and the language servers that load it download the
+  project's dependencies, and the XML server fetches the schemas a file names
+  (Settings → LSP → XML: *Download schemas*).
+- **Things you click.** Installing a language server or debugger, Doctor's
+  **Check for Newer Versions**, Maven's **Update Versions**, remote images in a
+  Markdown preview (it asks first), the plugin registry, and anything you run.
 - **The AI features**, which are off by default. If you turn them on, the text
   you act on is sent to whichever endpoint you configure (a local model, or a
   provider you supply a key for). That is how the feature works, and it is the
   one part of Editora that transmits your code, so it stays opt-in.
+
+The tools Editora starts for you (git, a language server, `dotnet`, `npm` and
+the rest) are your own programs, with their own settings: one that has its own
+telemetry, such as the .NET SDK, keeps it unless you turn it off there.
 
 [Settings sync](/docs/settings-sync), also off by default, sends your snippets,
 abbreviations, templates, dictionary, and the shortcuts you changed to a Git

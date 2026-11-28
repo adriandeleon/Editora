@@ -32,7 +32,11 @@ The first match wins:
 4. a virtual environment in the project: a `.venv`, `venv`, `env` or `.env`
    folder with a `pyvenv.cfg`, looked for from the file's folder up to the
    project root. Pyright and the status-bar item look from the folder Pyright
-   is rooted at, so a [Python sub-project](#python-sub-projects) finds its own;
+   is rooted at, so a [Python sub-project](#python-sub-projects) finds its own.
+   Only in a [trusted folder](/docs/workspace#trusted-folders): the environment's
+   `python` is whatever the folder ships, and Pyright runs the interpreter it is
+   told. Until then the next steps answer, and the status item's tooltip says
+   the folder's environment waits for trust;
 5. **Settings → LSP → Python → Python interpreter (fallback for Run, Debug and
    code intelligence)**, which may be a path or a bare name such as python3.12
    that is looked up on `PATH`;
