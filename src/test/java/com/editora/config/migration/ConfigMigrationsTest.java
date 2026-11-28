@@ -67,7 +67,28 @@ class ConfigMigrationsTest {
         expected.put("aiEndpoint", "").put("aiEndpointOpenai", "http://localhost:1234/v1/chat/completions");
         expected.put("aiModelCodex", ""); // v133→134 copies aiModel, which v126→127 had moved to the OpenAI field
         expected.put("keymapChosen", true); // v189→190: an existing install is not asked for its keymap
+        expected.put("mcpEditsNeedApproval", true); // v190→191: agent edits are proposed first
         assertEquals(expected, ConfigMigrations.upgrade(ConfigSchema.SETTINGS, previous, mapper));
+    }
+
+    /**
+     * Regression (HN dry run, 2026-11-27): an MCP agent's edits applied unasked by default, and every settings file
+     * stores the old default, so v190→191 turns asking on for an existing install too.
+     */
+    @Test
+    void anExistingInstallAsksBeforeAnAgentsEdits() throws Exception {
+        ObjectNode old = mapper.createObjectNode().put("schemaVersion", 190).put("mcpEditsNeedApproval", false);
+        ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, old, mapper);
+        assertTrue(out.get("mcpEditsNeedApproval").asBoolean());
+        assertEquals(out.deepCopy(), ConfigMigrations.mcpEditApprovalForExistingInstalls(out), "safe to repeat");
+        ObjectNode current = mapper.createObjectNode()
+                .put("schemaVersion", ConfigSchema.SETTINGS.currentVersion())
+                .put("mcpEditsNeedApproval", false);
+        assertFalse(
+                ConfigMigrations.upgrade(ConfigSchema.SETTINGS, current, mapper)
+                        .get("mcpEditsNeedApproval")
+                        .asBoolean(),
+                "turned off after the upgrade, it stays off");
     }
 
     @Test

@@ -304,6 +304,15 @@ public interface McpBridge {
     boolean executeCommand(String id);
 
     /**
+     * Why command {@code id} is not run for agent {@code agent} after all, or null to run it: the user is asked
+     * first unless they turned that off or always allow it (the {@code mcpCommandsNeedApproval} setting), and this
+     * waits for the answer. An unknown command answers null, so the run reports it. Default: run.
+     */
+    default @Nullable String commandDenial(String id, String agent) {
+        return null;
+    }
+
+    /**
      * Why a client may not run command {@code id} (and does not see it in {@link #listCommands}), or null. Default:
      * none refused.
      */

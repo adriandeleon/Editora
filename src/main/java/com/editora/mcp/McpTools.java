@@ -501,7 +501,7 @@ final class McpTools {
             case "get_diagnostics" -> diagnosticsResult(text(args, "path"));
             case "find_in_files" -> findResult(args);
             case "list_commands" -> commandsResult();
-            case "execute_command" -> executeResult(text(args, "id"));
+            case "execute_command" -> executeResult(text(args, "id"), params);
             case "open_file" -> openFileResult(args);
             case "edit_buffer" -> editBufferResult(args, params);
             case "propose_edit" -> proposeEditResult(args, params);
@@ -638,13 +638,17 @@ final class McpTools {
         return textResult(arr);
     }
 
-    private ObjectNode executeResult(@Nullable String id) {
+    private ObjectNode executeResult(@Nullable String id, @Nullable JsonNode params) {
         if (id == null || id.isEmpty()) {
             return errorResult("execute_command requires an 'id'.");
         }
         String refusal = bridge.commandRefusal(id);
         if (refusal != null) {
             return errorResult(refusal);
+        }
+        String denied = bridge.commandDenial(id, agentName(params)); // the user is asked first (HN dry run)
+        if (denied != null) {
+            return errorResult(denied);
         }
         boolean ran = bridge.executeCommand(id);
         return ran

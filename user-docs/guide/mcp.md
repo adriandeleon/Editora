@@ -86,10 +86,29 @@ waits for your answer, up to 4 minutes.
   and the agent is told to read the file again: your typing is never
   overwritten.
 
-To have every agent edit proposed this way, turn on **Settings → MCP Server →
-Ask before applying an agent's edits** (or run **MCP: Ask Before Applying
-Agent Edits** from the palette). `edit_buffer` then waits for your answer too,
-and a rejection comes back to the agent as an error with your reason.
+Every agent edit is proposed this way unless you turn off **Settings → MCP
+Server → Ask before applying an agent's edits** (or run **MCP: Ask Before
+Applying Agent Edits** from the palette): `edit_buffer` waits for your answer
+too, and a rejection comes back to the agent as an error with your reason. It
+is on by default, and the update that made it so turned it on for an existing
+install too; turned off, `edit_buffer` applies at once.
+
+### Commands an agent runs
+
+Before `execute_command` runs a command, Editora asks: *Run "Git: Push" for
+Claude Code?*, with the command's id. A command can run programs, change files
+and push, so **Don't Run** is the default button.
+
+- **Run** runs it this once; the agent's next command is asked about again.
+- **Always Allow** runs it and remembers that command: an agent runs it
+  without asking from then on. **MCP: Forget Always-Allowed Agent Commands**
+  asks about all of them again.
+- **Don't Run**, closing the question, or no answer in 4 minutes runs nothing,
+  and the agent gets an error that says so.
+
+To run agent commands without asking, turn off **Settings → MCP Server → Ask
+before running an agent's commands** (or run **MCP: Ask Before Running Agent
+Commands**).
 
 `save_buffer` waits for the write. Its result is `saved` only when the file is
 on disk, and an error when the save was refused, failed, or is still pending.
@@ -295,7 +314,9 @@ token, stays off until you enable it, and shows a security notice first.
 config folder and version-control metadata (see
 [Which files an agent can reach](#which-files-an-agent-can-reach)). Even so,
 `execute_command` can run almost any command (not the plugin or trust ones;
-see [Plugins and trust](#plugins-and-trust)), so only connect agents you trust.
+see [Plugins and trust](#plugins-and-trust)), so each one is asked about first
+unless you turn that off (see [Commands an agent runs](#commands-an-agent-runs)),
+and agent edits are shown to you first. Only connect agents you trust.
 No MCP tool can read the text of an open
 [encrypted file](/docs/encrypted-files#what-editora-keeps-out-of-an-encrypted-file). Simple
 UI mode turns it off.

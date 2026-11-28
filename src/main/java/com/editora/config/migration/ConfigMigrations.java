@@ -1071,6 +1071,19 @@ public final class ConfigMigrations {
     }
 
     /**
+     * v190→191: asks before an MCP agent's edits apply, for an existing install too ({@code mcpEditsNeedApproval} on).
+     * The setting was off by default and every file stores it, so a stored false cannot be told from a choice; the
+     * safer answer is the one an agent cannot undo, and the switch turns it back off. (The new
+     * {@code mcpCommandsNeedApproval} is on by default: absent is on.) Safe to repeat.
+     */
+    static JsonNode mcpEditApprovalForExistingInstalls(JsonNode input) {
+        if (input instanceof ObjectNode o) {
+            o.put("mcpEditsNeedApproval", true);
+        }
+        return input;
+    }
+
+    /**
      * v178→179: turns the extended window (the menu bar in the title bar) on for existing installs, now that it
      * is the default on Windows and Linux (Pauta WIN-03).
      *

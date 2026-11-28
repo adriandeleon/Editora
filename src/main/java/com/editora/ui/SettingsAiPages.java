@@ -238,6 +238,14 @@ final class SettingsAiPages {
         w.switchRow(
                 c,
                 Category.MCP,
+                "mcpCommandsNeedApproval",
+                true,
+                Settings::isMcpCommandsNeedApproval,
+                Settings::setMcpCommandsNeedApproval,
+                "mcp agent command commands execute run approve approval ask allow always claude");
+        w.switchRow(
+                c,
+                Category.MCP,
                 "claudeIdeTrial",
                 true,
                 Settings::isClaudeIdeTrial,

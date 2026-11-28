@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -31,6 +32,13 @@ class McpToolsTest {
         GitState gitState = new GitState(false, null, null, null, 0, 0, List.of());
         List<TabInfo> tabs = List.of();
         List<TodoItem> todos = List.of();
+
+        /** What commandDenial answers: null runs the command. */
+        String denial;
+        /** The commands run, in order. */
+        final List<String> executed = new java.util.ArrayList<>();
+        /** The agent the last commandDenial was asked for. */
+        String deniedFor;
 
         String openedPath;
         int openedLine;
@@ -147,7 +155,14 @@ class McpToolsTest {
 
         @Override
         public boolean executeCommand(String id) {
-            return false;
+            executed.add(id);
+            return true;
+        }
+
+        @Override
+        public String commandDenial(String id, String agent) {
+            deniedFor = agent;
+            return denial;
         }
 
         @Override
@@ -256,6 +271,24 @@ class McpToolsTest {
                 "todo_scan")) {
             assertTrue(names.contains(expected), "missing tool: " + expected);
         }
+    }
+
+    /**
+     * Regression (HN dry run, 2026-11-27): execute_command ran any command but plugin and trust ones unasked. The
+     * bridge is asked first, and a command the user declines does not run.
+     */
+    @Test
+    void aCommandTheUserDeclinesDoesNotRun() throws Exception {
+        bridge.denial = "The user chose not to run git.push.";
+        ObjectNode declined = call("execute_command", "{\"id\":\"git.push\"}");
+        assertTrue(isError(declined));
+        assertTrue(declined.toString().contains("chose not to run git.push"), declined.toString());
+        assertEquals(List.of(), bridge.executed, "declined: not run");
+        assertNotNull(bridge.deniedFor, "asked for the agent that called");
+
+        bridge.denial = null;
+        assertFalse(isError(call("execute_command", "{\"id\":\"git.push\"}")));
+        assertEquals(List.of("git.push"), bridge.executed, "allowed: run once");
     }
 
     @Test

@@ -467,7 +467,11 @@ public enum ConfigSchema {
                     // existing install has used its keymap all along, so a file without the key gets it on. Safe
                     // to repeat: a stored value is kept. + javaSourcesOffered (off: a Java project's first healthy
                     // import offers library sources once, existing installs too). Additive.
-                    Map.entry(189, (Migration) ConfigMigrations::keymapChosenForExistingInstalls)),
+                    Map.entry(189, (Migration) ConfigMigrations::keymapChosenForExistingInstalls),
+                    // v190→191: mcpEditsNeedApproval on for existing installs too (HN dry run: an agent's edits applied
+                    // unasked by default). + mcpCommandsNeedApproval (on) and mcpAllowedCommands (empty): each command
+                    // an agent runs is asked about first. Safe to repeat.
+                    Map.entry(190, (Migration) ConfigMigrations::mcpEditApprovalForExistingInstalls)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without

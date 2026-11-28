@@ -115,6 +115,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **An MCP agent asks before it runs a command or edits.** `execute_command` ran any command but plugin and trust
+  ones unasked, Run, build and git push included. Each command an agent runs is now asked about first (**Run**,
+  **Always Allow** for that command, **Don't Run**, which is the default), and an agent's `edit_buffer` is proposed as
+  a diff to accept or reject, existing installs included (settings schema 191). Settings → MCP Server turns either
+  off; **MCP: Forget Always-Allowed Agent Commands** asks again. A refused plugin or trust command also says so
+  again instead of "No such command".
 - **Downloaded language servers and debuggers are checked before they install.** clangd, terraform-ls, the Lua
   server, tinymist and the java-debug plugin are checked against the SHA-256 their publisher lists (GitHub's
   release digest, HashiCorp's `SHA256SUMS`, Open VSX), and Eclipse JDT LS against a pinned one; a download that
